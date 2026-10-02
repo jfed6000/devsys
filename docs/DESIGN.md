@@ -170,6 +170,12 @@ lwasm command the real build runs, then for each one:
 3. compares the output bytes (module format) or records whether it
    assembled (object format; compared after linking in phase 5)
 
+It assembles `corpus/`: clones of the owner's forks `jfed6000/nitros9` and
+`jfed6000/nitros9-languages` (branch `devsys`), pinned to the commits in
+`harness/corpus.lock` so results only change when `las` changes. Moving to
+newer NitrOS9 is a deliberate step (`harness/corpus.sh update`, rerun,
+commit the lock). Each report and history line records the corpus commits.
+
 It writes `harness/reports/<recipe>-<platform>.md` (summary, blockers ranked
 by first error, per-file status) and appends a line to
 `harness/reports/history.csv`. Run it after every change; the history file is

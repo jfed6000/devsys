@@ -18,6 +18,7 @@ remote later; don't add one or push.
 |---|---|
 | `las/` | The assembler: our fork of RMA (from upstream commit `e82adeb`, no upstream history kept). Build: `cd las/build/unix && make`. |
 | `harness/lwdiff.py` | Compares `las` with lwasm over the real Level 2 build. Run `python3 harness/lwdiff.py` after every change to `las`; `--only NAME --verbose` for one file. Report in `harness/reports/`. |
+| `corpus/` | NitrOS9 source the harness assembles: clones of the user's forks (`jfed6000/nitros9`, `jfed6000/nitros9-languages`, branch `devsys`), pinned by `harness/corpus.lock`. Not version-controlled. Set up or restore with `harness/corpus.sh`; `harness/corpus.sh update` moves to the newest `devsys` commits. Don't edit files in it. |
 | `docs/DESIGN.md` | Decisions, measurements, roadmap (§9), open questions (§10). The project's record. |
 | `docs/learn/toolchain.html` | Teaching primer for the project owner. |
 | `docs/learn/GUIDE.md` | Rules for maintaining the primer, and its topic backlog. |
@@ -26,8 +27,8 @@ remote later; don't add one or push.
 
 Related trees (reference sources; don't modify without asking):
 `~/projects/dcc/rma` (RMA C source), `~/projects/dcc/mw-rlink`,
-`~/projects/dcc/CoCoC` (DCC), `~/projects/wild/Sept2026/nitros9`,
-`~/projects/wild/Sept2026/nitros9-languages`.
+`~/projects/dcc/CoCoC` (DCC), and the user's own NitrOS9 working trees in
+`~/projects/wild/Sept2026/`. Use `corpus/` for NitrOS9 source, not those.
 
 ## Every session
 
@@ -56,8 +57,9 @@ using examples from their own trees.
 - The `lwasm` on PATH is a wrapper script that adds relative
   `--map`/`--list` options. For scripted runs use
   `~/projects/coco-shelf/bin/lwasm.orig` with `--output=FILE` and `-I DIR`.
-- NitrOS9 lwasm flags are in `nitros9/rules.mak` (`AS` and `ASM`). The Level 2
-  F256 defs come from `-I nitros9/defs -I nitros9/level2/wildbits -Dwildbits=1`.
+- NitrOS9 lwasm flags are in `corpus/nitros9/rules.mak` (`AS` and `ASM`). The
+  Level 2 F256 defs come from `-I nitros9/defs -I nitros9/level2/wildbits -Dwildbits=1`.
+- After a fresh checkout of `devsys`, run `harness/corpus.sh` before the harness.
 - Host builds: `las` at `las/build/unix/las`; the unmodified RMA at
   `~/projects/dcc/rma/build/unix/rma` is the reference for "no behaviour change" checks; DCC passes at
   `~/projects/dcc/CoCoC/Source/Compiler/{CPP/dcpp,CC09/dcc68,COpt/dco68}`.

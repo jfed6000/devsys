@@ -1,0 +1,4 @@
+# NitrOS9 source the harness assembles. Managed by harness/corpus.sh.
+# repo  url  branch  commit
+nitros9  https://github.com/jfed6000/nitros9.git  devsys  2bc032984bd18cb367c06d78a374a78d1830bade
+nitros9-languages  https://github.com/jfed6000/nitros9-languages.git  devsys  c05f23c3ea4f934c54b185035e98eae34e73565b

@@ -95,3 +95,4 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-02 — Added chapter 10, Testing against lwasm (phase 0). Renumbered
   Where this leads → 11, Glossary → 12. Glossary: CRLF, differential testing,
   dry run, knock-on error, reference.
+- 2026-10-02 — Chapter 10: added "Holding the test still" (pinned corpus).

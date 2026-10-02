@@ -544,6 +544,9 @@ _3 fcc "%d"
 <h3>Why this finds things you wouldn't think of</h3>
 <p>Before the harness ran, the compatibility list in the design doc had local labels, <code>fill</code>, <code>ifndef</code> and the shift operators. Nobody listed <code>;</code> comments or Windows line endings, yet together they stop 97 files. Differences like these are invisible until real code hits them, which is why the test runs over the whole build and not a hand-picked sample.</p>
 <p>Each run also adds a line to <code>harness/reports/history.csv</code>, so the project's progress is a count you can watch: 0 of 290 today.</p>
+
+<h3>Holding the test still</h3>
+<p>A measurement only means something if just one thing changes at a time. If the NitrOS9 source changed between two runs, a new match could come from a fix in <code>las</code> or from an edit in NitrOS9, and you couldn't tell which. So the harness doesn't read your working copy of NitrOS9. It assembles <code>corpus/</code>, clones of your <code>devsys</code> branches pinned to exact commits listed in <code>harness/corpus.lock</code>. Moving to newer NitrOS9 is a separate, deliberate step, and every report records which commits it ran against.</p>
 </section>
 
 <!-- 11 -->

@@ -12,3 +12,6 @@ docs/learn/examples/out/
 
 # lwdiff work files (rebuild with harness/lwdiff.py)
 harness/out/
+
+# NitrOS9 source for the harness (pinned by harness/corpus.lock; set up with harness/corpus.sh)
+corpus/
