@@ -90,7 +90,10 @@ proc_byte (ZILCH)
         /* lwasm keeps the low 8 bits of a too-large fcb value, but an
          * 8-bit instruction operand is still an error */
 
-        if ( ! (LwasmMode && InDataDir) &&
+        /* A value that came from --defs constants was a link-time value
+         * for lwasm, and the linker keeps the low byte of an 8-bit one */
+
+        if ( ! (LwasmMode && (InDataDir || PlUsed)) &&
              ((NmbrInt >= 256) || (NmbrInt < -256)))
         {
             return e_report ("value out of range");
@@ -114,6 +117,7 @@ getNmbr (ZILCH)
 {
     SkipSpac ();
     OptBPtr = d0791;
+    PlUsed = 0;
 
     if (do_math (1))
     {
@@ -157,7 +161,8 @@ do_math (precedence)
      int precedence;
 #endif
 {
-    struct ref_ent *var1;
+    struct ref_ent *var1,
+                   *_start = OptBPtr;   /* this expression's first ref */
     long frstnum;
     int _oldxtrn,
         _opratr,
@@ -186,6 +191,28 @@ do_math (precedence)
         }
 
         IsExtrn |= _oldxtrn;
+
+        /* lwasm mode: ROF can only add or subtract an external symbol.
+         * For any other operator on --defs constants, use their values
+         * (preload.c); the references on either side are dropped. */
+
+        if (LwasmMode && IsExtrn && (_opratr != '+') && (_opratr != '-'))
+        {
+            long _l = frstnum, _r = NmbrInt;
+            struct ref_ent *_top = OptBPtr;
+            int _ok = (var1 == _top) || preload_resolve (var1, &_r);
+
+            if (_ok && ((_start == var1) || preload_resolve (_start, &_l)))
+            {
+                frstnum = _l;
+                NmbrInt = _r;
+                IsExtrn = 0;
+            }
+            else
+            {
+                OptBPtr = _top;
+            }
+        }
 
         switch (_opratr)
         {
@@ -390,9 +417,16 @@ get_param (ZILCH)
 
             break;
         case '^':
+            refminus = OptBPtr;
+
             if (!get_param ())
             {
                 return 0;
+            }
+
+            if (IsExtrn && LwasmMode && pl_fix (refminus))
+            {
+                IsExtrn = 0;    /* complement of a --defs constant */
             }
 
             if (IsExtrn)
@@ -450,9 +484,16 @@ get_param (ZILCH)
                 return (NmbrInt = e_report ("bad operand"));
             }
 
+            refminus = OptBPtr;
+
             if ( ! get_param ())
             {
                 return 0;
+            }
+
+            if (IsExtrn && pl_fix (refminus))
+            {
+                IsExtrn = 0;    /* complement of a --defs constant */
             }
 
             if (IsExtrn)

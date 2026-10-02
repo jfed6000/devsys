@@ -148,6 +148,10 @@ set_pragmas (list)
         {
             PragUndefZero = 1;
         }
+        else if (strcmp (name, "export") == 0)
+        {
+            PragExport = 1;
+        }
     }
 }
 
@@ -259,6 +263,10 @@ GetOpts (_argc, _argv)
         else if (strcmp (*_argv, "--lwasm") == 0)
         {
             LwasmMode = 1;
+        }
+        else if (strncmp (*_argv, "--defs=", 7) == 0)
+        {
+            preload_add (*_argv + 7);   /* preload.c */
         }
         else if ((**_argv == '-') && ((*_argv)[1] == 'D'))
         {
@@ -936,6 +944,15 @@ wrt_global (parm)
 
         styp = reg->smbltyp;
         sbloffst = reg->s_ofst;
+
+        /* rlink only accepts a constant for a plain value; an exported
+         * "set" symbol's final value is just that (lwasm mode, where the
+         * export pragma exports set symbols too) */
+
+        if (LwasmMode && ((styp & 0x0f) == (CODENT | INIENT)))
+        {
+            styp = (styp & 0xf0) | CODENT | DIRENT;
+        }
 #ifdef COCO
         fwrite( &styp, 3, 1, OutFile );
 #else

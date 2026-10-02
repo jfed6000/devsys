@@ -40,6 +40,7 @@ main (argc, argv)
     inccount++;
 
     GetOpts (argc, argv);
+    preload_load ();
     do_defines ();
 
     if (ListFlg)
@@ -69,6 +70,7 @@ main (argc, argv)
     while (_curntsrc < LastSrc)
     {
         SrcFile = f_opn (*_curntsrc, "r");
+        CurSrcName = *_curntsrc;
 
         LRefs_Code.reftbl = LRefs_DPD.reftbl
                           = LRefs_NonDPdat.reftbl
@@ -137,6 +139,7 @@ read_fil (ZILCH)
 
     precodeset ();
     mod_pass ();
+    sec_pass ();
     HadError = d0025 = FALSE;
     _If_Dpth = FalseIf = d0027 = ListLin = ListPag = 0;
     list_lin = d00da = 0;
@@ -322,6 +325,29 @@ AsmblLin (ZILCH)
     if (LwasmMode && (_curch == ';'))
     {
         return 1;           /* lwasm: "label   ; comment" */
+    }
+
+    if (LwasmMode && (_curch == '=') && Label)
+    {
+        /* lwasm: "label = value" is "label equ value" */
+
+        ++SrcChar;
+        SkipSpac ();
+        Oprand = SrcChar;
+        MLCod.opcode = 0x05;            /* equ, as in S_Nam */
+
+        if ((*Drectives[3]) () == 0)
+        {
+            return 0;
+        }
+
+        if (*SrcChar)
+        {
+            *(SrcChar++) = '\0';
+            SkipSpac ();
+        }
+
+        return 1;
     }
 
     /* Move operator to LabelName */
@@ -528,6 +554,14 @@ AsmblLin (ZILCH)
                             _modcmd = 2;
                         }
 
+                        /* lwasm object format: section, endsect (lwobj.c) */
+
+                        if ((Cod_Ent == 0) && LwasmMode &&
+                            (Cod_Ent = FindCmd (LabelName, S_LwSect, SLwSectEnd)))
+                        {
+                            _modcmd = 3;
+                        }
+
                         /* If a Cod_Ent has not yet been found, try
                          * the default list
                          */
@@ -590,6 +624,7 @@ AsmblLin (ZILCH)
 
                             if ( ! ((_modcmd == 1) ? (*ModTbl[(jsrOfst & 0x1f)]) ()
                                   : (_modcmd == 2) ? (*TopLwTbl[(jsrOfst & 0x1f)]) ()
+                                  : (_modcmd == 3) ? (*LwSectTbl[(jsrOfst & 0x1f)]) ()
                                   : (*jmp_ptr[(jsrOfst & 0x1f)]) ()))
                             {
                                 return 0;

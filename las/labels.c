@@ -90,6 +90,11 @@ do_label (ZILCH)
         LblTyp |= CODENT;
     }
 
+    if (LwasmMode && sec_export (AltLbl))
+    {
+        LblTyp |= CODENT;   /* lwasm export pragma: export it (lwobj.c) */
+    }
+
     _mysmbl = CurntLabel = sym_find (AltLbl);
 
     if (PASS1)
@@ -108,6 +113,16 @@ do_label (ZILCH)
             {
                 _mysmbl->s_ofst = *S_Addrs;
             }
+
+            /* Count a global for the ROF header once, when first defined.
+             * RMA counted at every definition, so an exported "set" symbol
+             * set again was counted twice and the header promised more
+             * globals than were written. */
+
+            if ((_mysmbl->locmsk & 0xc6) == (RELATIVE | CODENT | DIRENT))
+            {
+                ++GlobCnt;
+            }
         }
         else        /* If a previously-defined label */
         {
@@ -119,11 +134,6 @@ do_label (ZILCH)
             {
                 _mysmbl->locmsk |= NEGMASK;
             }
-        }
-
-        if ((_mysmbl->locmsk & 0xc6) == (RELATIVE | CODENT | DIRENT))
-        {       /* I.E. if NOT NEGMASK */
-            ++GlobCnt;
         }
 
         return 1;

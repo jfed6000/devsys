@@ -174,6 +174,18 @@ GLOBAL CODFORM S_TopLw[]
 }
 #endif
 ;
+/* lwasm object format, checked in lwasm mode (lwobj.c) */
+GLOBAL CODFORM S_LwSect[]
+#ifdef MAIN
+= {
+    {"section",  0x00, 0},
+    {"endsect",  0x00, 1},     /* also matches "endsection" */
+    {"org",      0x00, 2},
+    {"rmb",      0x00, 3},
+    {"dtb",      0x00, 4}
+}
+#endif
+;
 GLOBAL CODFORM S_Rmb[]
 #ifdef MAIN
 = {
@@ -325,6 +337,11 @@ GLOBAL direct CODFORM *PSecEnd
 #ifdef MAIN
     = endof (S_TopLw)
 #endif
+    ,
+    *SLwSectEnd
+#ifdef MAIN
+    = endof (S_LwSect)
+#endif
     ;
 
         /* The next section comes from part3.c */
@@ -404,6 +421,21 @@ int (*TopLwTbl[]) ()
 {
     do_mod, mod_org, mod_rmb, asm_dirct,
     set_fcn, set_fill
+}
+#endif
+;
+/* LwSectTbl: S_LwSect's handlers */
+GLOBAL
+#ifdef COCO
+int (*LwSectTbl[]) ()
+#else
+    JMPTBL LwSectTbl[]
+#endif
+#ifdef MAIN
+    =
+{
+    do_section, do_endsect, sec_org,
+    sec_rmb, set_dtb
 }
 #endif
 ;

@@ -1,0 +1,250 @@
+WHILE1 equ $02e5 L
+while2 equ $02c6 L
+* ------------------------
+
+* Data equates
+
+* Init DP
+iobufsiz equ 1 D
+curntsym equ 3 D
+
+* Begin Uninit DP
+
+refptr equ $07 D
+FileCount equ $09 D
+lfilenum equ $0b D
+printmap equ $0d D
+printsym equ $0f D
+B09Mod equ $13 D
+okstatic equ $15 D
+TyLang equ $17 D
+namelen equ $19 D
+bgn_udat equ $1b D
+t_udat equ $1d D
+bgn_udpd equ $1f D
+t_udpd equ $21 D
+bgn_idat equ $23 D
+t_idat equ $25 D
+bgn_idpd equ $27 D
+t_idpd equ $29 D
+bgn_codsiz equ $2b D
+t_code equ $2d D
+extramem equ $31 D
+maxbufsiz equ $33 D
+t_drefs equ $35 D
+InFile equ $37 D
+OutFile equ $39 D
+CurntOB equ $3b D
+FirstMod equ $3d D
+commnsyms equ $41 D
+RofFil equ $43 D
+rofcount equ $45 D
+dup_find equ $47 D
+CurntFil equ $49 D
+LibFile equ $4b D
+obmemreq equ $4d D
+inpBuf equ $4f D
+curRofNam equ $51 D
+ddcount equ $53 D
+dtcount equ $55 D
+curObfil equ $57 D
+dtxtrefs equ $59 D
+ddtarefs equ $5b D
+ExtStart equ $63 D
+rbfcount equ $65 D
+
+* $67 bytes in Direct Page
+* Following is Init NonDP
+
+curExtRef equ $67 D
+symEtxt equ $77 D
+symEDat equ $79 D
+symEnd equ $7b D
+symDpsiz equ $7d D
+symBTxt equ $7f D
+_Crc equ $81 D
+stdin equ $93 D
+stdout equ $a0 D
+stderr equ $ad D
+_chcodes equ $0164 D
+
+* End of vars defined in "cstart"
+
+_sttop equ $01e4 D
+memend equ $01e6 D
+flacc equ $01e8 D
+_stbot equ $01f2 D
+_mtop equ $01f0 D
+errno equ $01f4 D
+
+* End vars created by cstart
+
+filenames equ $01f6 D
+lfiles equ $01f8 D
+edition equ $0218 D
+NameFile equ $0219 D
+modname equ $021b D
+OutfName equ $021d D
+B09EntPt equ $21f D
+NamFilFP equ $0221 D
+idpdBuf equ $0223 D
+AllSyms equ $0333 D
+
+spare equ $0633 D
+_icptrtn equ $0635 D
+end equ $063a D
+cod_end equ $0323 D
+IDatLoc equ $0327 D
+IDpdLoc equ $032b D
+DTRefLoc equ $032f D
+DataLen equ $15ba D
+
+* Program labels
+
+Rlink equ $0d L
+movbytes equ $13 L
+_cstart equ $1c L
+csta05 equ $22 L
+csta15 equ $3d L
+clrbss equ $48 L
+reldt equ $51 L
+reldd equ $5e L
+restack equ $67 L
+aloop10 equ $77 L
+qloop equ $a9 L
+loopend equ $b5 L
+final equ $bb L
+flip10 equ $c9 L
+argflip equ $d1 L
+fixtop equ $e7 L
+_stkchec equ $fc L
+fixserr equ $010f L
+fsterr equ $0128 L
+patch equ $0150 L
+patch10 equ $0158 L
+
+* part 1
+main equ $016a L
+nxtfnam equ $03ca L
+nxtlib equ $0439 L
+B09fatal equ $0460 L
+illmainline equ $0490 L
+twomains equ $04ec L
+cantopen equ $04a2 L
+notROF equ $04b5 L
+asmerrs equ $04c8 L
+in_rderr equ $050a L
+basenam equ $0523 L
+
+* part 2
+
+readrofs equ $073f L
+adj_ofst equ $0c7d L
+setbgns equ $0e7f L
+addsym equ $0ea6 L
+newsym equ $0ee3 L
+goextref equ $0f01 L
+skiprefs equ $0f1b L
+skipxtrn equ $0f47 L
+ncodlocs equ $0f7f L
+skipcomn equ $0fcd L
+lastobfile equ $1013 L
+
+* part 3
+
+wrtmodule equ $10d5 L
+idat_crc equ $1457 L
+procref equ $1865 L
+pty_gen equ $19c8 L
+read_err equ $19f6 L
+writ_err equ $1a0f L
+ftruncate equ $1a33 L
+
+* part 4
+
+picklist equ $1b65 L
+matchsym equ $1b91 L
+fatal equ $1c25 L
+req_mem equ $1c83 L
+ref2base equ $1ce1 L
+findext equ $1d09 L
+get_mem equ $1da9 L
+get_loc equ $1de8 L
+writemap equ $1e50 L
+unrslved equ $1f3e L
+getname equ $1fa2 L
+_fgets equ $1fd9 L
+etrap equ $2014 L
+
+* part 5
+
+creatdnodes equ $21b7 L
+setrefvoid equ $21ff L
+emptyref equ $221e L
+getrefs equ $2281 L
+writrefs equ $22fd L
+putref equ $2344 L
+flushbuf equ $2369 L
+
+* Library routines
+
+fopen equ $2526 L
+freopen equ $2543 L
+puts equ $2572 L
+fputs equ $2592 L
+fread equ $25b0 L
+fwrite equ $25f3 L
+printf equ $263d L
+fprintf equ $264f L
+fprintf eequ $264f L
+*sprintf equ $265d L
+fseek equ $2b0f L
+ftell equ $2c57 L
+putc equ $2cc0 L
+putw equ $2d64 L
+_tidyup equ $2d85 L
+fclose equ $2da9 L
+fflush equ $2dde L
+getc equ $2ec2 L
+getw equ $2f2b L
+_setbase equ $3011 L
+pffloat equ $30db L
+strlen equ $30e6 L
+strcpy equ $30f9 L
+strcmp equ $313e L
+strncpy equ $316c L
+atoi equ $3250 L
+_strass equ $32bf L
+getstat equ $32dd L
+open equ $334a L
+close equ $3357 L
+creat equ $3369 L
+unlink equ $33af L
+read equ $33c2 L
+readln equ $33d8 L
+write equ $33ea L
+writeln equ $33ff L
+lseek equ $3413 L
+crc equ $348a L
+sbrk equ $34b0 L
+ibrk equ $3516 L
+intercept equ $3541 L
+_os9err equ $355d L
+_sysret equ $3566 L
+exit equ $356b L
+_exit equ $3575 L
+_ladd equ $3579 L
+_lsub equ $358e L
+_lcmpr equ $35a3 L
+_litol equ $35ee L
+_lutol equ $35fc L
+_lmove equ $3607 L
+ccmult equ $363b L
+ccumod equ $368e L
+ccudiv equ $36d6 L
+ccasr equ $3759 L
+cclsr equ $3765 L
+ccasl equ $377c L
+ccumod equ $378e L
+etext equ $3797 L
+LLgth equ $3944 L

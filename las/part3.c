@@ -696,6 +696,10 @@ do_ifs (ZILCH)
         {
             _ok = 0;
         }
+        else if (LwasmMode && pl_fix (d0791))
+        {
+            ;                   /* condition on --defs constants */
+        }
         else if (d0791 != OptBPtr)
         {
             /* condundefzero: symbols that are simply undefined count as

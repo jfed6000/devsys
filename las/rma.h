@@ -220,8 +220,13 @@ GLOBAL int LocalCtx,        /* local label block number (symtab.c) */
            NextCtx;         /* last block number handed out */
 GLOBAL char InDataDir;      /* evaluating an fcb/fdb value (numeric.c) */
 GLOBAL char IdxLitZero;     /* indexed offset written as "0" (registers.c) */
+GLOBAL char PlUsed;         /* the value used --defs constants (preload.c) */
 
 /* lwasm pragmas set with --pragma= (file_io.c GetOpts) */
+GLOBAL char PragExport,     /* export: section labels are exported */
+            InSection,      /* inside a "section" (lwobj.c) */
+            SawOs9Sec;      /* the file has a __os9 section */
+GLOBAL const char *CurSrcName;  /* source file being assembled */
 GLOBAL char PragNoCase,     /* nosymbolcase: symbol names ignore case */
             PragUndefZero;  /* condundefzero: undefined symbol in an if = 0 */
 

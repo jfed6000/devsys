@@ -364,6 +364,28 @@ mod_org (ZILCH)
 {
     NumBytes = 0;
 
+    /* lwasm, outside any section: an org to a symbol it can't resolve
+     * (scf.d's "ORG M$DTyp" without os9.d) isn't an error; offsets after
+     * it are still right relative to each other. Count from 0. */
+
+    if (LwasmMode && InTop && ! InModule)
+    {
+        if ( ! getNmbr ())
+        {
+            return 0;
+        }
+
+        if (OptBPtr != d0791)
+        {
+            OptBPtr = d0791;
+            NmbrInt = 0;
+        }
+
+        *CurntOrg = NmbrInt;
+        *(Adrs_Ptr = &CodeAddrs) = NmbrInt;
+        return 1;
+    }
+
     if (l1723 ())
     {
         *CurntOrg = NmbrInt;

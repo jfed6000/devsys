@@ -13,6 +13,8 @@ int do_rzb(void);
 int do_rmb(void);
 int is_def(void);
 int set_fcn(void);
+void addzero(void);
+int set_dtb(void);
 int set_fill(void);
 int is_ndef(void);
 int l1723(void);
@@ -74,6 +76,19 @@ void RefCreat(struct symblstr *mylabel, int rtyp, int adrs);
 char SkipSpac(void);
 void *getmem(int memreq);
 void do_defines(void);
+/* preload.c */
+void preload_add(char *file);
+int preload_find(char *name, int *value);
+void preload_load(void);
+int preload_resolve(struct ref_ent *from, long *value);
+int pl_fix(struct ref_ent *from);
+/* lwobj.c */
+void sec_pass(void);
+int do_section(void);
+int do_endsect(void);
+int sec_export(char *name);
+int sec_org(void);
+int sec_rmb(void);
 /* module.c */
 int cond_log(int result);
 int mod_peek(void);
@@ -168,6 +183,8 @@ int do_rzb();
 int do_rmb();
 int is_def();
 int set_fcn();
+void addzero();
+int set_dtb();
 int set_fill();
 int is_ndef();
 int l1723();
@@ -229,6 +246,19 @@ void RefCreat();
 char SkipSpac();
 void *getmem();
 void do_defines();
+/* preload.c */
+void preload_add();
+int preload_find();
+void preload_load();
+int preload_resolve();
+int pl_fix();
+/* lwobj.c */
+void sec_pass();
+int do_section();
+int do_endsect();
+int sec_export();
+int sec_org();
+int sec_rmb();
 /* module.c */
 int cond_log();
 int mod_peek();

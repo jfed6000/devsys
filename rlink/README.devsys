@@ -1,0 +1,5 @@
+rlink - forked into devsys on 2026-10-02 from ~/projects/dcc/mw-rlink:
+upstream https://gitlab.com/debmint/mw-rlink commit 0c6de25 (the CoCo-native
+source) plus the owner's uncommitted Linux port in that working tree
+(GNUmakefile, rof.h, types.h, misc.c, util.c, ...). No upstream history kept.
+Design and roadmap: ../docs/DESIGN.md

@@ -6,6 +6,7 @@
  * ************************************************************ */
 
 #define NEED_CTYPE
+#include <time.h>
 #include "rma.h"
 
 #ifndef COCO
@@ -99,6 +100,11 @@ l1723 (ZILCH)
 
     if (getNmbr ())
     {
+        if (LwasmMode)
+        {
+            pl_fix (d0791); /* org/rmb counts: value from --defs */
+        }
+
         rmcoderefs ();   /* Delete certain refs ? */
 
         if (OptBPtr == d0791)
@@ -185,6 +191,11 @@ l1780 (parm)
     if (getNmbr () == 0)
     {
         return 0;
+    }
+
+    if (LwasmMode)
+    {
+        pl_fix (d0791);     /* "type equ Prgrm": value from --defs */
     }
 
     CurntLabel = reg;
@@ -331,6 +342,35 @@ int
 set_fcc (ZILCH)
 {
     return (_getstring (1));         /* return may not be needed */
+}
+
+/* lwasm: one zero byte, for rmb in a code-like section (lwobj.c) */
+
+void
+addzero (ZILCH)
+{
+    addbyte (0);
+}
+
+/* lwasm: "dtb" writes the assembly date and time: year since 1900,
+ * month, day, hour, minute, second */
+
+int
+set_dtb (ZILCH)
+{
+    static char dtbuf[4];
+    long now = time (0);
+    struct tm *tm = localtime (&now);
+
+    CmdCod = dtbuf;
+    NumBytes = 0;
+    addbyte (tm->tm_year);
+    addbyte (tm->tm_mon + 1);
+    addbyte (tm->tm_mday);
+    addbyte (tm->tm_hour);
+    addbyte (tm->tm_min);
+    addbyte (tm->tm_sec);
+    return 1;
 }
 
 /* lwasm: "fcn" is fcc followed by a 0 byte */

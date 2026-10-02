@@ -35,6 +35,12 @@ HOME = os.path.expanduser("~")
 DEFAULT_NITROS9 = os.path.join(DEVSYS, "corpus/nitros9")  # pinned by harness/corpus.lock
 DEFAULT_LWASM = os.path.join(HOME, "projects/coco-shelf/bin/lwasm.orig")
 DEFAULT_LAS = os.path.join(DEVSYS, "las/build/unix/las")
+DEFAULT_LWAR = os.path.join(HOME, "projects/coco-shelf/bin/lwar")
+DEFAULT_LWLINK = os.path.join(HOME, "projects/coco-shelf/bin/lwlink")
+DEFAULT_RLINK = os.path.join(DEVSYS, "rlink/rlink")
+
+# lwar/lwlink commands seen by the last collect(), in build order
+LINK_CMDS = []
 
 TIMEOUT = 30  # seconds per assembly
 
@@ -100,6 +106,7 @@ def collect(nitros9, recipe, platform, workdir):
     jobs = []
     seen = set()
     dirs = [recipe_dir]
+    del LINK_CMDS[:]
     for line in proc.stdout.splitlines():
         m = re.match(r"make\[\d+\]: (Entering|Leaving) directory '(.*)'", line)
         if m:
@@ -113,6 +120,10 @@ def collect(nitros9, recipe, platform, workdir):
             try:
                 argv = shlex.split(part)
             except ValueError:
+                continue
+            if argv and os.path.basename(argv[0]) in ("lwar", "lwlink"):
+                LINK_CMDS.append({"tool": os.path.basename(argv[0]),
+                                  "cwd": dirs[-1], "argv": argv})
                 continue
             if not argv or os.path.basename(argv[0]) != "lwasm":
                 continue
@@ -224,7 +235,21 @@ def define_lines(defines):
     return lines
 
 
-def run_las(job, las, lasdir, gen):
+def is_constants_object(job):
+    """An object-format source that only defines constants (a _constant
+    section), like lib/wildbitsl2.as: the defs a linked program gets its
+    system call numbers etc. from."""
+    if job["format"] != "obj":
+        return False
+    secs = set()
+    for line in open(job["source"], encoding="latin-1"):
+        t = line.split(";")[0].split()
+        if len(t) >= 2 and line[:1].isspace() and t[0].lower() == "section":
+            secs.add(t[1].lower())
+    return bool(secs) and secs <= {"_constant", "_constants"}
+
+
+def run_las(job, las, lasdir, gen, defs=()):
     """Assemble the same source with las, with the same -D definitions.
 
     lwasm also looks for `use` files next to the source, so the source's
@@ -233,6 +258,7 @@ def run_las(job, las, lasdir, gen):
     out = os.path.join(lasdir, job["id"])
     incs = [os.path.dirname(job["source"])] + job["includes"] + [gen]
     argv = ([las, job["source"], "--lwasm"] + [f"-D{d}" for d in job["defines"]]
+            + [f"--defs={d}" for d in defs]
             + ([f"--pragma={','.join(job['pragmas'])}"] if job["pragmas"] else [])
             + [f"-i={d}" for d in incs] + [f"-o={out}"])
     if os.path.exists(out):
@@ -319,6 +345,99 @@ def classify(job, ref_ok, ref_out, ref_msg, lasr):
     return r
 
 
+# ---------------------------------------------------------------- link
+
+LINK_ORDER = ["LINK_MATCH", "LINK_DIFF", "LINK_FAIL", "LINK_REF_FAIL"]
+LINK_MEANING = {
+    "LINK_MATCH": "rlink --lwlink module is byte-identical to lwlink's",
+    "LINK_DIFF": "both linked, but the modules differ",
+    "LINK_FAIL": "rlink failed, or an object it needs didn't assemble",
+    "LINK_REF_FAIL": "lwlink itself failed",
+}
+
+
+def run_links(jobs, results, args, refdir, lasdir):
+    """Replay the build's lwar and lwlink commands on both sides.
+
+    Reference: lwar and lwlink on lwasm's objects. las: a ROF library is
+    its members' .r files one after another, and rlink --lwlink links
+    with the same libraries in the same order.
+    """
+    byobj = {os.path.normpath(os.path.join(j["cwd"], j["output"])): j["id"] for j in jobs}
+    ok = {r["id"] for r in results if r["status"] == "ASSEMBLED"}
+    for d in ("_lib", "_link"):     # "link" is also a NitrOS9 command name
+        os.makedirs(os.path.join(refdir, d), exist_ok=True)
+        os.makedirs(os.path.join(lasdir, d), exist_ok=True)
+    libs_ok = {}
+    out = []
+    for cmd in LINK_CMDS:
+        argv, cwd = cmd["argv"], cmd["cwd"]
+        if cmd["tool"] == "lwar":
+            files = [a for a in argv[1:] if not a.startswith("-")]
+            lib = os.path.basename(files[0])                    # libX.a
+            members = [byobj.get(os.path.normpath(os.path.join(cwd, f))) for f in files[1:]]
+            subprocess.run([args.lwar, "-c", os.path.join(refdir, "_lib", lib)]
+                           + [os.path.join(refdir, m) for m in members if m],
+                           cwd=refdir, env=clean_env(), capture_output=True)
+            with open(os.path.join(lasdir, "_lib", lib[:-2] + ".l"), "wb") as f:
+                for m in members:
+                    if m and os.path.exists(os.path.join(lasdir, m)):
+                        f.write(open(os.path.join(lasdir, m), "rb").read())
+            libs_ok[lib[:-2]] = [m for m in members if m not in ok]
+            continue
+        # lwlink
+        libs, inputs, name = [], [], None
+        for a in argv[1:]:
+            if a.startswith("-l"):
+                libs.append("lib" + a[2:])
+            elif a.startswith("-o"):
+                name = a[2:]
+            elif not a.startswith("-") and a.endswith(".o"):
+                inputs.append(byobj.get(os.path.normpath(os.path.join(cwd, a))))
+        r = {"id": name, "inputs": inputs, "libs": libs}
+        missing = [i for i in inputs if i not in ok]
+        refout = os.path.join(refdir, "_link", name)
+        lasout = os.path.join(lasdir, "_link", name)
+        for f in (refout, lasout):
+            if os.path.exists(f):
+                os.remove(f)
+        p = subprocess.run([args.lwlink, "--format=os9", "-L", os.path.join(refdir, "_lib")]
+                           + ["-l" + l[3:] for l in libs]
+                           + [os.path.join(refdir, i) for i in inputs if i] + ["-o" + name],
+                           cwd=os.path.join(refdir, "_link"), env=clean_env(),
+                           capture_output=True, text=True)
+        if not os.path.exists(refout):
+            r["status"], r["detail"] = "LINK_REF_FAIL", (p.stdout + p.stderr).strip()[:120]
+            out.append(r)
+            continue
+        if missing or None in inputs:
+            r["status"], r["detail"] = "LINK_FAIL", "objects didn't assemble: " + ", ".join(
+                str(m) for m in missing)
+            out.append(r)
+            continue
+        p = subprocess.run([args.rlink, "--lwlink"] + [os.path.join(lasdir, i) for i in inputs]
+                           + ["-l=" + os.path.join(lasdir, "_lib", l + ".l") for l in libs]
+                           + ["-o=" + name, "-n=" + name],
+                           cwd=os.path.join(lasdir, "_link"), env=clean_env(),
+                           capture_output=True, text=True)
+        if not os.path.exists(lasout):
+            r["status"] = "LINK_FAIL"
+            r["detail"] = "rlink: " + ((p.stdout + p.stderr).strip().splitlines() or ["failed"])[0][:110]
+            bad = [m for l in libs for m in libs_ok.get(l, [])]
+            if bad:
+                r["detail"] += f" (library members that didn't assemble: {len(bad)})"
+        else:
+            a, b = open(refout, "rb").read(), open(lasout, "rb").read()
+            if a == b:
+                r["status"], r["detail"] = "LINK_MATCH", f"{len(a)} bytes"
+            else:
+                k = next((i for i in range(min(len(a), len(b))) if a[i] != b[i]), min(len(a), len(b)))
+                r["status"] = "LINK_DIFF"
+                r["detail"] = f"lwlink {len(a)} bytes, rlink {len(b)} bytes, first difference at ${k:04X}"
+        out.append(r)
+    return out
+
+
 # ---------------------------------------------------------------- report
 
 STATUS_ORDER = ["MATCH", "ASSEMBLED", "DIFF", "ERRORS", "FATAL", "CRASH", "TIMEOUT", "REF_FAIL"]
@@ -340,7 +459,7 @@ def blocker_key(msg, mnem):
     return msg
 
 
-def write_report(results, jobs, args, workdir, report_path, corpus):
+def write_report(results, jobs, args, workdir, report_path, corpus, links=()):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     counts = Counter(r["status"] for r in results)
     total = len(results)
@@ -393,6 +512,22 @@ def write_report(results, jobs, args, workdir, report_path, corpus):
             L.append(f"| `{k}` | {len(first[k])} | `{fid}` | `{line[:90]}` |")
         L.append("")
 
+    if links:
+        lc = Counter(r["status"] for r in links)
+        L.append("## Linked programs\n")
+        L.append("Object-format files are compared after linking: the build's lwar and "
+                 "lwlink commands are replayed with lwasm's objects, and the same links are "
+                 "made from las's ROF objects with rlink --lwlink.\n")
+        L.append("| Status | Programs | Meaning |\n|---|---|---|")
+        for s in LINK_ORDER:
+            if lc[s]:
+                L.append(f"| {s} | {lc[s]} | {LINK_MEANING[s]} |")
+        L.append("")
+        L.append("| Program | Status | Detail |\n|---|---|---|")
+        for r in sorted(links, key=lambda r: (LINK_ORDER.index(r["status"]), r["id"])):
+            L.append(f"| `{r['id']}` | {r['status']} | {r['detail']} |")
+        L.append("")
+
     L.append("## lwasm options the build uses\n")
     L.append("Pragmas (las has none of these yet): " +
              ", ".join(f"`{k}`" for k in pragmas) + ".\n")
@@ -412,13 +547,17 @@ def write_report(results, jobs, args, workdir, report_path, corpus):
         f.write("\n".join(L))
 
     hist = os.path.join(HERE, "reports", "history.csv")
-    new = not os.path.exists(hist)
-    with open(hist, "a", newline="") as f:
-        w = csv.writer(f)
-        if new:
-            w.writerow(["date", "recipe", "platform", "nitros9", "nitros9-languages", "total"] + STATUS_ORDER)
-        w.writerow([now, args.recipe, args.platform, short(corpus["nitros9"]),
-                    short(corpus["nitros9-languages"]), total] + [counts[s] for s in STATUS_ORDER])
+    header = (["date", "recipe", "platform", "nitros9", "nitros9-languages", "total"]
+              + STATUS_ORDER + ["LINKED", "LINK_MATCH"])
+    rows = list(csv.reader(open(hist))) if os.path.exists(hist) else [header]
+    if rows[0] != header:           # older history: add the new columns
+        rows = [header] + [r + [""] * (len(header) - len(r)) for r in rows[1:]]
+    lc = Counter(r["status"] for r in links)
+    rows.append([now, args.recipe, args.platform, short(corpus["nitros9"]),
+                 short(corpus["nitros9-languages"]), total] + [counts[s] for s in STATUS_ORDER]
+                + [len(links), lc["LINK_MATCH"]])
+    with open(hist, "w", newline="") as f:
+        csv.writer(f).writerows(rows)
     return counts
 
 
@@ -431,6 +570,9 @@ def main():
     ap.add_argument("--nitros9", default=os.environ.get("NITROS9DIR", DEFAULT_NITROS9))
     ap.add_argument("--lwasm", default=DEFAULT_LWASM)
     ap.add_argument("--las", default=DEFAULT_LAS)
+    ap.add_argument("--rlink", default=DEFAULT_RLINK)
+    ap.add_argument("--lwar", default=DEFAULT_LWAR)
+    ap.add_argument("--lwlink", default=DEFAULT_LWLINK)
     ap.add_argument("--only", help="only files whose id or source contains this text")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--verbose", action="store_true", help="print las output for each file")
@@ -438,6 +580,7 @@ def main():
     args = ap.parse_args()
     args.nitros9 = os.path.abspath(args.nitros9)
     args.las = os.path.abspath(args.las)       # las runs in its own scratch directory
+    args.rlink = os.path.abspath(args.rlink)
     args.lwasm = os.path.abspath(args.lwasm)
 
     if not os.path.exists(args.las):
@@ -458,9 +601,16 @@ def main():
         jobs = [j for j in jobs if args.only in j["id"] or args.only in j["source"]]
     print(f"{len(jobs)} assemblies to compare", file=sys.stderr)
 
+    # Constants objects first: every other object-format file gets their
+    # ROF as --defs, so expressions on linker-only constants can be
+    # evaluated (las preload.c), as lwlink would at link time.
+    defs_jobs = [j for j in jobs if is_constants_object(j)]
+    defs_files = [os.path.join(lasdir, j["id"]) for j in defs_jobs]
+
     def one(job):
         ref_ok, ref_out, ref_msg = run_reference(job, args.lwasm, refdir, gen)
-        lasr = run_las(job, args.las, lasdir, gen)
+        use = defs_files if (job["format"] == "obj" and job not in defs_jobs) else ()
+        lasr = run_las(job, args.las, lasdir, gen, use)
         with open(os.path.join(lasdir, job["id"] + ".log"), "w") as f:
             f.write("$ " + " ".join(shlex.quote(a) for a in lasr["argv"]) + "\n")
             f.write(lasr["stdout"] + "\n--- stderr ---\n" + lasr["stderr"])
@@ -469,17 +619,28 @@ def main():
             print(f"\n=== {job['id']}: {r['status']} - {r['detail']}\n{lasr['stdout']}{lasr['stderr']}")
         return r
 
+    first = {j["id"]: one(j) for j in defs_jobs}
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as ex:
-        results = list(ex.map(one, jobs))
+        rest = list(ex.map(one, [j for j in jobs if j["id"] not in first]))
+    byid = {r["id"]: r for r in rest}
+    byid.update(first)
+    results = [byid[j["id"]] for j in jobs]
 
     with open(os.path.join(workdir, "results.json"), "w") as f:
         json.dump(results, f, indent=1)
 
+    links = [] if args.only else run_links(jobs, results, args, refdir, lasdir)
+    with open(os.path.join(workdir, "links.json"), "w") as f:
+        json.dump(links, f, indent=1)
+
     counts = Counter(r["status"] for r in results)
     print("  ".join(f"{s} {counts[s]}" for s in STATUS_ORDER if counts[s]), file=sys.stderr)
+    if links:
+        lc = Counter(r["status"] for r in links)
+        print("links: " + "  ".join(f"{s} {lc[s]}" for s in LINK_ORDER if lc[s]), file=sys.stderr)
     if not args.no_report and not args.only:
         path = os.path.join(HERE, "reports", f"{args.recipe}-{args.platform}.md")
-        write_report(results, jobs, args, workdir, path, corpus)
+        write_report(results, jobs, args, workdir, path, corpus, links)
         print(f"report: {os.path.relpath(path, DEVSYS)}", file=sys.stderr)
 
 
