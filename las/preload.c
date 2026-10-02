@@ -272,8 +272,8 @@ preload_resolve (from, value)
 
     for (r = from; r < OptBPtr; ++r)
     {
-        if ( ! r->RAddr || (r->RAddr->locmsk & RELATIVE) ||
-             ! preload_find (r->RAddr->symblnam, &v))
+        if ( ! r->RAddr || (sym_msk (r->RAddr) & RELATIVE) ||
+             ! preload_find (sym_name (r->RAddr), &v))
         {
             return 0;
         }

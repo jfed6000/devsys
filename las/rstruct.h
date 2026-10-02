@@ -60,39 +60,24 @@ typedef int (*JMPTBL) (void);
 
             /* Structure definitions   */
 
+/* Symbols and reference records are reached only through handles and
+ * the functions in symtab.c, which alone knows how they are stored
+ * (phase 8: they live in banked 8K blocks on the 6809, where a pointer
+ * into them is only good until another block is mapped in). 0 = none. */
+
+typedef unsigned SYMH;          /* a symbol */
+typedef unsigned REFH;          /* a reference record */
+
+#ifdef COCO
+typedef long SVAL;              /* a symbol's value (s_ofst) */
+#else
+typedef int SVAL;
+#endif
+
 struct ref_ent
 {
     char ETyp;
-    struct symblstr *RAddr;
-};
-
-struct symblstr
-{
-    char smbltyp,               /* Symbol type flag                     */
-         locmsk;
-#ifdef COCO
-    long s_ofst;
-#else
-    int s_ofst;                 /* Offset into code or value for sbl def*/
-#endif
-    struct symblstr *left,      /* Next entry, alphabet < this          */
-                    *right;     /* Next entry, alphabet > this          */
-    struct ref_xtrnal *reftbl;  /* Points to last ref in chained list
-                                 * of all refs to this symbol           */
-    char symblnam[1];           /* Symbol Name. Must stay the last
-                                 * member: sym_add() allocates each
-                                 * symbol at its name's real length,
-                                 * so the array runs past [0].        */
-};
-
-/* This is a structure created for each reference in the program */
-
-struct ref_xtrnal
-{
-    char RfTyp;
-    int r_offset;       /* Offset int the module, unless "set" or "equ",
-                         * then, it's a ptr to "struct symblstr", I think */
-    struct ref_xtrnal *NxtRef;  /* Actually, previous entry */
+    SYMH RAddr;
 };
 
 /* Delete this temporarily.. try to create a structure to hold all
@@ -159,7 +144,7 @@ struct cmdbytes
 typedef struct macdescr
 {
     struct macdescr *LastMac;   /* Previous macro descriptor              */
-    struct symblstr *MSblPtr;   /* Ptr to this label's symbol table       */
+    SYMH MSblPtr;               /* The macro's name in the symbol table   */
     FILE *MWrkFil;              /* File descriptor for macro work file    */
     long MacStart;              /* Address in work file for macro's begin */
 } MACDSCR;

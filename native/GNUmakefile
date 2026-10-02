@@ -38,7 +38,7 @@ BIN	:= bin
 # and _OS9, as the native cc does. See docs/DESIGN.md D20 and D25.
 las_DIR		:= $(DEVSYS)/las
 las_OBJS	:= rma_main findcmd part3 registers directives labels numeric \
-		   file_io macros symtab module lwobj preload sizing
+		   file_io macros symtab bank module lwobj preload sizing
 las_DEFS	:= -DCOCO
 
 rlink_DIR	:= $(DEVSYS)/rlink

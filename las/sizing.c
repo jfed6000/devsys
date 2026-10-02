@@ -69,8 +69,8 @@ struct szitem
     int len8;                   /* ",pcr": length of the 8-bit form */
     int tconst;                 /* ",pcr": constant added to the target */
     int tabs;                   /* ",pcr": absolute target (module) */
-    struct symblstr *tsym;      /* ",pcr": target label, or 0 */
-    struct symblstr *osym[4];   /* K_OTHER: the operand's symbols */
+    SYMH tsym;      /* ",pcr": target label, or 0 */
+    SYMH osym[4];   /* K_OTHER: the operand's symbols */
     int sec;                    /* lwasm section of the line */
     char nosym;                 /* K_OTHER: how many in osym */
     char kind;
@@ -81,7 +81,7 @@ struct szitem
 
 struct szlabel
 {
-    struct symblstr *sym;
+    SYMH sym;
     int sec;
 };
 
@@ -137,10 +137,10 @@ sz_pass (ZILCH)
 
 void
 #ifdef __STDC__
-sz_label (struct symblstr *sym)
+sz_label (SYMH sym)
 #else
 sz_label (sym)
-     struct symblstr *sym;
+     SYMH sym;
 #endif
 {
 #ifdef SZ_FORK
@@ -199,7 +199,7 @@ sz_pcr (value, len8)
         if ((nrefs == 1) && ! (d0791->ETyp & NEGMASK) && d0791->RAddr)
         {
             it->tsym = d0791->RAddr;
-            it->tconst = value - (int) d0791->RAddr->s_ofst;
+            it->tconst = value - (int) sym_val (d0791->RAddr);
         }
         else if (nrefs == 0)
         {
@@ -262,10 +262,10 @@ sz_other (ZILCH)
 
 static int
 #ifdef __STDC__
-label_sec (struct symblstr *sym)
+label_sec (SYMH sym)
 #else
 label_sec (sym)
-     struct symblstr *sym;
+     SYMH sym;
 #endif
 {
     register int i;
@@ -286,13 +286,13 @@ label_sec (sym)
 
 static int
 #ifdef __STDC__
-lw_known (struct symblstr *sym)
+lw_known (SYMH sym)
 #else
 lw_known (sym)
-     struct symblstr *sym;
+     SYMH sym;
 #endif
 {
-    if ( ! sym || ! (sym->locmsk & RELATIVE))
+    if ( ! sym || ! (sym_msk (sym) & RELATIVE))
     {
         return 0;           /* never defined: external */
     }
@@ -302,7 +302,7 @@ lw_known (sym)
         return 1;
     }
 
-    return ! (sym->locmsk & CODLOC) && (label_sec (sym) < 0);
+    return ! (sym_msk (sym) & CODLOC) && (label_sec (sym) < 0);
 }
 
 /* ******************************************************************** *
@@ -320,7 +320,7 @@ try_pcr (i)
 #endif
 {
     register struct szitem *it = &Items[i];
-    int lbl = it->tsym ? (int) it->tsym->s_ofst : it->tabs;
+    int lbl = it->tsym ? (int) sym_val (it->tsym) : it->tabs;
     int s = it->start;
     int lo, hi, k, off, shrunk = 0, known = 1, guess = 1;
 
@@ -434,7 +434,7 @@ sz_decide (ZILCH)
              * that isn't a code label, or one in another section */
 
             if (it->tsym ? ((label_sec (it->tsym) != it->sec) ||
-                            ! (it->tsym->locmsk & RELATIVE))
+                            ! (sym_msk (it->tsym) & RELATIVE))
                          : ! UsedModule)
             {
                 it->kind = K_OTHER;

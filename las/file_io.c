@@ -14,11 +14,10 @@
 #define DO_FF putc( 0x0c, PrtPth );
 #define DO_CR putc ( '\n', PrtPth );
 
-#ifdef COCO
-#	define PUTINT(i,c) fwrite(&i,2,1,c)
-#else
-#	define PUTINT(i,c) putc( i>>8&0xff,c);putc(i&0xff,c);
-#endif
+/* A 16-bit value, high byte first. (The 6809 build used to fwrite the
+ * value's first two bytes, which for a long - a common's address - is
+ * the high half.) */
+#define PUTINT(i,c) (putc (((i) >> 8) & 0xff, c), putc ((i) & 0xff, c))
 
 static long CurFPos = 0;
 
@@ -76,7 +75,7 @@ static struct binhead
 
 static void do_reflist (
 #ifdef __STDC__
-    struct ref_xtrnal *parm
+    REFH parm
 #endif
 );
 
@@ -84,19 +83,19 @@ static int DecSFil ();
 
 static void PrtSmbl (
 #ifdef __STDC__
-    struct symblstr *
+    SYMH smbl
 #endif
 );
 
 static void wrtxtrn (
 #ifdef __STDC__
-    struct symblstr *parm1
+    SYMH parm1
 #endif
 );
 
 static void wrt_global (
 #ifdef __STDC__
-    struct symblstr *parm
+    SYMH parm
 #endif
 );
 
@@ -178,7 +177,7 @@ do_defines (ZILCH)
         register char *p = Defines[i];
         register int n = 0;
         long val = 1;
-        struct symblstr *sym;
+        SYMH sym;
 
         while (*p && (*p != '=') && (n < SYMLEN - 1))
         {
@@ -229,13 +228,149 @@ do_defines (ZILCH)
             sym = sym_add (name);
         }
 
-        sym->smbltyp = CODENT | INIENT;     /* a "set" symbol */
+        sym_settyp (sym, CODENT | INIENT);     /* a "set" symbol */
         /* defined, a plain number. Keep LOC1BYT: it is the symbol
          * table tree's "real right child" flag (symtab.c), and this runs
          * again before pass 2 when the symbol may have children. */
 
-        sym->locmsk = (sym->locmsk & LOC1BYT) | RELATIVE | DIRENT;
-        sym->s_ofst = val;
+        sym_setmsk (sym, (sym_msk (sym) & LOC1BYT) | RELATIVE | DIRENT);
+        sym_setval (sym, val);
+    }
+}
+
+static void one_arg ();
+
+/* ******************************************************************** *
+ * args_file() - --args=FILE: more arguments, read from FILE, separated *
+ *               by spaces, tabs or line ends. The OS-9 shell takes at  *
+ *               most 200 characters a line, and NitrOS9 builds need    *
+ *               longer las commands than that.                         *
+ * ******************************************************************** */
+
+static void
+#ifdef __STDC__
+args_file (char *name)
+#else
+args_file (name)
+     char *name;
+#endif
+{
+    FILE *f;
+    char word[256];
+    int c, n;
+
+    if ( ! (f = fopen (name, "r")))
+    {
+        errexit ("can't open --args file");
+    }
+
+    do
+    {
+        n = 0;
+
+        /* 0x0d and 0x0a, not '\n': on OS-9 '\n' is CR */
+
+        while (((c = getc (f)) != EOF) && (c != ' ') && (c != '\t') &&
+               (c != 0x0d) && (c != 0x0a))
+        {
+            if (n < (int) sizeof (word) - 1)
+            {
+                word[n++] = c;
+            }
+        }
+
+        if (n)
+        {
+            char *a = (char *) getmem (n + 1);
+
+            word[n] = '\0';
+            strcpy (a, word);
+            one_arg (a);
+        }
+    } while (c != EOF);
+
+    fclose (f);
+}
+
+/* ******************************************************************** *
+ * one_arg() - Handle one command-line argument.                        *
+ * ******************************************************************** */
+
+static void
+#ifdef __STDC__
+one_arg (char *arg)
+#else
+one_arg (arg)
+     char *arg;
+#endif
+{
+    char var;
+
+    if (strncmp (arg, "--pragma=", 9) == 0)
+    {
+        set_pragmas (arg + 9);
+    }
+    else if (strcmp (arg, "--lwasm") == 0)
+    {
+        LwasmMode = 1;
+    }
+    else if (strncmp (arg, "--defs=", 7) == 0)
+    {
+        preload_add (arg + 7);   /* preload.c */
+    }
+    else if (strncmp (arg, "--args=", 7) == 0)
+    {
+        args_file (arg + 7);
+    }
+    else if ((*arg == '-') && (arg[1] == 'D'))
+    {
+        /* -D is case-sensitive: lower-case -d is the page depth */
+
+        if (DefCount >= 32)
+        {
+            errexit ("too many -D options");
+        }
+
+        Defines[DefCount++] = arg + 2;
+    }
+    else if (*arg == '-')
+    {
+        SrcChar = arg + 1;
+        set_opts ();        /* Check to see if SrcChar must be passed */
+
+        if ((OFlg) && ((var = _toupper (SrcChar[-1])) != '\0') &&
+            (var == 'O') && (*SrcChar == '='))
+        {
+            if (O_Nam)
+            {
+                errexit ("too many object files");
+            }
+            else
+            {
+                O_Nam = ++SrcChar;
+            }
+        }
+
+        if (_toupper(*SrcChar) == 'I')
+        {
+            char *p = ++SrcChar;
+
+            if (*p == '=')
+            {
+                p++;
+            }
+
+            incdirs[inccount++] = p;
+        }
+    }
+    else
+    {
+        if (LastSrc > &SrcNam[31])
+        {
+            errexit ("too many input files");
+        }
+
+        *(LastSrc++) = arg;
     }
 }
 
@@ -248,77 +383,13 @@ GetOpts (_argc, _argv)
      char **_argv;
 #endif
 {
-    char var;
-
     SrcFile = OutFile = 0;
     PrtPth = stdout;
     ++_argv;
 
     while (--_argc)
     {
-        if (strncmp (*_argv, "--pragma=", 9) == 0)
-        {
-            set_pragmas (*_argv + 9);
-        }
-        else if (strcmp (*_argv, "--lwasm") == 0)
-        {
-            LwasmMode = 1;
-        }
-        else if (strncmp (*_argv, "--defs=", 7) == 0)
-        {
-            preload_add (*_argv + 7);   /* preload.c */
-        }
-        else if ((**_argv == '-') && ((*_argv)[1] == 'D'))
-        {
-            /* -D is case-sensitive: lower-case -d is the page depth */
-
-            if (DefCount >= 32)
-            {
-                errexit ("too many -D options");
-            }
-
-            Defines[DefCount++] = *_argv + 2;
-        }
-        else if (**_argv == '-')
-        {
-            SrcChar = *_argv + 1;
-            set_opts ();        /* Check to see if SrcChar must be passed */
-
-            if ((OFlg) && ((var = _toupper (SrcChar[-1])) != '\0') &&
-                (var == 'O') && (*SrcChar == '='))
-            {
-                if (O_Nam)
-                {
-                    errexit ("too many object files");
-                }
-                else
-                {
-                    O_Nam = ++SrcChar;
-                }
-            }
-
-            if (_toupper(*SrcChar) == 'I')
-            {
-                char *p = ++SrcChar;
-
-                if (*p == '=')
-                {
-                    p++;
-                }
-
-                incdirs[inccount++] = p;
-            }
-        }
-        else
-        {
-            if (LastSrc > &SrcNam[31])
-            {
-                errexit ("too many input files");
-            }
-
-            *(LastSrc++) = *_argv;
-        }
-
+        one_arg (*_argv);
         ++_argv;
     }
 
@@ -599,28 +670,28 @@ DoSymTbl (ZILCH)
 /* ************************************************************ *
  * PrtSmbl() - Called by sym_walk() to format and print symbol   *
  *             description to stdout for symbol defined in      *
- *             'struct symblstr *' passed in the parameter      *
+ *             symbol passed in the parameter           *
  * ************************************************************ */
 
 static void
 #ifdef __STDC__
-PrtSmbl (struct symblstr *smbl)
+PrtSmbl (SYMH smbl)
 #else
 PrtSmbl (smbl)
-     struct symblstr *smbl;
+     SYMH smbl;
 #endif
 {
-    register struct symblstr *sblptr = smbl;
+    register SYMH sblptr = smbl;
 
     if (SColumn > 0)
     {
         printf ("  |");
     }
 
-    printf ("  %-9s %02x %02x %04x", sblptr->symblnam,
-                                     sblptr->smbltyp,
-                                     (sblptr->locmsk) & 0xff,
-                                     sblptr->s_ofst);
+    printf ("  %-9s %02x %02x %04x", sym_name (sblptr),
+                                     sym_typ (sblptr),
+                                     (sym_msk (sblptr)) & 0xff,
+                                     sym_val (sblptr));
 
     if (((SColumn += 25) > PgWidth) || NarrowList)
     {
@@ -882,19 +953,19 @@ wrt_refs (ZILCH)
 
         if (locl_cnt)                   /* Write locals, if any */
         {
-            if (LRefs_Code.reftbl)              /* refs to code */
+            if (sym_refs (LRefs_Code))              /* refs to code */
             {
-                do_reflist (LRefs_Code.reftbl);
+                do_reflist (sym_refs (LRefs_Code));
             }
 
-            if (LRefs_DPD.reftbl)              /* refs to dp data */
+            if (sym_refs (LRefs_DPD))              /* refs to dp data */
             {
-                do_reflist (LRefs_DPD.reftbl);
+                do_reflist (sym_refs (LRefs_DPD));
             }
 
-            if (LRefs_NonDPdat.reftbl)              /* refs to non-dp data */
+            if (sym_refs (LRefs_NonDPdat))              /* refs to non-dp data */
             {
-                do_reflist (LRefs_NonDPdat.reftbl);
+                do_reflist (sym_refs (LRefs_NonDPdat));
             }
         }
 
@@ -921,29 +992,29 @@ wrt_refs (ZILCH)
 
 static void
 #ifdef __STDC__
-wrt_global (struct symblstr *parm)
+wrt_global (SYMH parm)
 #else
 wrt_global (parm)
-     struct symblstr *parm;
+     SYMH parm;
 #endif
 {
-    register struct symblstr *reg = parm;
+    register SYMH reg = parm;
 
     short sbloffst;
     char styp;
 
     /* if bit for 0x40 (NEGMASK) NOT SET */
 
-    if ( (reg->locmsk & 0xc6) == (RELATIVE | CODENT | DIRENT) &&
-         (reg->smbltyp != (CODENT | DIRENT | INIENT)) )
+    if ( (sym_msk (reg) & 0xc6) == (RELATIVE | CODENT | DIRENT) &&
+         (sym_typ (reg) != (CODENT | DIRENT | INIENT)) )
     {
-        fputs (reg->symblnam, OutFile);
+        fputs (sym_name (reg), OutFile);
         putc ('\0', OutFile);           /* Null-termiat name */
 
         /* write symbol type (8-bit), offset (16-bit) */
 
-        styp = reg->smbltyp;
-        sbloffst = reg->s_ofst;
+        styp = sym_typ (reg);
+        sbloffst = sym_val (reg);
 
         /* rlink only accepts a constant for a plain value; an exported
          * "set" symbol's final value is just that (lwasm mode, where the
@@ -972,25 +1043,25 @@ wrt_global (parm)
 static int
 CountRfs
 #ifdef __STDC__
-    (struct symblstr *smbls)
+    (SYMH smbls)
 #else
     (smbls)
-    struct symblstr *smbls;
+    SYMH smbls;
 #endif
 {
-    register struct ref_xtrnal *_curnt;
-    struct ref_xtrnal *next;
+    register REFH _curnt;
+    REFH next;
     int _refcount;
 
     _refcount = 0;
-    next = smbls->reftbl;          /* init next */
-    smbls->reftbl = 0;
+    next = sym_refs (smbls);          /* init next */
+    sym_setrefs (smbls, 0);
 
     while ( (_curnt = next) )
     {
-        next = _curnt->NxtRef;
-        _curnt->NxtRef = smbls->reftbl;     /* Point NxtRef to prev ref    */
-        smbls->reftbl = _curnt;             /* point smbls->reftbl to last */
+        next = ref_next (_curnt);
+        ref_setnext (_curnt, sym_refs (smbls));     /* Point NxtRef to prev ref    */
+        sym_setrefs (smbls, _curnt);             /* point sym_refs (smbls) to last */
         ++_refcount;
     }
 
@@ -1000,22 +1071,22 @@ CountRfs
 static void
 wrtxtrn 
 #ifdef __STDC__
-    (struct symblstr *parm1)
+    (SYMH parm1)
 #else
     (parm1)
-     struct symblstr *parm1;
+     SYMH parm1;
 #endif
 {
-    register struct symblstr *smbldef = parm1;
+    register SYMH smbldef = parm1;
     short numrefs;
 
-    if (    ! ((smbldef->locmsk & (NEGMASK | DIRENT)))
-         &&   (smbldef->reftbl)
-         &&   ((numrefs = smbldef->smbltyp & 0x0f) != (CODENT | DIRENT))
+    if (    ! ((sym_msk (smbldef) & (NEGMASK | DIRENT)))
+         &&   (sym_refs (smbldef))
+         &&   ((numrefs = sym_typ (smbldef) & 0x0f) != (CODENT | DIRENT))
          &&   (numrefs != (CODENT | INIENT)))
     {
         /* Write null-terminated symbol name */
-        fputs (smbldef->symblnam, OutFile);
+        fputs (sym_name (smbldef), OutFile);
         putc ('\0', OutFile);
 
         numrefs = CountRfs (smbldef);   /* Ref count */
@@ -1023,7 +1094,7 @@ wrtxtrn
 
         /* List all references to this name */
 
-        do_reflist (smbldef->reftbl);
+        do_reflist (sym_refs (smbldef));
     }
 }
 
@@ -1034,50 +1105,50 @@ wrtxtrn
 
 static void
 #ifdef __STDC__
-do_reflist (struct ref_xtrnal *parm)
+do_reflist (REFH parm)
 #else
 do_reflist (parm)
-     struct ref_xtrnal *parm;
+     REFH parm;
 #endif
 {
-    register struct ref_xtrnal *sref = parm;
+    register REFH sref = parm;
 
     while (sref)
     {
 #   ifdef COCO
         fwrite (sref, 3, 1, OutFile);
 #   else
-        putc (sref->RfTyp, OutFile);
-        PUTINT ((int) sref->r_offset, OutFile);
+        putc (ref_typ (sref), OutFile);
+        PUTINT ((int) ref_off (sref), OutFile);
 #   endif
-        sref = sref->NxtRef;
+        sref = ref_next (sref);
     }
 }
 
 void
 #ifdef __STDC__
-wrtCmmns (struct symblstr *parm)
+wrtCmmns (SYMH parm)
 #else
 wrtCmmns (parm)
-     struct symblstr *parm;
+     SYMH parm;
 #endif
 {
-    register struct symblstr *reg = parm;
+    register SYMH reg = parm;
     int var;
 
     /* DIRENT && CODENT && RELATIVE && ! NEGMASK */
 
-    if (((reg->locmsk & 0xc6) == (RELATIVE | CODENT | DIRENT)) &&
-         ((reg->smbltyp & 0x0f) == 7))    /* Code for Common */
+    if (((sym_msk (reg) & 0xc6) == (RELATIVE | CODENT | DIRENT)) &&
+         ((sym_typ (reg) & 0x0f) == 7))    /* Code for Common */
     {
-        fputs (reg->symblnam, OutFile);
+        fputs (sym_name (reg), OutFile);
         putc ('\0', OutFile);
 
-        PUTINT (reg->s_ofst, OutFile); /* Address of common  */
+        PUTINT (sym_val (reg), OutFile); /* Address of common  */
 
         var = CountRfs (reg);          /* Count refs to this */
         PUTINT (var, OutFile);
 
-        do_reflist (reg->reftbl);      /* Write all refs     */
+        do_reflist (sym_refs (reg));      /* Write all refs     */
     }
 }

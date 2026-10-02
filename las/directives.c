@@ -95,7 +95,7 @@ addbyte (parm)
 int
 l1723 (ZILCH)
 {
-    register struct symblstr *smbl_tmp = CurntLabel;
+    register SYMH smbl_tmp = CurntLabel;
     int flag = 0;
 
     if (getNmbr ())
@@ -178,7 +178,7 @@ l1780 (parm)
      int parm;
 #endif
 {
-    register struct symblstr *reg;
+    register SYMH reg;
 
     if (Label == 0)
     {
@@ -322,16 +322,16 @@ do_comon (ZILCH)
     }
 
     l2069 (7);
-    CurntLabel->locmsk |= CODENT;
+    sym_setmsk (CurntLabel, sym_msk (CurntLabel) | (CODENT));
 
     if (Pass2)
     {
         ++comn_cnt;
     }
 
-    if (CurntLabel->s_ofst < NmbrInt)
+    if (sym_val (CurntLabel) < NmbrInt)
     {
-        CurntLabel->s_ofst = NmbrInt;
+        sym_setval (CurntLabel, NmbrInt);
     }
 
     Adrs_Ptr = (int *)(&NmbrInt);
@@ -823,7 +823,7 @@ static int
 symdefined (ZILCH)
 {
     char name[SYMLEN];
-    struct symblstr *sym;
+    SYMH sym;
 
     if ( ! MovLbl (name))
     {
@@ -832,7 +832,7 @@ symdefined (ZILCH)
     }
 
     sym = sym_find (name);
-    return (sym && (sym->locmsk & RELATIVE));
+    return (sym && (sym_msk (sym) & RELATIVE));
 }
 
 int
@@ -902,7 +902,7 @@ set_vsec (ZILCH)
     CodTbBgn = Data_Equ;
     CodTbEnd = DtaEqEnd;        /* &s_rmb3 */
     jmp_ptr = VsecInCode;
-    CurLclRef = &LRefs_NonDPdat;
+    CurLclRef = LRefs_NonDPdat;
     TypeBasic = INIENT;
     TmpLocMsk = 0;
     S_Addrs = &I_data;
@@ -910,7 +910,7 @@ set_vsec (ZILCH)
 
     if (is_dp ())
     {                           /* if vsect "dp" */
-        CurLclRef = &LRefs_DPD;
+        CurLclRef = LRefs_DPD;
         TypeBasic = DIRENT | INIENT;
         TmpLocMsk = DIRLOC;
         S_Addrs = &I_dpd;

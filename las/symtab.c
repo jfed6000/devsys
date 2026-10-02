@@ -6,7 +6,13 @@
  *                                                                  *
  *      sym_find (name)     the symbol, or 0 if not defined         *
  *      sym_add (name)      a new, zeroed symbol (name must be new) *
+ *      sym_anon ()         a zeroed symbol outside the table       *
  *      sym_walk (fn)       call fn for every symbol, in table order*
+ *                                                                  *
+ * and reads and changes them only through the accessors below      *
+ * (sym_typ, sym_setval, ...). A symbol is a SYMH handle, a         *
+ * reference record a REFH: callers never hold a pointer into the   *
+ * table, so the storage can move to banked memory (phase 8).       *
  *                                                                  *
  * Storage (inherited from Microware RMA): a name's character sum   *
  * picks one of 64 buckets; each bucket is a threaded binary tree.  *
@@ -27,6 +33,40 @@
 #include "rma.h"
 
 #define NBUCKETS 64
+
+struct symblstr
+{
+    char smbltyp,               /* Symbol type flag                     */
+         locmsk;
+    SVAL s_ofst;                /* Offset into code or value for sbl def*/
+    SYMH left,                  /* Next entry, alphabet < this          */
+         right;                 /* Next entry, alphabet > this          */
+    REFH reftbl;                /* Last ref in the chained list of all
+                                 * refs to this symbol                  */
+    char symblnam[1];           /* Symbol Name. Must stay the last
+                                 * member: sym_add() allocates each
+                                 * symbol at its name's real length,
+                                 * so the array runs past [0].        */
+};
+
+/* One record for each reference in the program */
+
+struct ref_xtrnal
+{
+    char RfTyp;
+    int r_offset;       /* Offset in the module, unless "set" or "equ":
+                         * then it's the SYMH of the symbol referred to */
+    REFH NxtRef;        /* Actually, previous entry */
+};
+
+/* Handle to pointer. Entries live in banked blocks (bank.c), and on
+ * the 6809 a pointer is only good until another block is mapped in. So
+ * pointers are only used inside this file, and no statement here may
+ * use two entries: "SP (a)->x = SP (b)->y" could map b's block in
+ * after taking a's pointer. Copy through a local instead. */
+
+#define SP(h) ((struct symblstr *) bank_ptr (h))
+#define RP(h) ((struct ref_xtrnal *) bank_ptr (h))
 
 /* With PragNoCase (lwasm's nosymbolcase) names are hashed and compared
  * ignoring case; the table keeps the spelling first seen. */
@@ -60,7 +100,10 @@ symkey (name)
     {
         if ((*p == '@') || (*p == '?'))
         {
-            sprintf (key, "%.*s~%d", SYMLEN - 1, name, LocalCtx);
+            /* not "%.*s": CoCoC's printf takes no '*' precision */
+            strncpy (key, name, SYMLEN - 1);
+            key[SYMLEN - 1] = '\0';
+            sprintf (key + strlen (key), "~%d", LocalCtx);
             return key;
         }
     }
@@ -90,14 +133,14 @@ namecmp (a, b)
     return _tolower (*a) - _tolower (*b);
 }
 
-static struct symblstr *Buckets[NBUCKETS];
+static SYMH Buckets[NBUCKETS];
 
 #ifdef SYMSTATS
 /* Measurement build only (make -C build/stats): see sym_stats() */
 static long StatSyms, StatNameChars, StatBytes;
 #endif
 
-static struct symblstr **
+static SYMH *
 #ifdef __STDC__
 bucket (char *name)
 #else
@@ -125,34 +168,34 @@ bucket (name)
 
 static int
 #ifdef __STDC__
-search (char *name, struct symblstr **node)
+search (char *name, SYMH *node)
 #else
 search (name, node)
      char *name;
-     struct symblstr **node;
+     SYMH *node;
 #endif
 {
     int cmp = 1;
-    register struct symblstr *n;
+    register SYMH n;
 
     if ( (n = *node = *bucket (name)) )
     {
         do
         {
-            cmp = namecmp (name, ((*node = n)->symblnam));
+            cmp = namecmp (name, SP (*node = n)->symblnam);
 
             if (cmp < 0)
             {
-                n = n->left;
+                n = SP (n)->left;
             }
             else
             {
-                if ((cmp == 0) || ! (n->locmsk & LOC1BYT))
+                if ((cmp == 0) || ! (SP (n)->locmsk & LOC1BYT))
                 {
                     break;
                 }
 
-                n = n->right;
+                n = SP (n)->right;
             }
         } while (n);
     }
@@ -160,7 +203,7 @@ search (name, node)
     return cmp;
 }
 
-struct symblstr *
+SYMH
 #ifdef __STDC__
 sym_find (char *name)
 #else
@@ -168,7 +211,7 @@ sym_find (name)
      char *name;
 #endif
 {
-    struct symblstr *node;
+    SYMH node;
 
     name = symkey (name);
     return search (name, &node) ? 0 : node;
@@ -179,7 +222,34 @@ sym_find (name)
  *             table yet (sym_find returned 0).                         *
  * ******************************************************************** */
 
-struct symblstr *
+static SYMH
+#ifdef __STDC__
+newsym (char *name)
+#else
+newsym (name)
+     char *name;
+#endif
+{
+    /* sizeof already includes symblnam[1], room for the terminating 0 */
+    SYMH new = bank_alloc (sizeof (struct symblstr) + strlen (name));
+
+    strcpy (SP (new)->symblnam, name);
+    return new;
+}
+
+/* ******************************************************************** *
+ * sym_anon() - A zeroed symbol with no name, not in the table. The     *
+ *              local reference lists (LRefs_Code ...) are kept in such *
+ *              symbols.                                                *
+ * ******************************************************************** */
+
+SYMH
+sym_anon (ZILCH)
+{
+    return newsym ("");
+}
+
+SYMH
 #ifdef __STDC__
 sym_add (char *name)
 #else
@@ -187,15 +257,13 @@ sym_add (name)
      char *name;
 #endif
 {
-    register struct symblstr *new;
-    struct symblstr *parent;
+    register SYMH new;
+    SYMH parent;
     int cmp;
 
     name = symkey (name);
     cmp = search (name, &parent);
-
-    /* sizeof already includes symblnam[1], room for the terminating 0 */
-    new = (struct symblstr *) getmem (sizeof (struct symblstr) + strlen (name));
+    new = newsym (name);
 #ifdef SYMSTATS
     ++StatSyms;
     StatNameChars += strlen (name);
@@ -206,23 +274,24 @@ sym_add (name)
     {
         if (cmp < 0)
         {
-            new->right = parent;        /* thread up to the parent */
-            parent->left = new;
+            SP (new)->right = parent;   /* thread up to the parent */
+            SP (parent)->left = new;
         }
         else
         {
-            new->right = parent->right; /* inherit the parent's thread */
-            parent->right = new;
-            parent->locmsk |= LOC1BYT;
+            SYMH thread = SP (parent)->right;
+
+            SP (new)->right = thread;   /* inherit the parent's thread */
+            SP (parent)->right = new;
+            SP (parent)->locmsk |= LOC1BYT;
         }
     }
     else
     {
         *bucket (name) = new;
-        new->right = 0;
+        SP (new)->right = 0;
     }
 
-    strcpy (new->symblnam, name);
     return new;
 }
 
@@ -230,21 +299,21 @@ sym_add (name)
  * next() - The node after this one in alphabetical order, or 0.        *
  * ******************************************************************** */
 
-static struct symblstr *
+static SYMH
 #ifdef __STDC__
-next (struct symblstr *node)
+next (SYMH node)
 #else
 next (node)
-     struct symblstr *node;
+     SYMH node;
 #endif
 {
-    register struct symblstr *n = node->right;
+    register SYMH n = SP (node)->right;
 
-    if (node->locmsk & LOC1BYT)
+    if (SP (node)->locmsk & LOC1BYT)
     {
-        while (n->left)
+        while (SP (n)->left)
         {
-            n = n->left;
+            n = SP (n)->left;
         }
     }
 
@@ -253,22 +322,22 @@ next (node)
 
 void
 #ifdef __STDC__
-sym_walk (void (*fn) (struct symblstr *))
+sym_walk (void (*fn) (SYMH))
 #else
 sym_walk (fn)
      void (*fn) ();
 #endif
 {
-    register struct symblstr *n;
+    register SYMH n;
     int b;
 
     for (b = 0; b < NBUCKETS; ++b)
     {
         if ( (n = Buckets[b]) )
         {
-            while (n->left)
+            while (SP (n)->left)
             {
-                n = n->left;
+                n = SP (n)->left;
             }
 
             do
@@ -277,6 +346,190 @@ sym_walk (fn)
             } while ( (n = next (n)) );
         }
     }
+}
+
+/* ******************************************************************** *
+ * Accessors. sym_typ and sym_msk return the stored char as an int,     *
+ * sign included, exactly as reading the field did.                     *
+ * ******************************************************************** */
+
+int
+#ifdef __STDC__
+sym_typ (SYMH h)
+#else
+sym_typ (h)
+     SYMH h;
+#endif
+{
+    return SP (h)->smbltyp;
+}
+
+int
+#ifdef __STDC__
+sym_msk (SYMH h)
+#else
+sym_msk (h)
+     SYMH h;
+#endif
+{
+    return SP (h)->locmsk;
+}
+
+SVAL
+#ifdef __STDC__
+sym_val (SYMH h)
+#else
+sym_val (h)
+     SYMH h;
+#endif
+{
+    return SP (h)->s_ofst;
+}
+
+REFH
+#ifdef __STDC__
+sym_refs (SYMH h)
+#else
+sym_refs (h)
+     SYMH h;
+#endif
+{
+    return SP (h)->reftbl;
+}
+
+void
+#ifdef __STDC__
+sym_settyp (SYMH h, int v)
+#else
+sym_settyp (h, v)
+     SYMH h;
+     int v;
+#endif
+{
+    SP (h)->smbltyp = v;
+}
+
+void
+#ifdef __STDC__
+sym_setmsk (SYMH h, int v)
+#else
+sym_setmsk (h, v)
+     SYMH h;
+     int v;
+#endif
+{
+    SP (h)->locmsk = v;
+}
+
+/* Called through the sym_setval() macro (proto.h), which casts the
+ * value: an int passed where the 6809 build expects a long would be
+ * read wrongly, with no prototype to convert it */
+
+void
+#ifdef __STDC__
+sym_setv (SYMH h, SVAL v)
+#else
+sym_setv (h, v)
+     SYMH h;
+     SVAL v;
+#endif
+{
+    SP (h)->s_ofst = v;
+}
+
+void
+#ifdef __STDC__
+sym_setrefs (SYMH h, REFH r)
+#else
+sym_setrefs (h, r)
+     SYMH h;
+     REFH r;
+#endif
+{
+    SP (h)->reftbl = r;
+}
+
+/* sym_name() - The symbol's name, copied: good until the next call. */
+
+char *
+#ifdef __STDC__
+sym_name (SYMH h)
+#else
+sym_name (h)
+     SYMH h;
+#endif
+{
+    static char name[SYMLEN + 8];
+
+    strcpy (name, SP (h)->symblnam);
+    return name;
+}
+
+/* ******************************************************************** *
+ * Reference records. ref_new() makes one whose NxtRef is next.         *
+ * ******************************************************************** */
+
+REFH
+#ifdef __STDC__
+ref_new (int typ, int offset, REFH next)
+#else
+ref_new (typ, offset, next)
+     int typ;
+     int offset;
+     REFH next;
+#endif
+{
+    REFH r = bank_alloc (sizeof (struct ref_xtrnal));
+
+    RP (r)->RfTyp = typ;
+    RP (r)->r_offset = offset;
+    RP (r)->NxtRef = next;
+    return r;
+}
+
+int
+#ifdef __STDC__
+ref_typ (REFH r)
+#else
+ref_typ (r)
+     REFH r;
+#endif
+{
+    return RP (r)->RfTyp;
+}
+
+int
+#ifdef __STDC__
+ref_off (REFH r)
+#else
+ref_off (r)
+     REFH r;
+#endif
+{
+    return RP (r)->r_offset;
+}
+
+REFH
+#ifdef __STDC__
+ref_next (REFH r)
+#else
+ref_next (r)
+     REFH r;
+#endif
+{
+    return RP (r)->NxtRef;
+}
+
+void
+#ifdef __STDC__
+ref_setnext (REFH r, REFH next)
+#else
+ref_setnext (r, next)
+     REFH r;
+     REFH next;
+#endif
+{
+    RP (r)->NxtRef = next;
 }
 
 #ifdef SYMSTATS

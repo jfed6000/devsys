@@ -676,16 +676,16 @@ genreflist ()
 
             while (OptBPtr > d0791)
             {
-                register struct symblstr *__lbl;
+                register SYMH __lbl;
 
                 __lbl = (--OptBPtr)->RAddr;
-                rtyp = __lbl->smbltyp | LOC1Msk | OptBPtr->ETyp;
+                rtyp = sym_typ (__lbl) | LOC1Msk | OptBPtr->ETyp;
 
-                if ((__lbl->locmsk & (NEGMASK | DIRENT)) == 0)
+                if ((sym_msk (__lbl) & (NEGMASK | DIRENT)) == 0)
                 {
                     RefExtern = 1;
 
-                    if (__lbl->reftbl == 0)
+                    if (sym_refs (__lbl) == 0)
                     {
                         ++ref_cnt;
                     }
@@ -694,7 +694,7 @@ genreflist ()
                 }
                 else
                 {
-                    if ((__lbl->smbltyp & 0x0f) == 7)       /* common ? */
+                    if ((sym_typ (__lbl) & 0x0f) == 7)       /* common ? */
                     {
                         RefCreat (__lbl, rtyp, _refdest);
                     }
@@ -727,12 +727,12 @@ l149b (baseref)
 #endif
 {
     struct ref_ent *_curref;
-    struct symblstr *_smblstr;
+    SYMH _smblstr;
     int _basetyp;
 
-    if ((_smblstr = baseref->RAddr)->locmsk & DIRENT)
+    if (sym_msk (_smblstr = baseref->RAddr) & DIRENT)
     {
-        _basetyp = _smblstr->smbltyp | baseref->ETyp;
+        _basetyp = sym_typ (_smblstr) | baseref->ETyp;
         _curref = baseref;
 
         /* Begin parse at baseref +  1 */
@@ -743,9 +743,9 @@ l149b (baseref)
 
             /* Must be inside "psect" */
 
-            if (_smblstr->locmsk & DIRENT)
+            if (sym_msk (_smblstr) & DIRENT)
             {
-                if (((_smblstr->smbltyp | _curref->ETyp) ^ _basetyp) == NEGMASK)
+                if (((sym_typ (_smblstr) | _curref->ETyp) ^ _basetyp) == NEGMASK)
                 {
                     /* Delete "baseref" and Move all ref_ent's from
                      * "baseref" + 1 to _ref down one slot, up to
@@ -791,14 +791,14 @@ l149b (baseref)
 
 static int
 #ifdef __STDC__
-cod_codref (struct symblstr *parm)
+cod_codref (SYMH parm)
 #else
 cod_codref (parm)
-     register struct symblstr *parm;
+     register SYMH parm;
 #endif
 {
-    if ( ((parm->smbltyp & 0x0f) == CODENT) &&
-         (parm->locmsk & DIRENT)            &&
+    if ( ((sym_typ (parm) & 0x0f) == CODENT) &&
+         (sym_msk (parm) & DIRENT)            &&
          ((LOC1Msk & (RELATIVE | LOCMASK)) == (RELATIVE | CODLOC)) )   /* not DIRLOC ? */
     {
         return 1;

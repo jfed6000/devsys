@@ -710,7 +710,7 @@ do_ifs (ZILCH)
             register struct ref_ent *r = d0791;
 
             while (PragUndefZero && (r < OptBPtr) &&
-                   ! (r->RAddr->locmsk & RELATIVE))
+                   ! (sym_msk (r->RAddr) & RELATIVE))
             {
                 ++r;
             }
@@ -825,7 +825,7 @@ codsetup (ZILCH)
     CodTbBgn = S_realcmds;
     CodTbEnd = SLbrEnd;
     jmp_ptr = codtabl;
-    CurLclRef = &LRefs_Code;
+    CurLclRef = LRefs_Code;
     TypeBasic = CODENT;
     DLocField = RELATIVE | CODLOC | DIRENT; /* DIRENT is CONENT?? */
     TmpLocMsk = CODLOC;

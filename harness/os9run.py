@@ -48,7 +48,8 @@ SYSNAMES = {
     0x00: "F$Link", 0x01: "F$Load", 0x02: "F$UnLink", 0x03: "F$Fork", 0x04: "F$Wait",
     0x05: "F$Chain", 0x06: "F$Exit", 0x07: "F$Mem", 0x08: "F$Send", 0x09: "F$Icpt",
     0x0A: "F$Sleep", 0x0C: "F$ID", 0x0D: "F$SPrior", 0x0F: "F$PErr", 0x10: "F$PrsNam",
-    0x15: "F$Time", 0x17: "F$CRC", 0x80: "I$Attach", 0x82: "I$Dup", 0x83: "I$Create", 0x84: "I$Open",
+    0x15: "F$Time", 0x17: "F$CRC", 0x39: "F$AllRAM", 0x4F: "F$MapBlk", 0x50: "F$ClrBlk",
+    0x51: "F$DelRAM", 0x80: "I$Attach", 0x82: "I$Dup", 0x83: "I$Create", 0x84: "I$Open",
     0x85: "I$MakDir", 0x86: "I$ChgDir", 0x87: "I$Delete", 0x88: "I$Seek", 0x89: "I$Read",
     0x8A: "I$Write", 0x8B: "I$ReadLn", 0x8C: "I$WritLn", 0x8D: "I$GetStt",
     0x8E: "I$SetStt", 0x8F: "I$Close",
@@ -196,6 +197,11 @@ def read_map(path):
     return sorted(set(syms))
 
 
+# Physical RAM blocks from F$AllRAM: number -> [8K bytearray, owner pid]
+RAM = {}
+NEXTBLK = [0x40]
+
+
 class Process:
     def __init__(self, disk, module, params, paths, mem_extra=0, trace=False, parent=None,
                  syms=None, breaks=()):
@@ -215,15 +221,20 @@ class Process:
         size = module[2] << 8 | module[3]
         exe = module[9] << 8 | module[10]
         datasz = module[11] << 8 | module[12]
-        # The module sits at the top of the 64K, in 8K blocks, below the
-        # $FE00 page as on the F256; the data area grows up from $0000.
-        top = 0xFE00
+        # The module sits at the top of the 64K, in 8K blocks; on this
+        # NitrOS9 it must end by $FD00 (DESIGN.md D25). The data area
+        # grows up from $0000.
+        top = 0xFD00
         self.modbase = (top - size) & ~0x1FFF
         m[self.modbase:self.modbase + size] = module[:size]
         params = params + b"\r"
         mem = (datasz + mem_extra + len(params) + 0xFF) & ~0xFF
-        if mem > self.modbase:
-            raise SystemExit("not enough memory for the data area")
+        # F$Fork won't start a process whose module and initial data fill
+        # all 8 slots (D25); F$Mem can grow it later
+        if (mem + 0x1FFF) // 0x2000 + (0x10000 - self.modbase) // 0x2000 >= 8:
+            raise OS9Error(E_MEMFUL)
+        self.mapped = {}                    # slot -> block from F$MapBlk
+        self.mapblks = 0
         self.memtop = mem
         self.highwater = mem
         pstart = mem - len(params)
@@ -334,7 +345,8 @@ class Process:
             want = c.d
             if want:
                 want = (want + 0xFF) & ~0xFF
-                if want > self.modbase:
+                limit = min([self.modbase] + [sl * 0x2000 for sl in self.mapped])
+                if want > limit:
                     raise OS9Error(E_MEMFUL)
                 if want > self.memtop:
                     m[self.memtop:want] = bytes(want - self.memtop)
@@ -359,6 +371,34 @@ class Process:
             for b in m[c.x:c.x + c.y]:
                 acc = crc_byte(acc, b)
             m[c.u:c.u + 3] = bytes(acc)
+        elif code == 0x39:                                 # F$AllRAM
+            first = NEXTBLK[0]
+            NEXTBLK[0] += c.b
+            for n in range(first, first + c.b):
+                RAM[n] = [bytearray(0x2000), self.pid]
+            c.d = first
+        elif code == 0x4F:                                 # F$MapBlk (1 block)
+            if c.b != 1 or c.x not in RAM:
+                raise OS9Error(241)                        # E$IBA
+            free = [sl for sl in range(8) if sl * 0x2000 >= self.memtop
+                    and sl * 0x2000 < self.modbase and sl not in self.mapped]
+            if not free:
+                raise OS9Error(E_MEMFUL)
+            sl = max(free)                                 # F$FreeHB: the highest
+            m[sl * 0x2000:(sl + 1) * 0x2000] = RAM[c.x][0]
+            self.mapped[sl] = c.x
+            self.mapblks += 1
+            c.u = sl * 0x2000
+        elif code == 0x50:                                 # F$ClrBlk (1 block)
+            sl = c.u // 0x2000
+            if c.b != 1 or sl not in self.mapped:
+                raise OS9Error(241)
+            RAM[self.mapped.pop(sl)][0][:] = m[sl * 0x2000:(sl + 1) * 0x2000]
+        elif code == 0x51:                                 # F$DelRAM
+            for n in range(c.x, c.x + c.b):
+                if n not in RAM or n in self.mapped.values():
+                    raise OS9Error(241)
+                del RAM[n]
         elif code == 0x00:                                 # F$Link
             raise OS9Error(E_MNF)
         elif code == 0x03:                                 # F$Fork
@@ -543,14 +583,21 @@ def main():
     module = open(a.module, "rb").read()
     params = " ".join(a.args).encode("latin-1")
     syms = read_map(a.map) if a.map else []
-    p = Process(disk, module, params, paths, a.mem, a.trace, syms=syms, breaks=a.breaks)
+    try:
+        p = Process(disk, module, params, paths, a.mem, a.trace, syms=syms, breaks=a.breaks)
+    except OS9Error as e:
+        raise SystemExit(f"os9run: F$Fork would fail: error {e.code}")
     status = p.run()
+    if RAM:
+        print(f"os9run: {len(RAM)} RAM blocks never given back (F$DelRAM)", file=sys.stderr)
+        status = status or 1
     for f in p.paths:
         if f is not None:
             f.close()
     if a.stats:
         print(f"os9run: exit {status}, {p.instr} instructions, data area "
-              f"{p.highwater} bytes (module at ${p.modbase:04X})", file=sys.stderr)
+              f"{p.highwater} bytes (module at ${p.modbase:04X}), "
+              f"{NEXTBLK[0] - 0x40} RAM blocks, {p.mapblks} F$MapBlk", file=sys.stderr)
     sys.exit(status)
 
 

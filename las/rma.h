@@ -166,11 +166,11 @@ GLOBAL
 GLOBAL direct CODFORM *Cod_Ent;
 GLOBAL direct CODFORM *CodTbBgn,
                       *CodTbEnd;
-GLOBAL direct struct symblstr *CurntLabel,                      /* D007a */
-                               *CurLclRef;
-GLOBAL struct symblstr          LRefs_Code,
-                                LRefs_DPD,
-                                LRefs_NonDPdat;
+GLOBAL direct SYMH CurntLabel,                      /* D007a */
+                   CurLclRef;
+GLOBAL SYMH        LRefs_Code,  /* local reference lists (sym_anon) */
+                   LRefs_DPD,
+                   LRefs_NonDPdat;
 /* delete this.. try to make whole thing a single structure..
  * seems that these aren't inline in linux, at least */
 /*GLOBAL direct char prebyt, OpCod;

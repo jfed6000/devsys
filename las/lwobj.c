@@ -84,9 +84,9 @@ symval (name, dflt)
      int dflt;
 #endif
 {
-    struct symblstr *sym = sym_find (name);
+    SYMH sym = sym_find (name);
 
-    return (sym && (sym->locmsk & RELATIVE)) ? (int) sym->s_ofst : dflt;
+    return (sym && (sym_msk (sym) & RELATIVE)) ? (int) sym_val (sym) : dflt;
 }
 
 /* ******************************************************************** *
@@ -179,7 +179,7 @@ static void
 os9_marker (ZILCH)
 {
     static char mname[] = "__os9";
-    struct symblstr *sym = sym_find (mname);
+    SYMH sym = sym_find (mname);
 
     if ( ! sym)
     {
@@ -187,9 +187,9 @@ os9_marker (ZILCH)
         ++GlobCnt;                      /* one more global in the ROF */
     }
 
-    sym->smbltyp = CODENT | DIRENT;     /* a constant */
-    sym->locmsk = (sym->locmsk & LOC1BYT) | RELATIVE | CODENT | DIRENT;
-    sym->s_ofst = (symval ("edition", -1) >= 0) ? 1 : 0;
+    sym_settyp (sym, CODENT | DIRENT);     /* a constant */
+    sym_setmsk (sym, (sym_msk (sym) & LOC1BYT) | RELATIVE | CODENT | DIRENT);
+    sym_setval (sym, (symval ("edition", -1) >= 0) ? 1 : 0);
 }
 
 /* ******************************************************************** *
@@ -207,7 +207,7 @@ rank_marker (name)
 {
     static char mname[] = "__lwsec";
     static char *order[] = {"code", ".text", "data", ".data", 0};
-    struct symblstr *sym = sym_find (mname);
+    SYMH sym = sym_find (mname);
     int rank;
 
     for (rank = 0; order[rank] && strcmp (order[rank], name); ++rank)
@@ -220,9 +220,9 @@ rank_marker (name)
         ++GlobCnt;                      /* one more global in the ROF */
     }
 
-    sym->smbltyp = CODENT | DIRENT;     /* a constant */
-    sym->locmsk = (sym->locmsk & LOC1BYT) | RELATIVE | CODENT | DIRENT;
-    sym->s_ofst = rank;
+    sym_settyp (sym, CODENT | DIRENT);     /* a constant */
+    sym_setmsk (sym, (sym_msk (sym) & LOC1BYT) | RELATIVE | CODENT | DIRENT);
+    sym_setval (sym, rank);
     SecRanked = 1;
 }
 

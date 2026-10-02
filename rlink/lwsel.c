@@ -49,7 +49,9 @@ struct lwmod
                                  * struct members (dref_node has refs) */
 };
 
-static struct lwmod Mods[MAXMODS];
+static struct lwmod *Mods;      /* MAXMODS of them, allocated by lw_select:
+                                 * a static array took 14K of the 6809's
+                                 * 64K whether --lwlink was used or not */
 static int NMods;
 static char TmpName[256];
 
@@ -242,6 +244,9 @@ lw_select ()
     struct lwmod **order;
     FILE *out;
     int i, j, n, changed;
+
+    if (!(Mods = (struct lwmod *)malloc(MAXMODS * sizeof(*Mods))))
+        fatal("out of memory in lw_select");
 
     /* Number the files in command-line order: input file i came after
      * the libraries given before it (lpos, rlink_main.c) */

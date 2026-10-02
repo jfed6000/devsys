@@ -132,7 +132,7 @@ createMac (ZILCH)    /* l3183 */
         _newmac->MSblPtr = CurntLabel;
         _newmac->MWrkFil = macfp1;
         fseek (macfp1, 0l, END);   /* might be appending to an existing file */
-        _namptr = CurntLabel->symblnam;
+        _namptr = sym_name (CurntLabel);
 
         /* Write macro name to tmpfile */
 
@@ -238,9 +238,9 @@ McNamCmp (srchname)
     while (_curntmac)
     {
         /* First simply compare first char of names */
-        if (srchname[0] == (_curntmac->MSblPtr)->symblnam[0])
+        if (srchname[0] == sym_name (_curntmac->MSblPtr)[0])
         {
-            if (strcmp (srchname, ((_curntmac->MSblPtr)->symblnam)) == 0)
+            if (strcmp (srchname, sym_name (_curntmac->MSblPtr)) == 0)
             {
                 return _curntmac;
             }

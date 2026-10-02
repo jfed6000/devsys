@@ -12,14 +12,20 @@ Suites (default: all):
         output for las, rlink and DCC's own C sources); each ROF must equal
         the host las's, apart from the assembly date
   link  native rlink links each tool from the host's .r files; each module
-        must equal the host rlink's (native/bin). las and dcc68 are left
-        out: linking them needs more memory than rlink has in 64K (phase 8)
+        must equal the host rlink's (native/bin)
   cc    native dcc compiles and links a small C program (native/hello.c)
         with the whole native chain (dcpp, dcc68, dco68, las, rlink); the
         module must equal the one the host passes build from the same
         source, and it must run. dcc's rlink puts it in /dd/CMDS
 
-  python3 harness/native.py                  # all suites
+  lw    native las assembles NitrOS9 module sources from the Level 2
+        build (lwdiff's jobs.json; run harness/lwdiff.py first). Each
+        module must equal las/build/nosz's (no ,pcr sizing, as natively)
+        on the same files. Slow: about 3 s of wall time per file. Not in
+        the default set; --only TEXT picks files whose id contains TEXT
+
+  python3 harness/native.py                  # las, link, cc
+  python3 harness/native.py lw --only scfg   # one NitrOS9 file
   python3 harness/native.py las --keep       # keep the image for inspection
   python3 harness/native.py --image FILE     # another Jr2 image to start from
 
@@ -51,7 +57,7 @@ IMAGE = os.path.join(HOME, "projects/wild/netrek/nitros9/recipes/wildbits/l2/l2_
 WORK = os.path.join(HERE, "out", "native")
 PAD = 128 * 1024 * 1024         # 2^27 bytes: a block count MAME accepts
 TOOLS = ["las", "rlink", "dcc", "dcpp", "dcc68", "dco68"]
-LINKABLE = ["rlink", "dcc", "dcpp", "dco68"]     # fit native rlink's memory
+LINKABLE = TOOLS
 MARKER = "MARKER"
 
 
@@ -253,7 +259,140 @@ def host_hello():
     return os.path.join(d, "hello")
 
 
-SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc}
+JOBS = os.path.join(HERE, "out", "l2-jr2", "jobs.json")
+GEN = os.path.join(HERE, "out", "l2-jr2", "generated")
+NOSZ = os.path.join(DEVSYS, "las/build/nosz/las")
+ONLY = []
+
+
+def is_text(path):
+    data = open(path, "rb").read()
+    return b"\0" not in data
+
+
+def stage_lw():
+    """lwdiff's module jobs and, for each, the files it reads, placed as
+    (source, [(file, place)]) where place is "S/name" (shared: the name
+    is unique), "J/src/name" (the job's own) or "J/name" (reached as
+    ../name from the source's directory)."""
+    import json
+    import collections
+    jobs = [j for j in json.load(open(JOBS)) if j["format"] == "os9"]
+    if ONLY:
+        jobs = [j for j in jobs if any(o in j["id"] for o in ONLY)]
+
+    def find(name, here, incs):
+        for d in [here] + incs + [GEN]:
+            q = os.path.normpath(os.path.join(d, name))
+            if os.path.isfile(q):
+                return q
+        return None
+    uses = {}
+    owners = collections.defaultdict(set)
+    for j in jobs:
+        seen, stack = {}, [(j["source"], None)]
+        while stack:
+            path, how = stack.pop()
+            if path in seen:
+                continue
+            seen[path] = how
+            for line in open(path, encoding="latin-1"):
+                t = line.split()
+                if line[:1].isspace() and len(t) >= 2 and \
+                        t[0].lower() in ("use", "include", "includebin"):
+                    q = find(t[1], os.path.dirname(path), j["includes"])
+                    if q:
+                        stack.append((q, t[1]))
+        uses[j["id"]] = seen
+        for path in seen:
+            owners[os.path.basename(path)].add(path)
+    out = []
+    for j in jobs:
+        files = []
+        for path, how in uses[j["id"]].items():
+            name = os.path.basename(path)
+            if path == j["source"]:
+                place = "J/src/" + name
+            elif len(owners[name]) == 1:
+                place = "S/" + name
+            elif how and how.startswith("../"):
+                place = "J/" + name
+            else:
+                place = "J/src/" + name
+            files.append((path, place))
+        out.append((j, files))
+    return out
+
+
+def lw_args(j):
+    """The job's las options. Natively they go in a file read with
+    --args= (las file_io.c): the shell takes 200 characters a line, and
+    cstart would split a --pragma= list at its commas."""
+    a = ["--lwasm"] + [f"-D{d}" for d in j["defines"]]
+    if j["pragmas"]:
+        a.append("--pragma=" + ",".join(j["pragmas"]))
+    return a
+
+
+def suite_lw(dsk):
+    staged = stage_lw()
+    os9("makdir", f"{dsk},T/S", check=False)
+    done, lines, work = set(), [], []
+    for n, (j, files) in enumerate(staged):
+        jd = f"T/J{n}"
+        os9("makdir", f"{dsk},{jd}", check=False)
+        os9("makdir", f"{dsk},{jd}/src", check=False)
+        for path, place in files:
+            target = place.replace("J/", jd + "/") if place.startswith("J/") else "T/" + place
+            if target in done:
+                continue
+            done.add(target)
+            put(path, f"{dsk},{target}", text=is_text(path))
+        src = os.path.basename(j["source"])
+        argfile = os.path.join(WORK, "args.tmp")
+        with open(argfile, "w") as f:
+            f.write("\n".join(lw_args(j) + ["-i=/dd/T/S", "-o=M"]) + "\n")
+        put(argfile, f"{dsk},{jd}/src/A", text=True)
+        lines += [f"chd /dd/{jd}/src", f"las {src} --args=A >L >>E"]
+        work.append((n, j, files))
+    # the shell reads at most 200 characters of a line; the rest becomes
+    # another (broken) command
+    longest = max((len(l) for l in lines), default=0)
+    if longest > 199:
+        sys.exit(f"a startup line is {longest} characters (the shell takes 200)")
+
+    def check():
+        bad = 0
+        hostroot = os.path.join(WORK, "lwhost")
+        for n, j, files in work:
+            # the same layout on Linux, assembled by the no-sizing las
+            jd = os.path.join(hostroot, f"J{n}")
+            os.makedirs(os.path.join(jd, "src"), exist_ok=True)
+            os.makedirs(os.path.join(hostroot, "S"), exist_ok=True)
+            for path, place in files:
+                t = os.path.join(jd, place[2:]) if place.startswith("J/") \
+                    else os.path.join(hostroot, place)
+                shutil.copyfile(path, t)
+            ref = os.path.join(jd, "ref")
+            argv = [NOSZ, os.path.basename(j["source"])] + lw_args(j) + \
+                ["-i=" + os.path.join(hostroot, "S"), "-o=" + ref]
+            subprocess.run(argv, cwd=os.path.join(jd, "src"), env=lwdiff.clean_env(),
+                           capture_output=True)
+            out = os.path.join(WORK, "lw", j["id"])
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            ok = get(f"{dsk},T/J{n}/src/M", out)
+            if ok and os.path.exists(ref) and open(out, "rb").read() == open(ref, "rb").read():
+                continue
+            bad += 1
+            err = (os9_text(f"{dsk},T/J{n}/src/E") or "").strip()
+            print(f"  lw {j['id']}: {'differs' if ok else 'no output'} {err[:150]}")
+        print(f"lw: {len(work) - bad} of {len(work)} NitrOS9 modules identical to las/build/nosz")
+        return bad == 0
+    return lines, check
+
+
+SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc, "lw": suite_lw}
+DEFAULT = ["las", "link", "cc"]
 
 
 # ------------------------------------------------------------------ MAME
@@ -305,8 +444,11 @@ def main():
     ap.add_argument("--seconds", type=int, default=3600,
                     help="emulated seconds before giving up")
     ap.add_argument("--keep", action="store_true", help="keep the test image")
+    ap.add_argument("--only", action="append", default=[],
+                    help="lw suite: only jobs whose id contains this (repeatable)")
     args = ap.parse_args()
-    suites = args.suites or list(SUITES)
+    ONLY[:] = args.only
+    suites = args.suites or DEFAULT
     for s in suites:
         if s not in SUITES:
             sys.exit(f"unknown suite {s}: choose from {', '.join(SUITES)}")

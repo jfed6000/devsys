@@ -6,10 +6,10 @@ vpath %.h ../..
 RDIR = RELS
 ODIR = .
 OBJS = rma_main.o findcmd.o part3.o registers.o directives.o labels.o \
-   numeric.o file_io.o macros.o symtab.o module.o lwobj.o preload.o sizing.o
+   numeric.o file_io.o macros.o symtab.o bank.o module.o lwobj.o preload.o sizing.o
 
 PROTOS = rma_main.c findcmd.c part3.c registers.c directives.c labels.c \
-   numeric.c file_io.c macros.c symtab.c module.c lwobj.c preload.c sizing.c
+   numeric.c file_io.c macros.c symtab.c bank.c module.c lwobj.c preload.c sizing.c
 
 CFLAGS = -m32 -g -Wall
 LFLAGS = -m32

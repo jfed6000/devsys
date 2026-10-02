@@ -63,7 +63,7 @@ void do_psect(void);
 void wrtvalid(void);
 void w_ocod(char *_codaddr, int _codlen);
 void wrt_refs(void);
-void wrtCmmns(struct symblstr *parm);
+void wrtCmmns(SYMH parm);
 /* findcmd.c */
 CODFORM *FindCmd(char *src_str, CODFORM *cod_strt, CODFORM *cod_stop);
 /* labels.c */
@@ -72,7 +72,7 @@ int do_label(void);
 int lblnumeric(void);
 void l2069(int newmode);
 void l20a4(int address);
-void RefCreat(struct symblstr *mylabel, int rtyp, int adrs);
+void RefCreat(SYMH mylabel, int rtyp, int adrs);
 char SkipSpac(void);
 void *getmem(int memreq);
 void do_defines(void);
@@ -84,7 +84,7 @@ int preload_resolve(struct ref_ent *from, long *value);
 int pl_fix(struct ref_ent *from);
 /* sizing.c */
 void sz_pass(void);
-void sz_label(struct symblstr *sym);
+void sz_label(SYMH sym);
 int sz_pcr(int value, int len8);
 void sz_other(void);
 void sz_trial(void);
@@ -108,9 +108,28 @@ int mod_rmb(void);
 int mod_org(void);
 int mod_dot(void);
 /* symtab.c */
-struct symblstr *sym_find(char *name);
-struct symblstr *sym_add(char *name);
-void sym_walk(void (*fn)(struct symblstr *));
+char *bank_ptr(unsigned h);
+unsigned bank_alloc(int size);
+void bank_done(void);
+void bank_stats(void);
+SYMH sym_find(char *name);
+SYMH sym_add(char *name);
+SYMH sym_anon(void);
+void sym_walk(void (*fn)(SYMH));
+int sym_typ(SYMH h);
+int sym_msk(SYMH h);
+SVAL sym_val(SYMH h);
+REFH sym_refs(SYMH h);
+void sym_settyp(SYMH h, int v);
+void sym_setmsk(SYMH h, int v);
+void sym_setv(SYMH h, SVAL v);
+void sym_setrefs(SYMH h, REFH r);
+char *sym_name(SYMH h);
+REFH ref_new(int typ, int offset, REFH next);
+int ref_typ(REFH r);
+int ref_off(REFH r);
+REFH ref_next(REFH r);
+void ref_setnext(REFH r, REFH next);
 #ifdef SYMSTATS
 void sym_stats(long refs);
 #endif
@@ -285,8 +304,27 @@ int mod_rmb();
 int mod_org();
 int mod_dot();
 /* symtab.c */
-struct symblstr *sym_find();
-struct symblstr *sym_add();
+char *bank_ptr();
+unsigned bank_alloc();
+void bank_done();
+void bank_stats();
+SYMH sym_find();
+SYMH sym_add();
+SYMH sym_anon();
+int sym_typ();
+int sym_msk();
+SVAL sym_val();
+REFH sym_refs();
+void sym_settyp();
+void sym_setmsk();
+void sym_setv();
+void sym_setrefs();
+char *sym_name();
+REFH ref_new();
+int ref_typ();
+int ref_off();
+REFH ref_next();
+void ref_setnext();
 void sym_walk();
 #ifdef SYMSTATS
 void sym_stats();
@@ -360,6 +398,9 @@ int nstmacdf();
 int e_report();
 void errexit();
 #endif   /* __STDC__*/
+
+/* symtab.c: always pass a symbol value as an SVAL */
+#define sym_setval(h, v) sym_setv ((h), (SVAL) (v))
 
 #endif   /* #ifndef _HAVEPROTO_*/
 

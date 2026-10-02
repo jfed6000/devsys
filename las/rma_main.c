@@ -48,10 +48,15 @@ main (argc, argv)
         listON = ON;
     }
 
-    LRefs_Code.smbltyp = CODENT;
-    LRefs_DPD.smbltyp = INIENT | DIRENT;
-    LRefs_NonDPdat.smbltyp = INIENT;
-    LRefs_Code.locmsk = LRefs_DPD.locmsk = LRefs_NonDPdat.locmsk = DIRENT;
+    LRefs_Code = sym_anon ();
+    LRefs_DPD = sym_anon ();
+    LRefs_NonDPdat = sym_anon ();
+    sym_settyp (LRefs_Code, CODENT);
+    sym_settyp (LRefs_DPD, INIENT | DIRENT);
+    sym_settyp (LRefs_NonDPdat, INIENT);
+    sym_setmsk (LRefs_Code, DIRENT);
+    sym_setmsk (LRefs_DPD, DIRENT);
+    sym_setmsk (LRefs_NonDPdat, DIRENT);
     NowMac = 0;
 
     if (OFlg)
@@ -72,9 +77,9 @@ main (argc, argv)
         SrcFile = f_opn (*_curntsrc, "r");
         CurSrcName = *_curntsrc;
 
-        LRefs_Code.reftbl = LRefs_DPD.reftbl
-                          = LRefs_NonDPdat.reftbl
-                          = (struct ref_xtrnal *) 0;
+        sym_setrefs (LRefs_Code, 0);
+        sym_setrefs (LRefs_DPD, 0);
+        sym_setrefs (LRefs_NonDPdat, 0);
         Pass2 = *_nam = _ttl[0] = '\0';
 
         /* lwasm sizes ",pcr" offsets itself: a trial pass 1 in a child
@@ -129,6 +134,7 @@ main (argc, argv)
         extern long StatRefs;
 
         sym_stats (StatRefs);
+        bank_stats ();
     }
 #endif
 
@@ -143,9 +149,11 @@ main (argc, argv)
             unlink (O_Nam);
         }
 
+        bank_done ();
         exit (1);
     }
 
+    bank_done ();
     exit (0);
 }
 
@@ -847,6 +855,7 @@ errexit (report)
 #endif
 {
     fprintf (stderr, "asm: %s\n", report);
+    bank_done ();
     exit (errno);
 }
 

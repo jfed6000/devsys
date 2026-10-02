@@ -17,7 +17,7 @@ void * getmem ();
 
 static void SetArow (                  /* L204a() */
 #ifdef __STDC__
-struct symblstr *parm
+SYMH parm
 #endif
 );
 
@@ -75,7 +75,7 @@ MovLbl (destpos)
 int
 do_label (ZILCH)
 {
-    register struct symblstr *_mysmbl;
+    register SYMH _mysmbl;
 
     CurntLabel = 0;
 
@@ -104,14 +104,14 @@ do_label (ZILCH)
             CurntLabel = _mysmbl = sym_add (AltLbl);
         }
 
-        if ( ! (_mysmbl->locmsk & RELATIVE))
+        if ( ! (sym_msk (_mysmbl) & RELATIVE))
         {
-            _mysmbl->smbltyp = (_mysmbl->smbltyp & 0xf0) | WhereLoc;
-            _mysmbl->locmsk |= LblTyp;
+            sym_settyp (_mysmbl, (sym_typ (_mysmbl) & 0xf0) | WhereLoc);
+            sym_setmsk (_mysmbl, sym_msk (_mysmbl) | (LblTyp));
 
             if (S_Addrs)
             {
-                _mysmbl->s_ofst = *S_Addrs;
+                sym_setval (_mysmbl, *S_Addrs);
             }
 
             if (SzTrial && (S_Addrs == (InTop ? &AbsCtr : &CodeSize)))
@@ -124,7 +124,7 @@ do_label (ZILCH)
              * set again was counted twice and the header promised more
              * globals than were written. */
 
-            if ((_mysmbl->locmsk & 0xc6) == (RELATIVE | CODENT | DIRENT))
+            if ((sym_msk (_mysmbl) & 0xc6) == (RELATIVE | CODENT | DIRENT))
             {
                 ++GlobCnt;
             }
@@ -135,9 +135,9 @@ do_label (ZILCH)
              * result in an error later on when reparsing on pass 2
              */
 
-            if ((_mysmbl->smbltyp & 0x0f) != (CODENT | INIENT))
+            if ((sym_typ (_mysmbl) & 0x0f) != (CODENT | INIENT))
             {
-                _mysmbl->locmsk |= NEGMASK;
+                sym_setmsk (_mysmbl, sym_msk (_mysmbl) | (NEGMASK));
             }
         }
 
@@ -146,7 +146,7 @@ do_label (ZILCH)
 
     /* Pass 2 from here on out */
 
-    if ( ! _mysmbl || ! (_mysmbl->locmsk & RELATIVE))
+    if ( ! _mysmbl || ! (sym_msk (_mysmbl) & RELATIVE))
     {
         /* A label pass 1 never defined: the two passes read different
          * lines. Name it, to make the cause findable. */
@@ -157,9 +157,9 @@ do_label (ZILCH)
         errexit (msg);
     }
 
-    _mysmbl->locmsk &= (~DIRLOC);
+    sym_setmsk (_mysmbl, sym_msk (_mysmbl) & ((~DIRLOC)));
 
-    if ((_mysmbl->locmsk) & NEGMASK)
+    if ((sym_msk (_mysmbl)) & NEGMASK)
     {
         e_report ("redefined name");
         return 1;
@@ -167,11 +167,11 @@ do_label (ZILCH)
     else
     {
         if ( (S_Addrs)                                &&
-             ((_mysmbl->smbltyp & 0x0f) == TypeBasic) &&    /* Default Type */
-             (_mysmbl->s_ofst != *S_Addrs)               )
+             ((sym_typ (_mysmbl) & 0x0f) == TypeBasic) &&    /* Default Type */
+             (sym_val (_mysmbl) != *S_Addrs)               )
         {
             phaserr ();
-            _mysmbl->s_ofst = *S_Addrs;
+            sym_setval (_mysmbl, *S_Addrs);
         }
     }
 
@@ -187,8 +187,8 @@ do_label (ZILCH)
 int
 lblnumeric (ZILCH)
 {
-    register struct symblstr *entry;
-    struct ref_xtrnal *_refptr;
+    register SYMH entry;
+    REFH _refptr;
     int s_type;
 
     entry = CurntLabel = sym_find (d0587);
@@ -207,41 +207,41 @@ lblnumeric (ZILCH)
         }
     }
 
-    s_type = entry->smbltyp & 0x0f;
+    s_type = sym_typ (entry) & 0x0f;
 
     /* below = IS CODLOC or if not CODLOC, NOT RELATIVE */
 
-    if ((entry->locmsk ^ RELATIVE) & (RELATIVE | CODLOC))
+    if ((sym_msk (entry) ^ RELATIVE) & (RELATIVE | CODLOC))
     {
         IsExtrn = 1;
 
         if (PASS1)
         {
-            entry->locmsk |= DIRLOC;
+            sym_setmsk (entry, sym_msk (entry) | (DIRLOC));
         }
 
         /* If "set" or "equ" ? */
 
-        if ( (entry->locmsk & RELATIVE)   &&
+        if ( (sym_msk (entry) & RELATIVE)   &&
              ((s_type == (CODENT | DIRENT)) || (s_type == (CODENT | INIENT)))    )
         {
-            _refptr = entry->reftbl;
+            _refptr = sym_refs (entry);
 
             /* Populate d0791 with refs to this symbol */
 
             while (_refptr)
             {
-                OptBPtr->ETyp = _refptr->RfTyp;
+                OptBPtr->ETyp = ref_typ (_refptr);
 
                 /* FIXME : I _think the following cast is in order
                  * because I believe that r_offset for "set" and "equ"
                  * is a ptr to struct symbstr rather than address
                  */
 
-                OptBPtr->RAddr = (struct symblstr *)_refptr->r_offset;
+                OptBPtr->RAddr = (SYMH)ref_off (_refptr);
                 SetArow (OptBPtr->RAddr);
                 ++OptBPtr;
-                _refptr = _refptr->NxtRef;
+                _refptr = ref_next (_refptr);
             }
         }
         else        /* not "equ" or "set" ? */
@@ -255,7 +255,7 @@ lblnumeric (ZILCH)
     {
         if (Pass2)
         {
-            if (entry->locmsk & DIRLOC)
+            if (sym_msk (entry) & DIRLOC)
             {
                 SetArow (entry);
             }
@@ -268,24 +268,24 @@ lblnumeric (ZILCH)
     }
     else
     {
-        NmbrInt = entry->s_ofst;
+        NmbrInt = sym_val (entry);
     }
     return 1;
 }
 
 static void
 #ifdef __STDC__
-SetArow (struct symblstr *parm)                  /* L204a() */
+SetArow (SYMH parm)                  /* L204a() */
 #else
 SetArow (parm)
-     struct symblstr *parm;
+     SYMH parm;
 #endif
 {
-    register struct symblstr *sbl = parm;
+    register SYMH sbl = parm;
 
     if ( ! HadArrow)
     {
-        if ((sbl->smbltyp & (CODENT | DIRENT)) == DIRENT)
+        if ((sym_typ (sbl) & (CODENT | DIRENT)) == DIRENT)
         {
             HadArrow = 1;
         }
@@ -313,16 +313,16 @@ l2069 (newmode)
 {
     /* Do nothing if already constant */
 
-    if ( ! ((CurntLabel->locmsk) & NEGMASK))
+    if ( ! ((sym_msk (CurntLabel)) & NEGMASK))
     {
         if ((newmode != (CODENT | INIENT)) &&
-                ((CurntLabel->smbltyp & 0x0f) == (CODENT | INIENT)))
+                ((sym_typ (CurntLabel) & 0x0f) == (CODENT | INIENT)))
         {
-            (CurntLabel->locmsk) |= NEGMASK;
+            sym_setmsk (CurntLabel, sym_msk (CurntLabel) | NEGMASK);
         }
         else
         {
-            CurntLabel->smbltyp = ((CurntLabel->smbltyp & 0xf0) | newmode);
+            sym_settyp (CurntLabel, ((sym_typ (CurntLabel) & 0xf0) | newmode));
         }
     }
 }
@@ -344,24 +344,24 @@ l20a4 (address)
         address;
 #endif
 {
-    register struct symblstr *reg = CurntLabel;
+    register SYMH reg = CurntLabel;
     struct ref_ent *var1;
-    struct ref_xtrnal *var2;
+    REFH var2;
     int _symboltype;
 
-    _symboltype = reg->smbltyp & 0x0f;
+    _symboltype = sym_typ (reg) & 0x0f;
 
     if (OptBPtr == d0791)       /* If no refs to this */
     {
-        if ((reg->smbltyp & CODENT) && (reg->locmsk & CODLOC))
+        if ((sym_typ (reg) & CODENT) && (sym_msk (reg) & CODLOC))
         {
-            reg->locmsk &=  ~CODLOC;      /* Unset CODLOC */
+            sym_setmsk (reg, sym_msk (reg) & (~CODLOC));      /* Unset CODLOC */
         }
         else
         {
             if (      (Pass2 > 0)
-                 &&   (address != reg->s_ofst)
-                 && ! (reg->locmsk & NEGMASK)
+                 &&   (address != sym_val (reg))
+                 && ! (sym_msk (reg) & NEGMASK)
                  &&   (_symboltype != (CODENT | INIENT)))
             {
                 phaserr ();
@@ -374,7 +374,7 @@ l20a4 (address)
         {
             if (_symboltype == (CODENT | DIRENT))  /* Constant */
             {
-                reg->locmsk |= CODLOC;
+                sym_setmsk (reg, sym_msk (reg) | (CODLOC));
 
                 while (OptBPtr > d0791)
                 {
@@ -393,7 +393,7 @@ l20a4 (address)
         {
             if (_symboltype == (CODENT | DIRENT))
             {
-                var2 = reg->reftbl;    /* FIXME */
+                var2 = sym_refs (reg);    /* FIXME */
                 var1 = OptBPtr;
 
                 while (var2 && (d0791 < var1))
@@ -402,36 +402,35 @@ l20a4 (address)
 
                     /* See "FIXME 0" above */
 
-                    if ((var2->r_offset != (int)(var1->RAddr)))
+                    if ((ref_off (var2) != (int)(var1->RAddr)))
                     {
                         break;
                     }
 
-                    var2 = var2->NxtRef;    /* ERROR */
+                    var2 = ref_next (var2);    /* ERROR */
                 }
 
                 if ((var2 != 0) || (d0791 != var1) ||
-                    (reg->s_ofst != (int) address))
+                    (sym_val (reg) != (int) address))
                 {
                     phaserr ();
                 }
                 else
                 {
-                    if (reg->locmsk & CODENT)
+                    if (sym_msk (reg) & CODENT)
                     {
-                        var2 = reg->reftbl;    /* FIXME incompat. ptr type */
+                        var2 = sym_refs (reg);    /* FIXME incompat. ptr type */
 
                         while (var2)
                         {
                             /* FIXME : cast to avoid errors.  */
-                            if ( ! ((((struct symblstr *)
-                                            (var2->r_offset))->locmsk) &
+                            if ( ! (sym_msk ((SYMH) ref_off (var2)) &
                                                 (NEGMASK | DIRENT)) )
                             {
                                 ilExtRef ();
                             }
 
-                            var2 = var2->NxtRef;    /* FIXME ERROR */
+                            var2 = ref_next (var2);    /* FIXME ERROR */
                         }
                     }
                 }
@@ -443,7 +442,7 @@ l20a4 (address)
         }
     }
 
-    reg->s_ofst = address;
+    sym_setval (reg, address);
 }
 
 static int
@@ -453,34 +452,28 @@ phaserr (ZILCH)
 }
 
 /* ******************************************************************** *
- * RefCreat() - Creates a new ref_xtrnal                                *
- * Passed : (1) mylabel - struct symblstr                               *
+ * RefCreat() - Creates a new reference record                          *
+ * Passed : (1) mylabel - the symbol                                    *
  *          (2) rtyp  - type to store in RfTyp                          *
  *          (3) adrs  - offset to for r_ofset                           *
  *          This reference will replace whatever ref is stored in       *
- *          mylabel->reftbl and that ref will become this ref's NxtRef  *
+ *          mylabel's reftbl and that ref will become this ref's NxtRef *
  * ******************************************************************** */
 
 void
 #ifdef __STDC__
-RefCreat (struct symblstr *mylabel, int rtyp, int adrs)      /*   L21c9()  */
+RefCreat (SYMH mylabel, int rtyp, int adrs)      /*   L21c9()  */
 #else
 RefCreat (mylabel, rtyp, adrs)    /*   L21c9()  */
-     struct symblstr *mylabel;
+     SYMH mylabel;
      char rtyp;
      int adrs;
 #endif
 {
-    register struct ref_xtrnal *newref;
-
-    newref = (struct ref_xtrnal *) getmem (sizeof (struct ref_xtrnal));
 #ifdef SYMSTATS
     ++StatRefs;
 #endif
-    newref->RfTyp = rtyp;
-    newref->r_offset = adrs;
-    newref->NxtRef = mylabel->reftbl;
-    mylabel->reftbl = newref;
+    sym_setrefs (mylabel, ref_new (rtyp, adrs, sym_refs (mylabel)));
 }
 
 
