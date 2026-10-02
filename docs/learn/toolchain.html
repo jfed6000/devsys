@@ -887,7 +887,7 @@ bucket (char *name)
 <thead><tr><th>Part</th><th>Idea</th><th>Effect</th></tr></thead>
 <tbody>
 <tr><td>Compact entries</td><td>Store each name at its real length instead of in a 64-byte box.</td><td>About 18 bytes per symbol instead of 73. No slower.</td></tr>
-<tr><td>Banked tables</td><td>Keep the table in extra RAM blocks, mapped in one at a time (chapter 8). Each bucket lives in one block, so a lookup maps at most one block.</td><td>The table is no longer limited by the 64K space.</td></tr>
+<tr><td>Banked tables</td><td>Keep the table in extra RAM blocks, mapped in one at a time (chapter 8). Done in phase 8, below.</td><td>The table is no longer limited by the 64K space.</td></tr>
 <tr><td>Precompiled defs</td><td>Assemble the defs once and save the finished table blocks to disk. Later builds load the saved blocks instead of re-reading 1,600 definitions twice.</td><td>Much faster builds; the defs table is shared and read-only.</td></tr>
 </tbody></table></div>
 <p class="why">Precompiled headers in modern C compilers use the same trick: do the expensive, unchanging work once and save the result.</p>
@@ -903,6 +903,29 @@ bucket (char *name)
 </tbody></table></div>
 <p>That's an <strong>interface</strong>: a promise about what you can ask for, with the how kept private. Before, the hashing and tree code was spread over <code>labels.c</code> and <code>file_io.c</code>. Now the hashing, the buckets and the tree are invisible outside <code>symtab.c</code>, so compact entries and banked blocks can replace them without touching the callers.</p>
 <p>One detail had to be preserved exactly: the order <code>sym_walk</code> visits symbols in. It decides the order of names in the listing and in the object file, so changing it would change the output, even though no symbol changed.</p>
+
+<h3>Moving the table into banked blocks</h3>
+<p>Phase 1 hid how symbols are <em>found</em>. But once found, a symbol was still a pointer, and about 130 places in the assembler read its fields through it. That's fine while the table sits in ordinary memory. In a banked block it isn't. Only one block is visible at a time, in an 8K <strong>window</strong>, and a pointer into the window is only good until another block is mapped there. After that the same address shows a different block's bytes.</p>
+<p class="cap">Step 1: handles instead of pointers</p>
+<p>So callers now get a <strong>handle</strong>: a number that names a symbol without being its address. Only <code>symtab.c</code> turns a handle into a pointer, and it uses that pointer at once. Everyone else asks: <code>sym_typ(h)</code>, <code>sym_setval(h, v)</code>, <code>sym_name(h)</code>. To make sure nothing was missed, the symbol's structure was moved inside <code>symtab.c</code>, where no other file can see it. Every old access became a compile error, about 150 of them, and each was rewritten. The output didn't change: the regression test stayed at 741 of 741.</p>
+<p>A handle is 16 bits. The top 4 hold the block number plus one, and the low 12 hold the offset in the block divided by 2 (entries start on even addresses). Block 2, offset <code>$1A4</code> is handle <code>$30D2</code>. That allows 15 blocks, 120K of symbols. The largest file in the build needs 51K. Adding one means no handle is ever 0, so 0 can still mean "no symbol".</p>
+<p class="cap">Step 2: the window</p>
+<p>The blocks come from <code>F$AllRAM</code>. <code>F$MapBlk</code> maps one into the highest free slot of the process, which for <code>las</code> is the slot just below its module, and <code>F$ClrBlk</code> unmaps it again. <code>las</code> now looks like this on the F256:</p>
+<div class="memmap" role="img" aria-label="las with banked symbols: module from $6000, window at $4000, data at $0000">
+  <div class="addr">$6000</div><div class="blk code">las module, five slots up to $FFFF</div>
+  <div class="addr">$4000</div><div class="blk win">window: one symbol block at a time</div>
+  <div class="addr">$2000</div><div class="blk">unused</div>
+  <div class="addr">$0000</div><div class="blk data">data and stack: 8K</div>
+</div>
+<p>There's one trap, and it's subtle. This line copies one symbol's field into another's:</p>
+<pre><code>SP (new)->right = SP (parent)->right;</code></pre>
+<p><code>SP()</code> maps a symbol's block and returns a pointer into the window. If the two symbols live in different blocks, working out the right-hand side maps the parent's block, and the pointer for <code>new</code> now points into the parent's block. C doesn't even say which side is worked out first. The fix is a rule: no statement in <code>symtab.c</code> touches two symbols. The value goes through a local variable first.</p>
+<p class="cap">Testing for a bug Linux can't have</p>
+<p>On Linux every block stays in memory, so that bug can't show up there. A special test build, <code>las/build/bankwin</code>, fakes the window: it has one 8K buffer and copies a block in and out whenever another is needed. A stale pointer then reads the wrong block, exactly as on the F256, and the regression test sees wrong output. To prove the test can catch it, I put the line above back. The normal build still passed 741 of 741. The window build failed 242 of 741. With the line fixed, it passes again.</p>
+<p>A block from <code>F$AllRAM</code> also stays allocated after a program ends unless the program gives it back with <code>F$DelRAM</code>. So every way out of <code>las</code> returns its blocks, and the host model (chapter 11) reports any block left behind.</p>
+<p class="cap">The result</p>
+<p>On the emulated F256, <code>las</code> now assembles <code>scfg.asm</code> byte for byte as the Linux build does. It uses 6 blocks of symbols, switches the window about 22,500 times, and needs only 8K of ordinary data, where 41K wouldn't fit before. It is slow, though. A big NitrOS9 file takes minutes, because every pass reads 230K of defs and each switch costs two system calls. Phase 9's precompiled defs go after that.</p>
+<p><strong>Measure before you build.</strong> The plan was to bank <code>rlink</code> the same way, because it ran out of memory linking <code>las</code>. Counting where its memory went showed something else: 14K of its 20K of static data was one table, used only with <code>--lwlink</code>, that I had added in phase 3b as a fixed array. Allocating it only when needed let <code>rlink</code> link every tool with room to spare. No banking needed.</p>
 </section>
 
 <!-- 10 -->
@@ -986,7 +1009,7 @@ bucket (char *name)
   <div class="addr">$2000</div><div class="blk data">symbols</div>
   <div class="addr">$0000</div><div class="blk data">static data and stack: 7,872 bytes</div>
 </div>
-<p>That leaves about 16K for the symbol table. The C toolchain's own sources fit: the largest, <code>rma_main.a</code>, takes las to 24,064 bytes of data, 512 bytes short of the module. <code>scfg.asm</code> needs about 41K for its 1,933 symbols, and on the F256 it stops with <code>symbol table overflow</code>. Chapter 9 predicted this. It's why phase 8 maps extra blocks in and out.</p>
+<p>That leaves about 16K for the symbol table. The C toolchain's own sources fit: the largest, <code>rma_main.a</code>, takes las to 24,064 bytes of data, 512 bytes short of the module. <code>scfg.asm</code> needs about 41K for its 1,933 symbols, and on the F256 it stopped with <code>symbol table overflow</code>. Chapter 9 predicted this, and phase 8 fixed it by moving the symbols into extra blocks (chapter 9, "Moving the table into banked blocks").</p>
 <p><strong>Two rules we found by measuring.</strong> <code>dcc68</code> first ran out of memory on a one-line program. Given the 16K of data CoCoC's own <code>dcc68</code> asks for, it refused to start at all, with <code>ERROR #207</code> (memory full). So did CoCoC's <code>dcc68</code>. Tiny test modules of chosen sizes, each asking for memory, found the reasons:</p>
 <ul>
 <li>A module in 6 blocks may be at most 48,384 bytes: it must end by <code>$FD00</code>. On this NitrOS9 the top 768 bytes of every process are reserved. One byte more and the module takes a 7th block. On a CoCo 3 the reserved part is the top 512 bytes, which is presumably why CoCoC's 48,521-byte <code>dcc68</code> was fine there.</li>
@@ -1022,12 +1045,13 @@ bucket (char *name)
 <li>native <code>dcc</code> compiles and links a C program through all five passes on the F256, and the program runs.</li>
 </ul>
 <p>One OS-9 detail cost a run: the shell's <code>&gt;</code> and <code>&gt;&gt;</code> <em>create</em> their file, and creating a file that already exists fails with <code>ERROR #218</code>. Two commands that both wrote their errors to <code>err</code> meant the second never ran.</p>
+<p>Two more limits appeared with NitrOS9's long command lines. The shell reads at most 200 characters of a line; the rest runs as a second, broken command (<code>WHAT?</code>). And a C program's start-up code, <code>cstart</code>, splits its arguments at commas as well as spaces, so <code>--pragma=pcaspcr,nosymbolcase</code> arrives as two words. <code>las</code> now accepts <code>--args=FILE</code>, which reads the arguments from a file, and that sidesteps both.</p>
 </section>
 
 <!-- 12 -->
 <section class="ch" id="project">
 <h2><span class="num">CHAPTER 12</span>Where this leads</h2>
-<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now for everything that fits in one 64K process (chapter 11). Phase 8 handles the rest in one go: las's symbol table and rlink's largest links both move into extra 8K blocks, of which the F256 has plenty.</p>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles NitrOS9 sources, and <code>rlink</code> links every tool. Next is speed: phase 9 saves the assembled defs so each build stops re-reading them.</p>
 <p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
 </section>
 
@@ -1054,6 +1078,7 @@ bucket (char *name)
   <dt>external reference</dt><dd>A name used in one file and defined in another. Resolved by the linker.</dd>
   <dt>fixup / relocation</dt><dd>A place in the code the linker must patch once final positions are known.</dd>
   <dt>forward reference</dt><dd>Using a label before it's defined. The reason assemblers make two passes.</dd>
+  <dt>handle</dt><dd>A number that names something without being its address. <code>las</code> gives out symbol handles so the symbols can move between banked blocks.</dd>
   <dt>hash function</dt><dd>A calculation that turns a name into a number, always the same number for the same name. Used to pick a bucket.</dd>
   <dt>include guard</dt><dd>A condition at the top of an include file that makes the file skip itself if it has already been read.</dd>
   <dt>interface</dt><dd>The set of operations a piece of code offers, with how it works kept private, so the inside can change without affecting callers.</dd>
@@ -1088,6 +1113,7 @@ bucket (char *name)
   <dt>trial run</dt><dd>A throwaway pass 1 that <code>las</code> runs in a separate process to decide instruction sizes before assembling for real.</dd>
   <dt>uninitialised memory</dt><dd>Memory a program uses before ever setting it. It holds whatever was there before, which may happen to be zero.</dd>
   <dt>unsettled</dt><dd>lwasm's state for a line whose size it can't decide yet. It comes back to the line once more is known, or forces the long form when stuck.</dd>
+  <dt>window</dt><dd>A slot of the address space where different RAM blocks are mapped in turn. <code>las</code> keeps one for its symbol blocks.</dd>
   <dt>XOR</dt><dd>Exclusive or: compares two bits and gives 1 where they differ. Used in check bytes and CRCs.</dd>
 </dl>
 </section>

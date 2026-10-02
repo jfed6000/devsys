@@ -87,7 +87,7 @@ Then add a line to the changelog at the bottom of this file.
 | 5. Object mode | ✅ Ch 6 "Two linkers, two module layouts", "Choosing library members", "Values only the linker knows"; ch 9 uninitialised memory |
 | 6. Long names | ✅ Ch 7 "Long names, end to end" (each tool's limit, the collision example, ROF version and aliases for old libraries, testing for one kind of difference) |
 | 7. Native build | ✅ Ch 11 "Running on the F256": cross vs native, bootstrapping, the measured 64K map and the F256's two module limits, K&R traps (member namespace, arguments without prototypes), the host model, testing in MAME |
-| 8. Banked blocks | `F$AllRAM`/`F$MapBlk` in detail; (block, offset) pointers; hashing to blocks |
+| 8. Banked blocks | ✅ Ch 9 "Moving the table into banked blocks": handles instead of pointers, the 16-bit handle, the window and its memory map, the two-entries trap, the window-emulation test and its negative control, F$DelRAM at exit, results, "measure before you build" (rlink). Ch 11: the shell's 200-character line, cstart's comma splitting, --args |
 | 9. Precompiled defs | Saving and reloading a symbol table image; cache invalidation |
 | 10. Libraries | Library members, link order, how rlink searches `.l` files |
 | any | Macros and `rept`; the 6809 calling conventions used by DCC; how `cstart` sets up a C program |
@@ -143,3 +143,7 @@ Then add a line to the changelog at the bottom of this file.
   os9run model, MAME results). Renumbered Where this leads → 12, Glossary →
   13; ch 12 mentions phase 8's scope. Glossary: bootstrapping, cross
   compiler, native, prototype.
+- 2026-10-02 — Phase 8: ch 9 "Moving the table into banked blocks"; the
+  three-part fix table no longer promises one block per bucket; ch 11 notes
+  the shell's line limit, cstart's commas and --args; ch 12 updated.
+  Glossary: handle, window.
