@@ -1,0 +1,18 @@
+las - an lwasm-compatible fork of the Microware RMA assembler, for building
+NitrOS9 Level 2 software natively on the Foenix F256. Forked 2026-10-02 from
+https://gitlab.com/debmint/rma at commit e82adeb (no upstream history kept).
+Design and roadmap: ../docs/DESIGN.md
+
+Original readme follows.
+
+This is the Microware "rma" assembler which was provided by Microware for
+the Tandy Color Computer.  This rendition should build on the Color Computer
+as well as on Linux systems, Windows (under Mingw), and hopefully OSK.
+
+This system, in conjunction with the C compiler and the RLink packages should
+build programs and libraries that will work on the color computer or the
+color computer emulators.
+
+This package is released to the public domain in the hope that it will be
+useful.
+

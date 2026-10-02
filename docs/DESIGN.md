@@ -1,0 +1,184 @@
+# F256 NitrOS9 Native Development System — Design
+
+Status: draft, 2026-10-02
+Target: Foenix F256, 6809, **NitrOS9 Level 2 only**
+Companion: `docs/learn/toolchain.html` (background and concepts)
+
+---
+
+## 1. Goal
+
+Build programs on the F256 itself, under NitrOS9 Level 2, from the **same source
+files** that the Linux cross-build assembles with lwasm. A file must assemble
+the same way on the F256 and on Linux, ideally to identical bytes.
+
+Out of scope for now: Level 1, other CoCo platforms, ANSI C.
+
+## 2. Decisions
+
+| # | Decision | Reason |
+|---|---|---|
+| D1 | **Fork the C version of RMA** (`~/projects/dcc/rma`) as the one native assembler | Both C compilers emit RMA syntax, so RMA is needed anyway. It's C, so it builds on Linux for testing. Already has macros, `rept`, ROF output. Its source compiles under both K&R and ANSI C. |
+| D2 | Do **not** extend `asm.asm` | 4,069 lines of disassembled 6809, no macros, no ROF output, names fixed at 8 bytes in the symbol entry layout. |
+| D3 | Do **not** port lwasm or mamou | lwasm is C99 and too big for a 64K process. Mamou is ANSI C (DCC can't compile it), has no ROF output, and is marked deprecated. |
+| D4 | **DCC** as the C compiler, built with `-2` | Real C source (`CoCoC/Source/Compiler/CC09`), builds on Linux, better code than Microware C. The Microware C compiler only exists as a disassembly. |
+| D5 | **ROF + rlink** is the only object/library format on the F256 | LWOBJ/lwar never need to exist natively. Libraries used by `.as` programs get rebuilt as ROF `.l`. |
+| D6 | Keep all three **source** styles | So the same files keep building with lwasm on Linux. |
+| D7 | Symbol table: **compact entries + banked blocks + precompiled defs**, behind one interface | See §6. Memory measurements show long names don't fit otherwise. |
+| D8 | The fork is named **`las`** and lives in `devsys/las`, inside the single `devsys` git repo. Clean break from upstream: forked from `gitlab.com/debmint/rma` commit `e82adeb`, no upstream history or remotes kept; we won't contribute back | It will behave differently from RMA (lwasm syntax, module output, long names), and must coexist with Microware `rma`/`c.asm` on the F256. DCC calls the assembler by name: change `ASSEMBLER` in `CoCoC/Source/Compiler/DCC/dcc.h:24` to `"las"`. |
+
+## 3. Source styles the fork must accept
+
+| Style | Example | Markers | Fork output |
+|---|---|---|---|
+| Module | `level1/wildbits/cmds/scfg.asm` | `mod` … `emod` | finished module (header + CRC), no linker |
+| lwasm object | `level2/wildbits/cmds/gfxstatus.as` | `section code/bss`, `__start`, `export`/`import` | ROF → rlink |
+| RMA object | `ccompiler/sources/cstart.a`, DCC output | `psect`/`vsect`/`endsect`, `label:` | ROF → rlink (already works) |
+
+Mapping lwasm object style onto ROF:
+
+| lwasm | ROF / RMA equivalent |
+|---|---|
+| `section code` | `psect` body |
+| `section bss` | `vsect` |
+| `__start` | psect entry parameter |
+| `export` / `undefextern` | `label:` global / auto-external |
+| lwlink header defaults (type, attr, stack, name) | root psect parameters — fork must supply defaults |
+
+## 4. lwasm compatibility requirements
+
+NitrOS9 assembles with:
+
+```
+lwasm --6309 --format=os9 --pragma=pcaspcr,nosymbolcase,condundefzero,undefextern,dollarnotlocal,noforwardrefmax
+```
+
+Measured against the 370 files in `level1/wildbits`, `level2/wildbits`,
+`level1/modules`, `level1/cmds` and `defs`:
+
+| Feature | Files using it | RMA today |
+|---|---|---|
+| `mod` / `emod` | most | ❌ bad mnemonic |
+| `foo@` local labels (scoped) | 127 | ❌ treated as global → "redefined name" |
+| `fill`, `ifndef` | 50 | ❌ |
+| `<<`, `>>` | ~40 uses | ❌ bad operator |
+| `section` / `endsect` | wildbits boot/feu, 28 `.as` files | ❌ |
+| `fcn`, `ifdef` | several | ❌ |
+| case-insensitive symbols (`nosymbolcase`) | all | ? — check |
+| undefined symbol in condition = 0 (`condundefzero`) | ~400 `ifne H6309` etc. | ? — check |
+| `pcaspcr`, `dollarnotlocal` | all | ? — check |
+
+## 5. Long symbol names
+
+The defs use names up to 24 characters; 167 names collide at 8 characters
+(e.g. `MMU_SLOT_0`…`MMU_SLOT_7`). The limit is in several tools:
+
+| Tool | Limit | Location | Action |
+|---|---|---|---|
+| RMA (C fork) | 63 | `rma/rstruct.h:8` `SYMLEN 64` | OK; ROF output already writes full names (tested) |
+| Microware RMA binary | 8 | `CoCoC/Cmds/rma`, `c.asm` | don't use |
+| rlink | 9, **silently truncated** | `mw-rlink/rof.h:39`, `rl_02.c:671`, `rl_03.c:292` | raise to match RMA |
+| DCC | 8 | `CC09/cj.h:130` `NAMESIZE 8` | raise |
+
+ROF stores names null-terminated, so the file format doesn't change.
+
+## 6. Symbol table memory
+
+### Budget
+
+A Level 2 process has one 64K address space shared by its code, data and stack.
+For a DCC-compiled RMA fork, expect roughly **25–30K** free for tables.
+
+### Measured demand (lwasm, Level 2 wildbits defsfile)
+
+| Source | Symbols | Names > 8 chars | Name bytes |
+|---|---|---|---|
+| empty program (defs only) | 1,627 | 415 | 13.4K |
+| `scfg.asm` | 1,911 | 497 | 15.5K |
+| `rbf.asm` | 1,977 | 415 | 15.4K |
+| `fm.asm` | 2,353 | 609 | 18.6K |
+
+Current RMA entry ≈ 73 bytes (`char symblnam[64]` inline) → `fm.asm` ≈ 170K.
+Compact entry ≈ 18 bytes → `fm.asm` ≈ 42K. Neither fits alone.
+
+### Design: one interface, three layers
+
+```
+RMA parser / expressions / output
+          │  sym_find(name)  sym_add(name, value, type)
+  ┌───────┴──────────────────────────────────────┐
+  │ compact entries   — what one symbol looks like │
+  │ banked blocks     — where entries live        │
+  │ precompiled defs  — what gets loaded at all   │
+  └──────────────────────────────────────────────┘
+```
+
+1. **Compact entries.** `char symblnam[1]` as the last member, allocated at
+   `sizeof(entry) + strlen(name)`. No lookup cost. Remove or size-aware the free
+   list at `labels.c:544` (`d078f`).
+2. **Banked blocks.** Extra 8K RAM blocks via `F$AllRAM`, mapped with
+   `F$MapBlk` into a window. Hash picks the bucket, bucket belongs to one block,
+   so a lookup maps at most one block. Pointers become (block, offset).
+3. **Precompiled defs.** Assemble `defsfile` once into a saved image of those
+   blocks. On `use defsfile`, if the image is current, map it in read-only
+   instead of parsing ~1,600 equates on each pass. One image per configuration;
+   we only have one (`Level=2`, wildbits).
+
+### Lookup cost (simulated on the real defs, 1,647 symbols)
+
+| Scheme | Avg compares | Worst |
+|---|---|---|
+| RMA now: 64 buckets, char-sum hash, BST per bucket | 5.2 | 14 |
+| same, CRC hash | 5.0 | 12 |
+| single BST | 17.8 | 46 |
+| 512 buckets, chained, CRC hash | 2.6 | 9 |
+
+Current structure is good enough. Bank switches are the new cost to watch.
+
+## 7. Libraries
+
+`.as` programs link against `libwildbitsl2.a`, `libnet.a`, `libalib.a` (LWOBJ).
+Rebuild each as a ROF `.l` with the fork. Keep the one-routine-per-file split
+so rlink pulls in only what's referenced. Needs `section` support first.
+
+## 8. Verification
+
+The fork builds on Linux. For every source file in the Level 2 wildbits build:
+
+1. assemble with lwasm (reference)
+2. assemble with the fork
+3. compare output bytes
+
+Report per file: identical / differs / fails. This is the progress meter for
+the whole project. Run it after every change.
+
+## 9. Roadmap
+
+| Phase | Work | Done when | Status |
+|---|---|---|---|
+| **0. Harness** | Linux build of fork; diff harness over Level 2 wildbits tree; baseline report | report lists every file and its status | in progress: `las` builds on Linux (0 warnings), output identical to original RMA |
+| **1. Symbol interface** | Put RMA's symbol code behind `sym_find` / `sym_add` | output byte-identical to unmodified RMA | not started |
+| **2. Compact entries** | Variable-length names | identical output, memory use measured | not started |
+| **3. Module mode** | `mod`/`emod`, header, CRC | simple `.asm` commands match lwasm | not started |
+| **4. lwasm syntax** | `@` locals, `ifdef/ifndef`, `fill`, `fcn`, `<<`/`>>`, pragma behaviours | most `.asm` files match | not started |
+| **5. Object mode** | `section`/`export` → ROF; header defaults | `.as` files link with rlink and match | not started |
+| **6. Long names downstream** | rlink and DCC name limits; DCC `ASSEMBLER` → `"las"` | 24-char names survive compile → link | not started |
+| **7. Native build** | Compile fork + rlink + DCC with DCC; run on F256 | assembles `scfg.asm` on the F256 | not started |
+| **8. Banked blocks** | `F$AllRAM`/`F$MapBlk` symbol storage | `fm.asm`, `rbf.asm`, kernel assemble natively | not started |
+| **9. Precompiled defs** | Saved defs images | measurable speedup, same output | not started |
+| **10. Libraries** | alib, net, wildbitsl2 as ROF `.l` | `.as` programs build natively | not started |
+
+Phases 3–6 can run alongside each other. Phase 7 should happen early enough to
+catch DCC/K&R surprises.
+
+## 10. Open questions and risks
+
+- [ ] Does RMA already treat symbols case-insensitively? (`nosymbolcase`)
+- [ ] How should `condundefzero` interact with RMA's undefined-symbol handling in pass 1?
+- [ ] lwasm's exact scoping rule for `@` local labels — confirm from lwasm source before implementing.
+- [ ] Defaults for lwlink-style header values (type, attr, rev, stack) — read them from `lwlink/script.c`.
+- [ ] Size of the DCC-compiled fork on the 6809 — sets the real memory budget.
+- [ ] `F$MapBlk` cost per call on the F256 — sets how much bank switching hurts.
+- [ ] How much RAM does the target F256 have free for symbol blocks?
+- [ ] DCC limits (no `void`, `enum`, `const`) when compiling the fork natively.
+- [ ] Does anything in the build depend on lwasm listing or map output?

@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>F256 Toolchain Primer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&display=swap">
+<style>
+/* Layout: reading column with a sticky chapter rail on wide screens; one column on phones.
+   Three format colours are used consistently everywhere: module = amber, lwasm object = teal, RMA object = violet. */
+:root {
+  --bg: #f3f4f1;
+  --panel: #fbfbf8;
+  --fg: #1d232b;
+  --muted: #5b6470;
+  --rule: #d6d9d2;
+  --code-bg: #e9ebe5;
+  --accent: #a04a0c;
+  --mod: #b45f06;  --mod-bg: #f6e6d2;
+  --lwo: #0f766e;  --lwo-bg: #d5ece8;
+  --rma: #6d3fa8;  --rma-bg: #e8def4;
+  --hdr: #1f5f99;  --hdr-bg: #dbe7f3;
+  --sym: #8a6d00;  --sym-bg: #f3ebc8;
+  --ref: #a3313b;  --ref-bg: #f4dcdd;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Literata", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15191e; --panel: #1b2027; --fg: #e3e6e1; --muted: #9aa3ad; --rule: #2e353e; --code-bg: #20262e;
+    --accent: #f0a050;
+    --mod: #f0a64a; --mod-bg: #3a2a16;
+    --lwo: #4fc7b8; --lwo-bg: #143430;
+    --rma: #b493e6; --rma-bg: #2c2240;
+    --hdr: #78b2e8; --hdr-bg: #182c40;
+    --sym: #e1c45a; --sym-bg: #332c12;
+    --ref: #ee8890; --ref-bg: #3b1d21;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15191e; --panel: #1b2027; --fg: #e3e6e1; --muted: #9aa3ad; --rule: #2e353e; --code-bg: #20262e;
+  --accent: #f0a050;
+  --mod: #f0a64a; --mod-bg: #3a2a16;
+  --lwo: #4fc7b8; --lwo-bg: #143430;
+  --rma: #b493e6; --rma-bg: #2c2240;
+  --hdr: #78b2e8; --hdr-bg: #182c40;
+  --sym: #e1c45a; --sym-bg: #332c12;
+  --ref: #ee8890; --ref-bg: #3b1d21;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 17px; line-height: 1.62;
+  padding-inline: 16px; padding-block: 0 64px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; }
+@media (max-width: 880px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; } nav.rail { display: none; } }
+
+nav.rail { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; padding-top: 40px; max-height: 100vh; overflow-y: auto; }
+nav.rail p { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .08em; font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+nav.rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: ch; }
+nav.rail li { counter-increment: ch; }
+nav.rail a { display: grid; grid-template-columns: 26px 1fr; font-family: var(--font-display); font-size: 14.5px; color: var(--fg); text-decoration: none; padding: 4px 6px; border-radius: 4px; line-height: 1.3; }
+nav.rail a::before { content: counter(ch, decimal-leading-zero); color: var(--muted); font-family: var(--font-mono); font-size: 11.5px; padding-top: 2px; }
+nav.rail a:hover, nav.rail a:focus-visible { background: var(--code-bg); outline: none; }
+
+main { min-width: 0; max-width: 760px; }
+header.top { padding-block: 48px 24px; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); letter-spacing: .04em; margin: 0 0 12px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(34px, 6vw, 52px); line-height: 1.05; margin: 0 0 16px; text-wrap: balance; letter-spacing: -.01em; }
+.lede { font-size: 19px; color: var(--muted); margin: 0; max-width: 62ch; }
+
+section.ch { padding-top: 40px; counter-increment: chapter; }
+main { counter-reset: chapter; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 30px; line-height: 1.15; margin: 0 0 6px; text-wrap: balance; }
+h2 .num { display: block; font-family: var(--font-mono); font-weight: 500; font-size: 13px; color: var(--accent); letter-spacing: .06em; margin-bottom: 6px; }
+h3 { font-family: var(--font-display); font-weight: 600; font-size: 21px; margin: 30px 0 4px; }
+p { margin: 12px 0; max-width: 66ch; }
+.why { color: var(--muted); font-style: italic; }
+a { color: var(--accent); }
+strong { font-weight: 600; }
+code { font-family: var(--font-mono); font-size: .86em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+pre { font-family: var(--font-mono); font-size: 13.5px; line-height: 1.5; background: var(--code-bg); padding: 14px 16px; border-radius: 6px; overflow-x: auto; margin: 14px 0; }
+pre code { background: none; padding: 0; font-size: inherit; }
+.cap { font-family: var(--font-display); font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 18px 0 -6px; }
+
+.scroll { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; font-size: 15px; width: 100%; min-width: 520px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--muted); }
+td code { white-space: nowrap; }
+.num-col { font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 14px; }
+
+.tag { font-family: var(--font-display); font-weight: 600; font-size: 13px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.t-mod { color: var(--mod); background: var(--mod-bg); }
+.t-lwo { color: var(--lwo); background: var(--lwo-bg); }
+.t-rma { color: var(--rma); background: var(--rma-bg); }
+
+/* Pipeline diagram */
+.pipe { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; margin: 20px 0; }
+.stage { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; min-width: 0; flex: 1 1 120px; }
+.stage .file { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; }
+.stage .what { font-size: 13.5px; color: var(--muted); line-height: 1.35; margin-top: 2px; }
+.arrow { align-self: center; font-family: var(--font-mono); font-size: 12px; color: var(--accent); text-align: center; flex: 0 0 auto; line-height: 1.2; }
+.arrow b { display: block; font-size: 18px; }
+@media (max-width: 600px) { .pipe { flex-direction: column; } .arrow b { transform: rotate(90deg); } }
+
+/* Three-format comparison */
+.formats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+@media (max-width: 760px) { .formats { grid-template-columns: minmax(0, 1fr); } }
+.fmt { border-top: 4px solid; background: var(--panel); border-radius: 0 0 6px 6px; padding: 12px 14px; min-width: 0; }
+.fmt.mod { border-color: var(--mod); } .fmt.lwo { border-color: var(--lwo); } .fmt.rma { border-color: var(--rma); }
+.fmt h4 { font-family: var(--font-display); font-size: 17px; margin: 0 0 4px; }
+.fmt p { font-size: 14.5px; margin: 6px 0; }
+.fmt pre { font-size: 12px; padding: 10px; margin: 8px 0; }
+
+/* Hex dumps */
+.hex { font-family: var(--font-mono); font-size: 13px; line-height: 1.75; background: var(--code-bg); border-radius: 6px; padding: 12px 14px; overflow-x: auto; margin: 14px 0 8px; }
+.hex .row { white-space: nowrap; }
+.hex .off { color: var(--muted); margin-right: 12px; }
+.hex .b { padding: 1px 2px; border-radius: 2px; margin-right: 3px; }
+.legend { list-style: none; padding: 0; margin: 8px 0 18px; display: grid; gap: 4px; font-size: 14.5px; }
+.legend li { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.legend .sw { font-family: var(--font-mono); font-size: 12.5px; padding: 1px 6px; border-radius: 3px; text-align: center; }
+.c-hdr { background: var(--hdr-bg); color: var(--hdr); }
+.c-name { background: var(--mod-bg); color: var(--mod); }
+.c-code { background: var(--lwo-bg); color: var(--lwo); }
+.c-sym { background: var(--sym-bg); color: var(--sym); }
+.c-ref { background: var(--ref-bg); color: var(--ref); }
+.c-crc { background: var(--rma-bg); color: var(--rma); }
+
+/* Memory map */
+.memmap { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 3px 10px; font-size: 14px; margin: 18px 0; max-width: 520px; }
+.memmap .addr { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); align-self: center; text-align: right; }
+.memmap .blk { padding: 7px 10px; border-radius: 4px; border: 1px solid var(--rule); background: var(--panel); }
+.memmap .blk.code { background: var(--mod-bg); color: var(--mod); border-color: transparent; }
+.memmap .blk.data { background: var(--lwo-bg); color: var(--lwo); border-color: transparent; }
+.memmap .blk.win { background: var(--rma-bg); color: var(--rma); border-color: transparent; }
+
+.note { border-left: 3px solid var(--accent); background: var(--panel); padding: 10px 16px; margin: 18px 0; border-radius: 0 6px 6px 0; }
+.note p { margin: 6px 0; }
+.note .cap { margin: 0 0 4px; }
+
+dl.gloss { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 18px; margin: 16px 0; }
+dl.gloss dt { font-family: var(--font-mono); font-weight: 600; font-size: 14px; }
+dl.gloss dd { margin: 0; font-size: 15.5px; }
+@media (max-width: 560px) { dl.gloss { grid-template-columns: minmax(0, 1fr); gap: 2px; } dl.gloss dd { margin-bottom: 10px; } }
+
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav class="rail" aria-label="Chapters">
+  <p>Chapters</p>
+  <ol>
+    <li><a href="#pipeline">The pipeline</a></li>
+    <li><a href="#module">What the 6809 runs</a></li>
+    <li><a href="#formats">Three source formats</a></li>
+    <li><a href="#assembler">How an assembler works</a></li>
+    <li><a href="#object">Inside an object file</a></li>
+    <li><a href="#linker">What the linker does</a></li>
+    <li><a href="#c">The C compiler</a></li>
+    <li><a href="#memory">Level 2 memory</a></li>
+    <li><a href="#symbols">Symbol tables</a></li>
+    <li><a href="#project">Where this leads</a></li>
+    <li><a href="#glossary">Glossary</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="top">
+  <p class="eyebrow">NitrOS9 Level 2 · 6809 · F256</p>
+  <h1>How source code becomes a running program</h1>
+  <p class="lede">Compilers, assemblers, linkers, object files and modules, explained with real files from your own trees: a C program compiled by DCC, the object file RMA made from it, and a module built by lwasm.</p>
+</header>
+
+<!-- 1 -->
+<section class="ch" id="pipeline">
+<h2><span class="num">CHAPTER 01</span>The pipeline</h2>
+<p>A program goes through several separate tools before the 6809 can run it. Each tool reads one kind of file and writes another. Here is a C program on its way to becoming an OS-9 command:</p>
+
+<div class="pipe" role="img" aria-label="sum.c to sum.i to sum.a to optimised sum.a to sum.r to the sum module">
+  <div class="stage"><div class="file">sum.c</div><div class="what">C source you write</div></div>
+  <div class="arrow">dcpp<b>→</b></div>
+  <div class="stage"><div class="file">sum.i</div><div class="what">C with <code>#include</code>/<code>#define</code> expanded</div></div>
+  <div class="arrow">dcc68<b>→</b></div>
+  <div class="stage"><div class="file">sum.a</div><div class="what">6809 assembly language</div></div>
+  <div class="arrow">dco68<b>→</b></div>
+  <div class="stage"><div class="file">sum.a</div><div class="what">tidier assembly</div></div>
+  <div class="arrow">rma<b>→</b></div>
+  <div class="stage"><div class="file">sum.r</div><div class="what">object file: machine code with gaps</div></div>
+  <div class="arrow">rlink<b>→</b></div>
+  <div class="stage"><div class="file">sum</div><div class="what">OS-9 module, ready to run</div></div>
+</div>
+
+<div class="scroll"><table>
+<thead><tr><th>Tool</th><th>Name in DCC</th><th>Job</th></tr></thead>
+<tbody>
+<tr><td>Preprocessor</td><td><code>dcpp</code></td><td>Text substitution. Pastes in <code>#include</code> files, replaces <code>#define</code> names, drops <code>#ifdef</code>'d-out code. Knows nothing about C.</td></tr>
+<tr><td>Compiler</td><td><code>dcc68</code></td><td>Translates C into assembly language. This is where the language rules live.</td></tr>
+<tr><td>Optimizer</td><td><code>dco68</code></td><td>Rewrites the assembly to be smaller and faster, using patterns.</td></tr>
+<tr><td>Assembler</td><td><code>rma</code></td><td>Turns assembly mnemonics (<code>ldd</code>, <code>pshs</code>) into machine-code bytes.</td></tr>
+<tr><td>Linker</td><td><code>rlink</code></td><td>Joins object files and library pieces into one program and fills in the addresses each piece needed from the others.</td></tr>
+<tr><td>Loader</td><td>OS-9 itself</td><td>Reads the module from disk into memory, checks it, and starts it.</td></tr>
+</tbody></table></div>
+
+<p><strong>Why so many separate programs?</strong> On a 6809, a program can address only 64K. One program that did all six jobs wouldn't fit, so each job became its own program, passing files to the next. That's also why a C build creates temporary files. Modern compilers like gcc still use the same stages; they just hide them.</p>
+<p>Hand-written assembly skips the first three steps and starts at the assembler. And as chapter 3 explains, some assembly skips the linker as well.</p>
+</section>
+
+<!-- 2 -->
+<section class="ch" id="module">
+<h2><span class="num">CHAPTER 02</span>What the 6809 actually runs: a module</h2>
+<p>Every program, driver and descriptor on NitrOS9 is a <strong>module</strong>: a block of bytes with a fixed header at the front and a checksum at the end. The OS refuses to run anything that isn't a valid module. Whichever tools you use, a module is always the end product.</p>
+<p>Here is a complete, real one. This program prints “Hi”. I assembled it with lwasm using the Level 2 wildbits defs:</p>
+
+<pre><code>         mod   eom,name,tylg,atrv,start,size
+count    rmb   1                  ← variables: these reserve space,
+         rmb   250                ←   they produce no bytes
+size     equ   .                  ← total data size = 251
+name     fcs   /hello/
+         fcb   edition
+msg      fcc   /Hi/
+         fcb   C$CR
+start    leax  msg,pcr            ← address of msg, relative to here
+         ldy   #3
+         lda   #1                 ← path 1 = standard output
+         os9   I$WritLn
+         clrb
+         os9   F$Exit
+         emod
+eom      equ   *</code></pre>
+
+<p>And here are the 41 bytes lwasm produced, coloured by what they are:</p>
+<div class="hex" id="hex-module" aria-label="Hex dump of the hello module"></div>
+<ul class="legend" id="legend-module"></ul>
+
+<h3>Three things to notice</h3>
+<p><strong>The header describes the module.</strong> <code>87 CD</code> marks the start of a module. Then: total size, where the name is, type (<code>$11</code> = program, 6809 code), attributes (<code>$80</code> = re-entrant, meaning one copy in memory can serve several processes), where execution starts, and how much data memory the process needs. The <code>mod</code> line in the source supplies all of it.</p>
+<p><strong>Variables are not in the module.</strong> <code>count</code> and the 250-byte buffer produced no bytes at all. They only set the data size (<code>$00FB</code> = 251) in the header. When the program starts, OS-9 gives the process a fresh 251-byte data area and points register <code>U</code> at it. The code reaches its variables relative to that register. This is how several processes can share one copy of the code: each gets its own data.</p>
+<p><strong>The code doesn't care where it's loaded.</strong> <code>leax msg,pcr</code> assembled to <code>30 8C FA</code>: “X = this instruction's address minus 6”. No fixed address appears anywhere. This is called <strong>position-independent code</strong>, and OS-9 requires it, because the OS decides where a module goes in memory.</p>
+<p><code>os9 I$WritLn</code> became <code>10 3F 8C</code>: the <code>SWI2</code> instruction, followed by the number of the system call. That's all a system call is. The defs file gives <code>I$WritLn</code> its number.</p>
+</section>
+
+<!-- 3 -->
+<section class="ch" id="formats">
+<h2><span class="num">CHAPTER 03</span>Three source formats, and why</h2>
+<p>Your NitrOS9 and compiler trees contain assembly written three different ways. All three end up as the same kind of module from chapter 2. What differs is <strong>how they get there</strong>, and the difference is whether a linker is involved.</p>
+
+<div class="formats">
+  <div class="fmt mod">
+    <h4>Module <span class="tag t-mod">.asm</span></h4>
+    <p>The source writes the module header itself. The assembler outputs the finished module. No linker.</p>
+<pre><code> mod eom,name,tylg,
+     atrv,start,size
+ ...
+ emod
+eom equ *</code></pre>
+    <p>e.g. <code>scfg.asm</code>, most of NitrOS9</p>
+  </div>
+  <div class="fmt lwo">
+    <h4>lwasm object <span class="tag t-lwo">.as</span></h4>
+    <p>No header in the source. lwasm writes an object file; <code>lwlink</code> builds the header.</p>
+<pre><code> section bss
+buf rmb 80
+ endsect
+ section code
+__start ...
+ endsect</code></pre>
+    <p>e.g. <code>gfxstatus.as</code>, <code>lib/alib</code></p>
+  </div>
+  <div class="fmt rma">
+    <h4>RMA object <span class="tag t-rma">.a</span></h4>
+    <p>No header in the source. RMA writes an object file; <code>rlink</code> builds the header.</p>
+<pre><code> psect sum_c,0,0,0,0,0
+ vsect
+total: rmb 2
+ endsect
+main: ...
+ endsect</code></pre>
+    <p>e.g. C compiler output, <code>cstart.a</code></p>
+  </div>
+</div>
+
+<h3>The history behind it</h3>
+<p>Around 1980, Microware shipped OS-9 with <code>asm</code>, which builds a module directly from one source file. That's the module format. When they added a C compiler, they needed to compile files separately and pull routines from a library, which <code>asm</code> can't do. So they wrote RMA (the <em>Relocating</em> Macro Assembler) and <code>rlink</code>, with their own object file format, ROF. That's the RMA object format.</p>
+<p>Decades later, lwtools (lwasm + lwlink) became the cross-assembler for NitrOS9. It reads the old module format so the existing sources still build. For linked programs it invented its own object style (<code>section</code>) and file format (LWOBJ) instead of copying Microware's. That's the third format.</p>
+
+<h3>Same idea, two vocabularies</h3>
+<p>The two object styles express the same ideas with different words:</p>
+<div class="scroll"><table>
+<thead><tr><th>Idea</th><th><span class="tag t-lwo">lwasm</span></th><th><span class="tag t-rma">RMA</span></th></tr></thead>
+<tbody>
+<tr><td>Code goes here</td><td><code>section code</code></td><td><code>psect</code> body</td></tr>
+<tr><td>Variables go here</td><td><code>section bss</code></td><td><code>vsect</code></td></tr>
+<tr><td>Program starts here</td><td>label named <code>__start</code></td><td>last field of the <code>psect</code> line</td></tr>
+<tr><td>Other files may use this name</td><td><code>export</code></td><td><code>label:</code> (trailing colon)</td></tr>
+<tr><td>Object file</td><td><code>.o</code> (LWOBJ)</td><td><code>.r</code> (ROF)</td></tr>
+<tr><td>Library</td><td><code>.a</code> (lwar)</td><td><code>.l</code></td></tr>
+<tr><td>Linker</td><td><code>lwlink</code></td><td><code>rlink</code></td></tr>
+</tbody></table></div>
+<p>The two binary formats can't be mixed: lwlink can't read ROF and rlink can't read LWOBJ.</p>
+
+<h3>Which one is better?</h3>
+<p>Neither. They suit different jobs.</p>
+<p>The <strong>object formats</strong> win when code is shared or split up: C programs, libraries, big applications. You link only the library pieces you use.</p>
+<p>The <strong>module format</strong> wins when exact layout matters. A device descriptor is a table of bytes at fixed offsets. A driver must start with an entry table right after the header. With <code>mod</code> you write exactly the bytes you want, in order, and every header field is visible in the source. It's also one step instead of two, which matters when the build runs on a 6809.</p>
+<p class="why">If you <code>use</code> a whole library file in a module, you get the whole library. If you link against it, you get only the pieces you call. That's the main practical difference.</p>
+</section>
+
+<!-- 4 -->
+<section class="ch" id="assembler">
+<h2><span class="num">CHAPTER 04</span>How an assembler works</h2>
+<p>An assembler's basic job is a lookup: <code>ldd #3</code> → <code>CC 00 03</code>. The hard part is <strong>labels</strong>. Look at this:</p>
+<pre><code>         lbsr  printit      ← where is printit? Not seen yet.
+         ...
+printit  lda   ,x+</code></pre>
+<p>When the assembler reaches the <code>lbsr</code>, it hasn't seen <code>printit</code> yet, so it can't know the address. This is a <strong>forward reference</strong>. The standard answer is to read the source twice.</p>
+
+<div class="scroll"><table>
+<thead><tr><th>Pass</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>Pass 1</td><td>Walks the whole file counting bytes, without writing anything. Every time it meets a label, it records the name and its address in the <strong>symbol table</strong>.</td></tr>
+<tr><td>Pass 2</td><td>Walks the file again. Now every label is in the table, so it writes the real bytes.</td></tr>
+</tbody></table></div>
+
+<p>The two passes must agree on every address. If an instruction comes out a different size in pass 2 than in pass 1, everything after it shifts and the assembler reports a <strong>phasing error</strong>. That's why <code>ifp1 / use defsfile / endc</code> appears at the top of so many files: read the big defs file in pass 1 only, since its symbols are already in the table for pass 2.</p>
+
+<h3>Reading a listing</h3>
+<p>This is part of RMA's listing for the C example from chapter 7:</p>
+<pre><code>00008 0000 3440       add:     pshs  u
+00010 0005=17fff8              lbsr  _stkcheck
+00022 0020 8dde                bsr   add
+00024 0024 eda90000            std   total,y
+00028 0030=17ffcd              lbsr  printf</code></pre>
+<p>Columns: source line, address, bytes produced, then the source. The <code>=</code> after the address means “this instruction uses a name from another file”. RMA can't know where <code>printf</code> will end up, so it writes a placeholder and leaves a note for the linker. That note is what the next chapter is about.</p>
+<p><code>bsr add</code> → <code>8D DE</code> needed no note: <code>add</code> is in the same file, $22 bytes back, so the assembler knew the distance (<code>$DE</code> = −34).</p>
+</section>
+
+<!-- 5 -->
+<section class="ch" id="object">
+<h2><span class="num">CHAPTER 05</span>Inside an object file</h2>
+<p>An object file is machine code that isn't finished yet. Alongside the code it carries lists: names this file provides, names it needs from elsewhere, and places in the code the linker must patch. Here is the real <code>sum.r</code> that RMA made from the C example, all 158 bytes:</p>
+
+<div class="hex" id="hex-rof" aria-label="Hex dump of sum.r"></div>
+<ul class="legend" id="legend-rof"></ul>
+
+<h3>The four lists</h3>
+<p><strong>Header</strong> (blue). Sizes: 2 bytes of variables, 59 bytes of code. Notice the type and language bytes are <code>00 00</code>: this file isn't a whole program, so it doesn't say what kind of module it'll become. Another file (the C startup, <code>cstart.r</code>) supplies that.</p>
+<p><strong>Names this file provides</strong> (gold). <code>total</code> at offset 0 in the data area, <code>main</code> at code offset $0E, <code>add</code> at code offset 0. Each has a flag byte saying whether it's code or data.</p>
+<p><strong>Names this file needs</strong> (red). <code>printf</code>, used once at code offset $31. <code>_stkcheck</code>, used twice, at $06 and $14. Those offsets point exactly at the placeholder bytes behind the <code>=</code> marks in the listing.</p>
+<p><strong>Local fixups</strong> (red, last entry). Code offset $26 is <code>std total,y</code>. The variable <code>total</code> is in this file, but its final place in the data area depends on how many variables other files have. So the linker must adjust this one too.</p>
+<p class="why">An object file is a contract: “here are my pieces, here's what I need, here's where to patch me once you know.”</p>
+</section>
+
+<!-- 6 -->
+<section class="ch" id="linker">
+<h2><span class="num">CHAPTER 06</span>What the linker does</h2>
+<p><code>rlink cstart.r sum.r -l=clib.l -o=sum</code> does this:</p>
+<div class="scroll"><table>
+<thead><tr><th>Step</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td>1. Collect</td><td>Read every object file listed. Note every name provided and every name needed.</td></tr>
+<tr><td>2. Resolve</td><td>For each name still needed (<code>printf</code>, <code>_stkcheck</code>), search the libraries. Take the library piece that provides it. That piece may need more names (<code>printf</code> needs output routines), so repeat until nothing is missing. Anything still missing is an “unresolved reference” error.</td></tr>
+<tr><td>3. Lay out</td><td>Place all the code pieces one after another, and all the variable pieces one after another. Now every name has a final offset.</td></tr>
+<tr><td>4. Patch</td><td>Go through every fixup and write the real offset into the placeholder bytes.</td></tr>
+<tr><td>5. Wrap</td><td>Write the module header (type, size, entry point, data size) and the CRC. Out comes a module just like chapter 2's.</td></tr>
+</tbody></table></div>
+
+<h3>Libraries are bundles of members</h3>
+<p>A library like <code>clib.l</code> is many object files stuck together. Each one is a <strong>member</strong>. In step 2 the linker takes whole members, never parts of one. If one member held 20 routines, calling one would bring in all 20. That's why library sources are split one routine per file: <code>lib/alib</code> has <code>bin_hex.as</code>, <code>bin_dec.as</code>, <code>asc_bin.as</code>, and so on.</p>
+
+<div class="note">
+<p class="cap">Why the module format needs no linker</p>
+<p>A <code>mod</code>/<code>emod</code> file has no needed names (everything comes from the file plus its <code>use</code> includes) and no fixups (the code is position-independent and the data is reached through <code>U</code>). With nothing to resolve or patch, the assembler can do step 5 itself.</p>
+</div>
+</section>
+
+<!-- 7 -->
+<section class="ch" id="c">
+<h2><span class="num">CHAPTER 07</span>The C compiler, step by step</h2>
+<p>I ran DCC's Linux build on this file:</p>
+<pre><code>int total;
+
+int add(a, b)
+int a, b;
+{
+    return a + b;
+}
+
+main()
+{
+    total = add(2, 3);
+    printf("%d\n", total);
+}</code></pre>
+<p>That's <strong>K&amp;R C</strong>, the style from before 1989: parameter types go on separate lines, and there's no <code>void</code>, <code>enum</code> or <code>const</code>. DCC and the Microware compiler both accept only this older C.</p>
+
+<p class="cap">What dcc68 produced</p>
+<pre><code> psect sum_c,0,0,0,0,0
+ vsect
+total: rmb 2               ← global variable: 2 bytes in the data area
+ endsect
+
+add:
+ pshs u
+ ldd #_1                   ← stack check: "I need 64 bytes"
+ lbsr _stkcheck
+ ldd 4,s                   ← a, from the stack
+ addd 6,s                  ← + b
+ puls u,pc                 ← return, result in D
+_1 equ -64
+
+main:
+ pshs u
+ ldd #_2
+ lbsr _stkcheck
+ ldd #3                    ← arguments pushed right to left
+ pshs d
+ ldd #2
+ pshs d
+ lbsr add
+ leas 4,s                  ← pop the arguments
+ std total,y               ← C reaches globals through Y
+ ldd total,y
+ pshs d
+ leax _3,pcr
+ pshs x
+ lbsr printf
+ leas 4,s
+ puls u,pc
+_2 equ -72
+_3 fcc "%d"
+ fcb $d
+ fcb $0
+ endsect</code></pre>
+
+<p>Things to see here:</p>
+<p><strong>It's the RMA object format</strong>, with <code>psect</code>, <code>vsect</code> and <code>label:</code> exports. That's why the C toolchain needs RMA and rlink no matter which compiler you use.</p>
+<p><strong>The calling convention.</strong> Arguments go on the stack, the result comes back in <code>D</code>. Globals are reached through <code>Y</code>, which the C startup code points at the data area. Hand-written assembly usually uses <code>U</code> for this.</p>
+<p><strong>The optimizer's work.</strong> <code>dco68</code> made two changes. It turned <code>lbsr add</code> into <code>bsr add</code>, a shorter instruction, since <code>add</code> is close by. And it removed <code>ldd total,y</code>, because <code>D</code> already holds the value that was just stored. Small wins like these, made by matching patterns, are all a peephole optimizer does.</p>
+</section>
+
+<!-- 8 -->
+<section class="ch" id="memory">
+<h2><span class="num">CHAPTER 08</span>Level 2 memory</h2>
+<p>The 6809 has 16-bit addresses, so it can see 64K at once. The F256 has much more RAM than that. Level 2 bridges the gap with the <strong>MMU</strong> (memory management unit): the 64K a program sees is split into eight 8K slots, and the MMU decides which physical 8K block of RAM appears in each slot. You can see the slots in <code>defs/wildbits.d</code>: <code>MMU_SLOT_0</code> to <code>MMU_SLOT_7</code>.</p>
+<p>Each process gets its own set of eight slots, so each process sees its own private 64K. A process might look like this (illustrative):</p>
+
+<div class="memmap" role="img" aria-label="A process's 64K address space split into eight 8K slots">
+  <div class="addr">$E000</div><div class="blk code">program module (code)</div>
+  <div class="addr">$C000</div><div class="blk code">program module (code)</div>
+  <div class="addr">$A000</div><div class="blk">unused</div>
+  <div class="addr">$8000</div><div class="blk win">window: extra RAM mapped in on request</div>
+  <div class="addr">$6000</div><div class="blk">unused</div>
+  <div class="addr">$4000</div><div class="blk data">data area (tables grow here)</div>
+  <div class="addr">$2000</div><div class="blk data">data area</div>
+  <div class="addr">$0000</div><div class="blk data">data area + stack</div>
+</div>
+
+<p><strong>The limit that matters:</strong> code, data and stack all have to fit in that one 64K. Level 2 gives each process its <em>own</em> 64K, but not <em>more</em> than 64K.</p>
+<p><strong>The way around it:</strong> a process can ask for extra RAM blocks (<code>F$AllRAM</code>) and map one into a free slot when needed (<code>F$MapBlk</code>), then swap it for another. This is <strong>bank switching</strong>. <code>gfxstatus.as</code> does exactly this to reach the graphics hardware: it maps block <code>$C1</code> in, reads the colour table, and unmaps it.</p>
+</section>
+
+<!-- 9 -->
+<section class="ch" id="symbols">
+<h2><span class="num">CHAPTER 09</span>Symbol tables: where the memory goes</h2>
+<p>Chapter 4's symbol table holds every name the assembler has seen. For NitrOS9 that's mostly the defs files. I measured real F256 sources:</p>
+<div class="scroll"><table>
+<thead><tr><th>Source</th><th>Symbols</th><th>Names longer than 8</th><th>Bytes of names</th></tr></thead>
+<tbody>
+<tr><td>empty program, defs only</td><td class="num-col">1,627</td><td class="num-col">415</td><td class="num-col">13.4K</td></tr>
+<tr><td><code>scfg.asm</code></td><td class="num-col">1,911</td><td class="num-col">497</td><td class="num-col">15.5K</td></tr>
+<tr><td><code>fm.asm</code></td><td class="num-col">2,353</td><td class="num-col">609</td><td class="num-col">18.6K</td></tr>
+</tbody></table></div>
+<p>Before you write a single line, the defs alone put about 1,600 names in the table.</p>
+
+<h3>Why long names hurt</h3>
+<p>The old Microware tools kept only the first 8 characters of a name. That made every entry small, but <code>MMU_SLOT_0</code> through <code>MMU_SLOT_7</code> would all become the same name, <code>MMU_SLOT</code>. The F256 defs have 167 such collisions, so long names are a must.</p>
+<p>The C version of RMA allows 63 characters, but stores every name in a fixed 64-byte box. With about 9 bytes of bookkeeping, that's roughly 73 bytes per symbol. For <code>fm.asm</code>: 2,353 × 73 ≈ <strong>170K</strong>. The process has about 25–30K to spare.</p>
+
+<h3>Finding a name quickly</h3>
+<p>Checking every entry one by one would mean about 1,000 comparisons per lookup. RMA does two smarter things:</p>
+<p><strong>Hashing.</strong> It adds up the characters of the name and uses the low 6 bits to pick one of 64 buckets. A name always lands in the same bucket, so a lookup only searches that bucket.</p>
+<p><strong>A tree in each bucket.</strong> Each bucket is a binary search tree: at each entry, go left if the name sorts earlier, right if later.</p>
+<p>Simulated on the real defs, a lookup takes about 5 comparisons on average. With one tree and no hashing it would be about 18. Most comparisons stop at the first or second character.</p>
+
+<h3>The three-part fix</h3>
+<div class="scroll"><table>
+<thead><tr><th>Part</th><th>Idea</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Compact entries</td><td>Store each name at its real length instead of in a 64-byte box.</td><td>About 18 bytes per symbol instead of 73. No slower.</td></tr>
+<tr><td>Banked tables</td><td>Keep the table in extra RAM blocks, mapped in one at a time (chapter 8). Each bucket lives in one block, so a lookup maps at most one block.</td><td>The table is no longer limited by the 64K space.</td></tr>
+<tr><td>Precompiled defs</td><td>Assemble the defs once and save the finished table blocks to disk. Later builds load the saved blocks instead of re-reading 1,600 definitions twice.</td><td>Much faster builds; the defs table is shared and read-only.</td></tr>
+</tbody></table></div>
+<p class="why">Precompiled headers in modern C compilers use the same trick: do the expensive, unchanging work once and save the result.</p>
+</section>
+
+<!-- 10 -->
+<section class="ch" id="project">
+<h2><span class="num">CHAPTER 10</span>Where this leads</h2>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256.</p>
+<p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>, next to this page.</p>
+</section>
+
+<!-- 11 -->
+<section class="ch" id="glossary">
+<h2><span class="num">CHAPTER 11</span>Glossary</h2>
+<dl class="gloss">
+  <dt>assembler</dt><dd>Turns assembly language into machine-code bytes.</dd>
+  <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
+  <dt>CRC</dt><dd>The 3-byte checksum at the end of every OS-9 module. OS-9 checks it before running the module.</dd>
+  <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
+  <dt>emod</dt><dd>Ends a module-format source; the assembler appends the CRC here.</dd>
+  <dt>external reference</dt><dd>A name used in one file and defined in another. Resolved by the linker.</dd>
+  <dt>fixup / relocation</dt><dd>A place in the code the linker must patch once final positions are known.</dd>
+  <dt>forward reference</dt><dd>Using a label before it's defined. The reason assemblers make two passes.</dd>
+  <dt>K&amp;R C</dt><dd>The C language as it was before the 1989 ANSI standard.</dd>
+  <dt>library</dt><dd>A bundle of object files (members). The linker takes only the members it needs.</dd>
+  <dt>linker</dt><dd>Joins object files and library members into one program and fills in cross-references.</dd>
+  <dt>LWOBJ</dt><dd>lwasm's object file format, read by lwlink.</dd>
+  <dt>MMU</dt><dd>Hardware that maps 8K blocks of physical RAM into the 6809's 64K address space.</dd>
+  <dt>mod</dt><dd>Starts a module-format source and supplies the header fields.</dd>
+  <dt>module</dt><dd>OS-9's unit of executable code: header, body, name, CRC.</dd>
+  <dt>object file</dt><dd>Assembled code that isn't finished: it still has names to resolve and places to patch.</dd>
+  <dt>phasing error</dt><dd>An address that came out different in pass 2 than in pass 1.</dd>
+  <dt>position-independent</dt><dd>Code that works wherever it's loaded, because it uses addresses relative to the program counter (<code>,pcr</code>).</dd>
+  <dt>psect / vsect</dt><dd>RMA's code section and variable section.</dd>
+  <dt>ROF</dt><dd>Relocatable Object Format: Microware's object file format, made by RMA and read by rlink.</dd>
+  <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
+  <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
+</dl>
+</section>
+
+<footer>Examples come from real runs on 2026-10-02: lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, and DCC from <code>~/projects/dcc/CoCoC</code>.</footer>
+</main>
+</div>
+
+<script>
+(function () {
+  // Each segment: [hex bytes, colour class, offset label, description]
+  var moduleSegs = [
+    ["87CD", "c-hdr", "sync", "Module marker: every module starts with 87 CD"],
+    ["0029", "c-hdr", "size", "Module size: $29 = 41 bytes, including the CRC"],
+    ["000D", "c-hdr", "name", "The name starts at offset $0D"],
+    ["11", "c-hdr", "type", "Type/language: 1 = program, 1 = 6809 object code"],
+    ["80", "c-hdr", "attr", "Attributes/revision: $80 = re-entrant"],
+    ["00", "c-hdr", "parity", "Header check byte, computed from the bytes before it"],
+    ["0016", "c-hdr", "exec", "Execution starts at offset $16 (label start)"],
+    ["00FB", "c-hdr", "mem", "Data area size: 251 bytes (count + the 250-byte buffer)"],
+    ["68656C6CEF", "c-name", "name", "\"hello\". The last letter has bit 7 set ($6F → $EF) to mark the end"],
+    ["01", "c-name", "edition", "Edition number 1"],
+    ["48690D", "c-sym", "msg", "\"Hi\" and a carriage return"],
+    ["308CFA108E000386 01103F8C5F103F06".replace(/ /g, ""), "c-code", "code", "leax msg,pcr · ldy #3 · lda #1 · os9 I$WritLn · clrb · os9 F$Exit"],
+    ["359227", "c-crc", "CRC", "3-byte checksum over everything before it, appended at emod"]
+  ];
+  var rofSegs = [
+    ["62CD2387", "c-hdr", "sync", "ROF marker"],
+    ["0000", "c-hdr", "type", "Type/language and attr/rev: 0, since this file isn't a whole program"],
+    ["00", "c-hdr", "valid", "0 = assembled without errors"],
+    ["7E09020021", "c-hdr", "date", "Date and time assembled"],
+    ["0001", "c-hdr", "ed/ver", "Edition 0, ROF version 1"],
+    ["0002", "c-hdr", "vars", "2 bytes of uninitialised variables (total)"],
+    ["000000000000", "c-hdr", "sizes", "Direct-page variables, initialised data, direct initialised data: all 0"],
+    ["003B", "c-hdr", "code", "59 bytes of code"],
+    ["00000000", "c-hdr", "stk/entry", "Stack size and entry point: 0"],
+    ["73756D5F6300", "c-name", "name", "\"sum_c\", the psect name"],
+    ["0003", "c-sym", "provides", "3 names provided:"],
+    ["746F74616C00000000", "c-sym", "total", "total · flag 00 = variable · offset 0"],
+    ["6D61696E0004000E", "c-sym", "main", "main · flag 04 = code · offset $0E"],
+    ["6164640004 0000".replace(/ /g, ""), "c-sym", "add", "add · flag 04 = code · offset 0"],
+    ["3440CCFFC017FFF8EC64E36635C03440CCFFB817FFEACC0003 3406CC000234068DDE3264EDA90000 3406308D0009341017FFCD326435C0 25640D00".replace(/ /g, ""), "c-code", "code", "The 59 bytes of machine code, with placeholders where printf and _stkcheck go"],
+    ["0002", "c-ref", "needs", "2 names needed from other files:"],
+    ["7072696E7466000001A00031", "c-ref", "printf", "printf · 1 use · flag A0 = relative, in code · at code offset $31"],
+    ["5F73746B636865636B00", "c-ref", "_stkcheck", "_stkcheck"],
+    ["0002A00006A00014", "c-ref", "", "2 uses · at code offsets $06 and $14"],
+    ["0001200026", "c-ref", "fixup", "1 local fixup · flag 20 = in code, points at data · offset $26 (std total,y)"],
+    ["0000", "c-hdr", "common", "0 common blocks"]
+  ];
+
+  function render(segs, hexId, legendId) {
+    var hex = document.getElementById(hexId), legend = document.getElementById(legendId);
+    var bytes = [];
+    var offset = 0;
+    segs.forEach(function (s) {
+      var h = s[0], start = offset;
+      for (var i = 0; i < h.length; i += 2) { bytes.push({ v: h.substr(i, 2), c: s[1], t: s[3] }); offset++; }
+      var li = document.createElement("li");
+      var sw = document.createElement("span");
+      sw.className = "sw " + s[1];
+      sw.textContent = "$" + start.toString(16).toUpperCase().padStart(2, "0") + (s[2] ? " " + s[2] : "");
+      var d = document.createElement("span");
+      d.textContent = s[3];
+      li.appendChild(sw); li.appendChild(d); legend.appendChild(li);
+    });
+    for (var r = 0; r < bytes.length; r += 16) {
+      var row = document.createElement("div"); row.className = "row";
+      var off = document.createElement("span"); off.className = "off";
+      off.textContent = r.toString(16).toUpperCase().padStart(4, "0");
+      row.appendChild(off);
+      bytes.slice(r, r + 16).forEach(function (b) {
+        var sp = document.createElement("span"); sp.className = "b " + b.c; sp.textContent = b.v; sp.title = b.t;
+        row.appendChild(sp);
+      });
+      hex.appendChild(row);
+    }
+  }
+  render(moduleSegs, "hex-module", "legend-module");
+  render(rofSegs, "hex-rof", "legend-rof");
+})();
+</script>
+</body>
+</html>

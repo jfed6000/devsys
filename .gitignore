@@ -1,0 +1,11 @@
+# Build outputs
+*.o
+las/build/unix/las
+
+# Generated primer examples (rebuild with docs/learn/tools/build_examples.sh)
+docs/learn/examples/out/
+
+# Editor files
+\#*\#
+.#*
+*~
