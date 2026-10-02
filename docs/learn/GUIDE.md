@@ -80,7 +80,7 @@ Then add a line to the changelog at the bottom of this file.
 |---|---|
 | 0. Harness | ✅ Chapter 10: differential testing, dry runs, first vs knock-on errors |
 | 1. Symbol interface | ✅ Ch 9 "Hiding the table behind an interface"; ch 10 "Testing a change that shouldn't change anything" |
-| 2. Compact entries | Variable-length records, `sbrk`-style allocation, the free-list problem |
+| 2. Compact entries | ✅ Ch 9 "Making the record fit the name", "Checking for memory mistakes" |
 | 3. Module mode | How the module header parity byte and the 24-bit CRC are computed |
 | 4. lwasm syntax | Local label scoping, conditional assembly, operator precedence, case folding |
 | 5. Object mode | How `section`/`export` map onto ROF; linker defaults for the module header |
@@ -111,3 +111,6 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-02 — Ch 9: "What one symbol looks like": struct symblstr, decoded
   smbltyp/locmsk/s_ofst/reftbl from `examples/kinds.a` (built by
   build_examples.sh). Corrected entry size 73 → 76 bytes (179K for fm.asm).
+- 2026-10-02 — Phase 2: ch 9 sections on variable-length records (measured
+  results from harness/symstats.py) and AddressSanitizer/padding. Glossary:
+  AddressSanitizer, padding.

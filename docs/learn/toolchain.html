@@ -611,6 +611,27 @@ buffer  00 a2 0000  |  SIZE   06 82 0040</code></pre>
 <p><strong><code>s_ofst</code></strong> is the value: an offset within its section for a label (<code>helper</code> is at code offset $000D, and <code>total</code> sits at data offset $0040, just after the 64-byte <code>buffer</code>), or the number itself for <code>equ</code> and <code>set</code>.</p>
 <p><strong><code>reftbl</code></strong> points to a list of small records, one for each place the name is used. For <code>printf</code> it says “used at code offset $000A”. At the end, that list becomes the object file's “names this file needs” section, the red part of chapter 5's hex dump.</p>
 
+<h3>Making the record fit the name</h3>
+<p>The average name in the defs is 8 characters, yet every record reserved 64 bytes for it. Roadmap phase 2 made each record exactly as long as its name needs, using a standard C trick. The name becomes the <em>last</em> field and is declared as a one-character array:</p>
+<pre><code>struct symblstr
+{
+    ...                         /* the same 12 bytes of fields */
+    char symblnam[1];           /* the name: must stay last    */
+};</code></pre>
+<p>When <code>sym_add</code> creates a symbol, it asks for the record's size plus the name's length: <code>sizeof (struct symblstr) + strlen (name)</code>. The <code>[1]</code> already covers the zero byte that ends the name, so the name's other characters run on past the end of the declared array, into memory that was requested for exactly that purpose. C doesn't check array bounds, which is what makes the trick possible, and also what makes it easy to get wrong.</p>
+<p>A record now takes 12 bytes plus the name plus 1. Measured on real files:</p>
+<div class="scroll"><table>
+<thead><tr><th>Files</th><th>Before</th><th>After</th></tr></thead>
+<tbody>
+<tr><td>376 RMA and DCC-compiled files, the C toolchain's own inputs</td><td class="num-col">largest 40.4K</td><td class="num-col">largest 10.7K</td></tr>
+<tr><td>265 NitrOS9 Level 2 files, with the full defs</td><td class="num-col">median 109K</td><td class="num-col">median 30.6K</td></tr>
+</tbody></table></div>
+<p>The table is about 3.5 times smaller. The C toolchain's files now fit in the 25–30K a 6809 process has to spare, but NitrOS9 files still don't: the defs alone are about 1,500 names. That's the job of the banked blocks and precompiled defs.</p>
+
+<h3>Checking for memory mistakes</h3>
+<p>Get the size calculation wrong by a few bytes, and each name overwrites the start of whatever was allocated next. The output might still look right, until it doesn't. The regression test can't reliably see that. A special build can: <strong>AddressSanitizer</strong>, a compiler option that surrounds every allocation with guard zones and stops the program the moment anything touches one. All 740 regression inputs ran clean under it.</p>
+<p>Then the negative control from chapter 10: deliberately allocating names too short. It needed 4 bytes too short, not 1, before the sanitizer complained. The reason is <strong>padding</strong>. On Linux the compiler rounds the record up to a multiple of 4 bytes so its fields line up efficiently, and those spare bytes quietly absorb a small mistake. The 6809 has no such rule, so there a 1-byte mistake would corrupt memory, and only on the F256. Knowing where your safety net has holes is part of using it.</p>
+
 <h3>Finding a name quickly: hashing</h3>
 <p>The assembler looks names up constantly. Every label is added in pass 1 and found again in pass 2. Every operand that names a symbol (<code>os9 F$Exit</code>, <code>lda #MMU_SLOT_0</code>, <code>lbsr print</code>) is a lookup. That's thousands of lookups per file, so the cost of one lookup is multiplied thousands of times.</p>
 <p>Here are three ways to find one of the 1,664 names in the Level 2 F256 defs, measured on those real names:</p>
@@ -755,6 +776,7 @@ bucket (char *name)
 <section class="ch" id="glossary">
 <h2><span class="num">CHAPTER 12</span>Glossary</h2>
 <dl class="gloss">
+  <dt>AddressSanitizer</dt><dd>A compiler option that makes a program stop as soon as it reads or writes outside memory it allocated.</dd>
   <dt>assembler</dt><dd>Turns assembly language into machine-code bytes.</dd>
   <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
   <dt>binary search tree</dt><dd>A tree where each node has up to two branches: earlier-sorting names on the left, later on the right. Each comparison rules out a whole branch.</dd>
@@ -780,6 +802,7 @@ bucket (char *name)
   <dt>module</dt><dd>OS-9's unit of executable code: header, body, name, CRC.</dd>
   <dt>negative control</dt><dd>A deliberate fault fed to a test to show it can detect a problem.</dd>
   <dt>object file</dt><dd>Assembled code that isn't finished: it still has names to resolve and places to patch.</dd>
+  <dt>padding</dt><dd>Unused bytes a compiler adds inside or after a structure so its fields line up on convenient addresses.</dd>
   <dt>phasing error</dt><dd>An address that came out different in pass 2 than in pass 1.</dd>
   <dt>position-independent</dt><dd>Code that works wherever it's loaded, because it uses addresses relative to the program counter (<code>,pcr</code>).</dd>
   <dt>psect / vsect</dt><dd>RMA's code section and variable section.</dd>
