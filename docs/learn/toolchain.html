@@ -888,7 +888,7 @@ bucket (char *name)
 <tbody>
 <tr><td>Compact entries</td><td>Store each name at its real length instead of in a 64-byte box.</td><td>About 18 bytes per symbol instead of 73. No slower.</td></tr>
 <tr><td>Banked tables</td><td>Keep the table in extra RAM blocks, mapped in one at a time (chapter 8). Done in phase 8, below.</td><td>The table is no longer limited by the 64K space.</td></tr>
-<tr><td>Precompiled defs</td><td>Assemble the defs once and save the finished table blocks to disk. Later builds load the saved blocks instead of re-reading 1,600 definitions twice.</td><td>Much faster builds; the defs table is shared and read-only.</td></tr>
+<tr><td>Precompiled defs</td><td>Record once what reading the defs did, in a file. Later builds create those symbols straight from the file instead of re-reading 1,600 definitions in each pass. Done in phase 9, below.</td><td>A small module assembles in a sixth of the work.</td></tr>
 </tbody></table></div>
 <p class="why">Precompiled headers in modern C compilers use the same trick: do the expensive, unchanging work once and save the result.</p>
 
@@ -926,6 +926,69 @@ bucket (char *name)
 <p class="cap">The result</p>
 <p>On the emulated F256, <code>las</code> now assembles <code>scfg.asm</code> byte for byte as the Linux build does. It uses 6 blocks of symbols, switches the window about 22,500 times, and needs only 8K of ordinary data, where 41K wouldn't fit before. It is slow, though. A big NitrOS9 file takes minutes, because every pass reads 230K of defs and each switch costs two system calls. Phase 9's precompiled defs go after that.</p>
 <p><strong>Measure before you build.</strong> The plan was to bank <code>rlink</code> the same way, because it ran out of memory linking <code>las</code>. Counting where its memory went showed something else: 14K of its 20K of static data was one table, used only with <code>--lwlink</code>, that I had added in phase 3b as a fixed array. Allocating it only when needed let <code>rlink</code> link every tool with room to spare. No banking needed.</p>
+
+<h3>Saving the defs: precompiled images</h3>
+<p>Almost every NitrOS9 module source starts the same way:</p>
+<pre><code>                    ifp1
+                    use       defsfile
+                    endc</code></pre>
+<p><code>defsfile</code> pulls in <code>os9.d</code>, <code>scf.d</code>, <code>rbf.d</code> and <code>wildbits.d</code>: about 2,000 lines of <code>equ</code>, <code>set</code> and <code>rmb</code>. In lwasm mode <code>ifp1</code> is true in both passes (chapter 4), so the assembler reads all of it twice. On the F256 we measured <code>level1/cmds/echo.asm</code>, a 34-byte module, in the host model (chapter 11): 33.7 million 6809 instructions, and 99% of them were the defs. The defs are the same for every file in a build, so that is the same work done over and over.</p>
+<p class="cap">The idea</p>
+<p>Do the work once and keep the result. The first time <code>las --defsimg=FILE</code> reaches <code>use defsfile</code>, it reads the defs as usual and records what they did into FILE, a <strong>defs image</strong>. Later runs find the image and create the symbols straight from it. Compilers do the same with precompiled headers. <code>harness/imgdump.py</code> prints an image. This is the one native <code>las</code> wrote on the emulated F256:</p>
+<pre><code>IMG: complete, version 2, options 0x07, for 'use defsfile'
+  defined before:  NOS9MAJ      typ 05 msk 82 value 0x0
+  defined before:  jr2          typ 05 msk 82 value 0x1
+  ...
+  file  os9.d        /dd/S/os9.d  stamp 7e0a021218000111c2
+  nam   'os9.d'
+  ...
+  counter 0x0 -&gt; 0x8; blocks +260 (local=new); lines +3080; globals +0; if count +4
+  25 conditionals: 1011110111001101100111110
+  pass 2  OS9.D                typ 05 msk 82 value 0x1
+  records: E 1, F 5, G 1, P 5, S 1639, T 11, Z 4</code></pre>
+<p>Most of the 27,433 bytes are the 1,639 symbols (S). The rest is everything else reading the defs changes. That turned out to be more than symbols:</p>
+<ul>
+<li>the location counter: the defs' top-level <code>rmb</code> lines leave <code>*</code> at 8, exactly as lwasm does;</li>
+<li>the 25 conditionals' results, which pass 2 replays (chapter 4);</li>
+<li>the blank-line count that numbers local-label blocks, and the line count used in messages;</li>
+<li>RMA's <code>if</code> count. It goes up at every <code>if</code> but not down at the <code>endc</code> of a false one, so the defs raise it by 4. The image must too, or a stray <code>endc</code> later would be reported differently;</li>
+<li><code>nam</code> and <code>ttl</code>. In pass 1 they set the title only if it is still empty, in pass 2 always. So the image keeps the lines themselves (T) and does them again with the same rule;</li>
+<li>a few symbols pass 2 changes when it reads the defs again (Z), such as the include guard <code>OS9.D</code>.</li>
+</ul>
+<p>Each of these was found by testing, not by planning: the first version differed until it was right. The symbols aren't saved as raw table blocks, either. Each bucket's tree depends on what was in the table before the <code>use</code>, so loading adds them again in the order they were first created. The trees then have the same shape as after reading, and lookups cost the same.</p>
+<p class="cap">When is the image still right?</p>
+<p>This is <strong>cache invalidation</strong>: knowing when a saved result no longer matches what doing the work would give. Using a stale image is the worst possible failure, because the module comes out wrong with no error. The F256 defs show why: <code>os9.d</code> says <code>IFNE H6309</code>, so assembling with <code>-DH6309=1</code> defines different symbols. Loading an image made without it would quietly build a 6809 module with the wrong definitions.</p>
+<p>The rule <code>las</code> uses is deliberately blunt. It loads the image only when reading the defs would certainly do the same:</p>
+<ul>
+<li>the symbols defined before the <code>use</code> are exactly those at recording: the same names, types and values (P). Usually these are the <code>-D</code> symbols. So whatever the defs look at is as it was, and nothing they create exists yet;</li>
+<li>every <code>use</code> resolves to the same path, and that file has the same date and size (F). On the F256 the date comes from the file's descriptor (<code>I$GetStt</code>, <code>SS.FD</code>), as <code>make</code> would use it;</li>
+<li>the same options and location counter.</li>
+</ul>
+<p>If anything differs, <code>las</code> just reads the defs. If a file changed, it also records a new image. A first version tracked each name the defs looked up, which is more precise. But RMA already creates a table entry for any name used before it is defined (<code>H6309</code> in <code>IFNE H6309</code>), so those names show up as created symbols anyway, and the blunt rule covers them. It also took 3K less 6809 code, which mattered, as you'll see.</p>
+<p>Pass 2 needs its own check. If your source later changes a defs symbol (<code>OS9.D set 2</code>), reading the defs again in pass 2 would see the new value. Every change to a symbol goes through <code>symtab.c</code>'s setters (phase 8), so the setters report any change to a defs symbol after the image was loaded. In that case pass 2 reads the defs normally. That is always right, because pass 1 left exactly the state reading would have left.</p>
+<p class="cap">Testing it</p>
+<p><code>harness/imgcheck.py</code> assembles all 290 build commands three times: without an image, recording one, and loading it. Object bytes, messages, exit status and the symbol table must be the same all three times, and they are: 290 of 290. With one image file shared by every job, most loads must refuse it, and again 290 of 290 come out the same. <code>--variants</code> builds 14 cases around <code>echo.asm</code> that must or must not load: <code>-DH6309</code> added or changed, <code>os9.d</code> touched, a source that changes a defs symbol, one that defines a defs name first, one without its own <code>nam</code>. Each is checked against plain assembly as well as for the right decision.</p>
+<p class="cap">The result</p>
+<p>In the host model, <code>echo.asm</code> on the 6809 went from 33.7 million instructions to 5.3 million, the same module, and window switches halved (12,025 → 5,868). Recording costs a little extra once (37.6 million).</p>
+<p>On the emulated F256, the 57 commands in <code>level1/cmds</code> took 1,556 seconds without an image and 667 with one, every module identical to the Linux build's. That is 2.3 times faster, not 6. The model counts a window switch as one instruction, but on the machine each is two system calls, and loading still makes about 5,900 of them, because adding a symbol walks its bucket's tree across blocks. So the next thing to speed up is the switching, not the parsing. Measuring both ways is what showed that.</p>
+<p class="cap">Fitting it in</p>
+<p>The new code first made <code>las</code> 42,906 bytes. A Level 2 module in five 8K slots must end by <code>$FD00</code>, so it can be at most 40,192 bytes. One byte more takes a sixth slot, and then <code>F$Fork</code> can't fit <code>las</code>'s two data blocks and its window (chapter 11). Three things brought it to 40,168:</p>
+<ul>
+<li>the simpler validity rule above;</li>
+<li>short wrappers. In DCC's code every call that passes the file pointer and a <code>long</code> position costs 10 to 20 bytes, so <code>seek(pos)</code> and friends are written once;</li>
+<li>no stack checks in five files that never recurse. Each C function normally starts with a call to <code>_stkcheck</code> (6 bytes). The symbol accessors are also <code>las</code>'s busiest functions, so this alone saved 1.4 million instructions on <code>echo</code>.</li>
+</ul>
+<p class="cap">A bug the optimizer made</p>
+<p>The first native test loaded nothing. The model's breakpoints showed the image being read from the wrong place, and the cause was in code DCC generated from a two-line function:</p>
+<pre><code>long tell () { return ftell (Fp); }
+
+tell pshs u            tell pshs u
+ ldd Fp,y               ldd >Fp
+ pshs d                 pshs d
+ lbsr ftell             lbsr ftell
+ leas 2,s               puls x,u,pc
+ puls u,pc</code></pre>
+<p>On the left is the compiler's output, on the right the optimizer's. The optimizer is a <strong>peephole optimizer</strong>: it looks at a few instructions at a time and replaces known patterns with shorter ones. Here it turned "drop the argument, return" into "pop the argument into X, return", which saves 2 bytes. That's safe when a function returns an <code>int</code>, because the result is in D. But DCC returns a <code>long</code> by leaving X pointing at it, and the shortcut overwrites X. No function in the six tools had hit this pattern before. <code>defsimg.c</code> now stores the position through a pointer instead, and the hazard is noted in <code>DESIGN.md</code> §10. (The <code>ldd &gt;Fp</code> on the right is fine: in Level 2 a program's data starts at address 0, so Y is 0 and <code>&gt;Fp</code> is the same address.)</p>
 </section>
 
 <!-- 10 -->
@@ -1097,7 +1160,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 <!-- 12 -->
 <section class="ch" id="project">
 <h2><span class="num">CHAPTER 12</span>Where this leads</h2>
-<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles 199 of the 200 NitrOS9 module sources, <code>rlink</code> links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Next is speed: phase 9 saves the assembled defs so each build stops re-reading them.</p>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles 199 of the 200 NitrOS9 module sources, <code>rlink</code> links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Phase 9 made it faster: a saved image of the defs means each build stops re-reading them (chapter 9).</p>
 <p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
 </section>
 
@@ -1112,12 +1175,14 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>binary search tree</dt><dd>A tree where each node has up to two branches: earlier-sorting names on the left, later on the right. Each comparison rules out a whole branch.</dd>
   <dt>bootstrapping</dt><dd>Getting a tool to build itself. The first version has to come from somewhere else, here a cross compiler.</dd>
   <dt>buffer</dt><dd>Memory where buffered I/O (C's <code>stdio</code>) keeps a block of a file, so it can read or write a byte at a time without a system call each time. CoCoC gives each file slot one buffer, once.</dd>
+  <dt>cache invalidation</dt><dd>Deciding when a saved result no longer matches what doing the work again would give. For a defs image: same symbols before the <code>use</code>, same files, same dates and sizes.</dd>
   <dt>calling convention</dt><dd>The rules for where a function's arguments and result go. DCC passes arguments on the stack and returns the result in D; a <code>char</code> result is in B only.</dd>
   <dt>check byte</dt><dd>Byte 8 of a module header: the first 8 bytes XORed together, with every bit flipped. Lets OS-9 recognise a real header.</dd>
   <dt>collision</dt><dd>Two different names that hash to the same bucket.</dd>
   <dt>CRC</dt><dd>Cyclic redundancy check: the 3-byte checksum at the end of every OS-9 module. Run over the whole module, CRC included, it always gives <code>80 0F E3</code>, which is how OS-9 checks a module.</dd>
   <dt>CRLF</dt><dd>Windows line endings: carriage return then line feed. Unix uses LF only; OS-9 uses CR only.</dd>
   <dt>cross compiler</dt><dd>A compiler that runs on one machine and makes code for another. Our Linux DCC is one.</dd>
+  <dt>defs image</dt><dd>A file recording what reading the defs did (symbols, conditionals, counters), so <code>las --defsimg</code> can skip reading them next time.</dd>
   <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
   <dt>dialect</dt><dd>One assembler's version of the shared assembly language. <code>las</code> supports RMA's (default) and lwasm's (<code>--lwasm</code>).</dd>
   <dt>differential testing</dt><dd>Testing a program by giving it and a trusted program the same input and comparing the outputs.</dd>
@@ -1147,6 +1212,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>object file</dt><dd>Assembled code that isn't finished: it still has names to resolve and places to patch.</dd>
   <dt>operator precedence</dt><dd>Which operators are applied first in an expression, as multiplication before addition in arithmetic.</dd>
   <dt>padding</dt><dd>Unused bytes a compiler adds inside or after a structure so its fields line up on convenient addresses.</dd>
+  <dt>peephole optimizer</dt><dd>An optimizer that looks at a few instructions at a time and replaces known patterns with shorter or faster ones. DCC's is <code>dco68</code>.</dd>
   <dt>phasing error</dt><dd>An address that came out different in pass 2 than in pass 1.</dd>
   <dt>position-independent</dt><dd>Code that works wherever it's loaded, because it uses addresses relative to the program counter (<code>,pcr</code>).</dd>
   <dt>prototype</dt><dd>A function declaration that lists its parameter types, so the compiler converts each argument at the call. K&amp;R C has none.</dd>
@@ -1169,7 +1235,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 </dl>
 </section>
 
-<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24; phase 10 results from the same day): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
+<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24; phase 9 and 10 results from the same day): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
 </main>
 </div>
 
