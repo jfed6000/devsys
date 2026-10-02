@@ -81,7 +81,8 @@ Then add a line to the changelog at the bottom of this file.
 | 0. Harness | ✅ Chapter 10: differential testing, dry runs, first vs knock-on errors |
 | 1. Symbol interface | ✅ Ch 9 "Hiding the table behind an interface"; ch 10 "Testing a change that shouldn't change anything" |
 | 2. Compact entries | ✅ Ch 9 "Making the record fit the name", "Checking for memory mistakes" |
-| 3. Module mode | How the module header parity byte and the 24-bit CRC are computed |
+| 3. Module mode | ✅ Ch 2 "Two location counters", "The header check byte", "The CRC"; ch 4 "Choosing instruction sizes" |
+| 3b. Operand sizing | Iterating to stable sizes: why extra passes converge (or don't); size choices only shrink |
 | 4. lwasm syntax | Local label scoping, conditional assembly, operator precedence, case folding |
 | 5. Object mode | How `section`/`export` map onto ROF; linker defaults for the module header |
 | 6. Long names | Why name limits existed; how ROF stores names |
@@ -114,3 +115,7 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-02 — Phase 2: ch 9 sections on variable-length records (measured
   results from harness/symstats.py) and AddressSanitizer/padding. Glossary:
   AddressSanitizer, padding.
+- 2026-10-02 — Phase 3: ch 2 sections on location counters, the header check
+  byte (worked XOR table for hello) and the CRC (incl. the 80 0F E3 residue);
+  ch 4 "Choosing instruction sizes". Glossary: check byte, location counter,
+  XOR; CRC entry expanded.

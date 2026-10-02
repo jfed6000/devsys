@@ -294,6 +294,32 @@ eom      equ   *</code></pre>
 <p><strong>Variables are not in the module.</strong> <code>count</code> and the 250-byte buffer produced no bytes at all. They only set the data size (<code>$00FB</code> = 251) in the header. When the program starts, OS-9 gives the process a fresh 251-byte data area and points register <code>U</code> at it. The code reaches its variables relative to that register. This is how several processes can share one copy of the code: each gets its own data.</p>
 <p><strong>The code doesn't care where it's loaded.</strong> <code>leax msg,pcr</code> assembled to <code>30 8C FA</code>: “X = this instruction's address minus 6”. No fixed address appears anywhere. This is called <strong>position-independent code</strong>, and OS-9 requires it, because the OS decides where a module goes in memory.</p>
 <p><code>os9 I$WritLn</code> became <code>10 3F 8C</code>: the <code>SWI2</code> instruction, followed by the number of the system call. That's all a system call is. The defs file gives <code>I$WritLn</code> its number.</p>
+
+<h3>Two location counters</h3>
+<p>An assembler keeps a <strong>location counter</strong>: the address the next byte will go to. Inside a module there are two. <code>*</code> counts code bytes, and <code>.</code> counts data bytes. Both start at 0 at <code>mod</code>.</p>
+<p>In <code>hello</code>, <code>count rmb 1</code> and <code>rmb 250</code> advance only <code>.</code>, from 0 to 251, so <code>size equ .</code> gets 251, the data area size the header needs. Instructions and <code>fcb</code>/<code>fcc</code> advance <code>*</code>, so <code>eom equ *</code> at the end gets 41, the module's total length. Two counters let one file describe two separate things: the bytes of the module, and the layout of the memory OS-9 will give the process.</p>
+<p>Outside a module there's only one counter, and <code>rmb</code> still writes no bytes. That's how the defs use <code>org 0</code> followed by a list of <code>rmb</code>s to give names to the offsets of a structure, without producing any output.</p>
+
+<h3>The header check byte</h3>
+<p>Byte 8 of the header protects the 8 bytes before it. XOR them together, then flip every bit. XOR compares bits: the result bit is 1 where the two inputs differ.</p>
+<div class="scroll"><table>
+<thead><tr><th>Byte</th><th>Running XOR</th></tr></thead>
+<tbody>
+<tr><td class="num-col">87</td><td class="num-col">87 · 10000111</td></tr>
+<tr><td class="num-col">CD</td><td class="num-col">4A · 01001010</td></tr>
+<tr><td class="num-col">00</td><td class="num-col">4A · 01001010</td></tr>
+<tr><td class="num-col">29</td><td class="num-col">63 · 01100011</td></tr>
+<tr><td class="num-col">00</td><td class="num-col">63 · 01100011</td></tr>
+<tr><td class="num-col">0D</td><td class="num-col">6E · 01101110</td></tr>
+<tr><td class="num-col">11</td><td class="num-col">7F · 01111111</td></tr>
+<tr><td class="num-col">80</td><td class="num-col">FF · 11111111</td></tr>
+</tbody></table></div>
+<p>Flip every bit of <code>FF</code> and you get <code>00</code>, the check byte in <code>hello</code>. OS-9 checks it the other way round: XOR all 9 bytes and the answer must be <code>FF</code>. It's a quick test that a header is real before OS-9 trusts any of its fields.</p>
+
+<h3>The CRC</h3>
+<p>The last 3 bytes protect the whole module. A <strong>CRC</strong> (cyclic redundancy check) runs every byte through a 24-bit shift register: the register starts at <code>FF FF FF</code>, each byte is mixed in by shifting and XORing at fixed bit positions, and at the end every bit is flipped. A single wrong bit anywhere changes the result, and so do most combinations of errors.</p>
+<p>For <code>hello</code> the register ends at <code>CA 6D D8</code>. Flipped, that's <code>35 92 27</code>, the 3 bytes <code>emod</code> appends. And there's a neat property: run the same calculation over the <em>whole</em> module, CRC included, and the answer is always <code>80 0F E3</code>, whatever the module contains. That's how OS-9 checks a module when it loads it: it doesn't need to find the stored CRC, it just checks that the total comes out to that constant.</p>
+<p class="why"><code>las</code> computes the CRC while it writes the module in pass 2, byte by byte, so it never has to hold the module in memory. lwasm builds the whole module image first and then computes it.</p>
 </section>
 
 <!-- 3 -->
@@ -379,6 +405,11 @@ printit  lda   ,x+</code></pre>
 </tbody></table></div>
 
 <p>The two passes must agree on every address. If an instruction comes out a different size in pass 2 than in pass 1, everything after it shifts and the assembler reports a <strong>phasing error</strong>. That's why <code>ifp1 / use defsfile / endc</code> appears at the top of so many files: read the big defs file in pass 1 only, since its symbols are already in the table for pass 2.</p>
+
+<h3>Choosing instruction sizes</h3>
+<p>Some instructions come in several sizes. <code>leax msg,pcr</code> loads the address of <code>msg</code> as a distance from the current instruction. If the distance fits in 8 bits (−128 to +127), the instruction is 3 bytes: <code>30 8C FA</code>. Otherwise it needs 16 bits and is 4 bytes: <code>30 8D FF F9</code>.</p>
+<p>For a label defined <em>earlier</em>, the assembler knows the distance and can pick the short form. For a label defined <em>later</em>, a forward reference, it doesn't know the distance yet in pass 1. A two-pass assembler has to guess, and the safe guess is the long form, because whatever it picks in pass 1 it must keep in pass 2, or every address after it would move. That would be a phasing error.</p>
+<p>lwasm avoids the guess by not limiting itself to two passes. It assembles, works out the sizes, and repeats until nothing changes. RMA always uses the long form for <code>,pcr</code> unless the source asks for the short one with <code>&lt;</code>, even for backward references. That's why <code>las</code> makes some modules a few bytes longer than lwasm does, and why matching lwasm exactly needs extra sizing passes. That's roadmap phase 3b.</p>
 
 <h3>Reading a listing</h3>
 <p>This is part of RMA's listing for the C example from chapter 7:</p>
@@ -780,8 +811,9 @@ bucket (char *name)
   <dt>assembler</dt><dd>Turns assembly language into machine-code bytes.</dd>
   <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
   <dt>binary search tree</dt><dd>A tree where each node has up to two branches: earlier-sorting names on the left, later on the right. Each comparison rules out a whole branch.</dd>
+  <dt>check byte</dt><dd>Byte 8 of a module header: the first 8 bytes XORed together, with every bit flipped. Lets OS-9 recognise a real header.</dd>
   <dt>collision</dt><dd>Two different names that hash to the same bucket.</dd>
-  <dt>CRC</dt><dd>The 3-byte checksum at the end of every OS-9 module. OS-9 checks it before running the module.</dd>
+  <dt>CRC</dt><dd>Cyclic redundancy check: the 3-byte checksum at the end of every OS-9 module. Run over the whole module, CRC included, it always gives <code>80 0F E3</code>, which is how OS-9 checks a module.</dd>
   <dt>CRLF</dt><dd>Windows line endings: carriage return then line feed. Unix uses LF only; OS-9 uses CR only.</dd>
   <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
   <dt>differential testing</dt><dd>Testing a program by giving it and a trusted program the same input and comparing the outputs.</dd>
@@ -796,6 +828,7 @@ bucket (char *name)
   <dt>knock-on error</dt><dd>An error caused by an earlier error. Fixing the first one makes it disappear.</dd>
   <dt>library</dt><dd>A bundle of object files (members). The linker takes only the members it needs.</dd>
   <dt>linker</dt><dd>Joins object files and library members into one program and fills in cross-references.</dd>
+  <dt>location counter</dt><dd>The address where the assembler will put the next byte. Inside an OS-9 module there are two: <code>*</code> for code, <code>.</code> for data.</dd>
   <dt>LWOBJ</dt><dd>lwasm's object file format, read by lwlink.</dd>
   <dt>MMU</dt><dd>Hardware that maps 8K blocks of physical RAM into the 6809's 64K address space.</dd>
   <dt>mod</dt><dd>Starts a module-format source and supplies the header fields.</dd>
@@ -813,6 +846,7 @@ bucket (char *name)
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
   <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
   <dt>threaded tree</dt><dd>A tree whose unused right pointers point to the next node in order, so it can be walked without a stack.</dd>
+  <dt>XOR</dt><dd>Exclusive or: compares two bits and gives 1 where they differ. Used in check bytes and CRCs.</dd>
 </dl>
 </section>
 
