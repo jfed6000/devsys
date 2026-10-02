@@ -117,7 +117,12 @@ createMac (ZILCH)    /* l3183 */
              * done in Linux...
              */
 #ifdef COCO
-            macfp1->_bufsiz = 512;
+            /* only while the FILE slot has no buffer yet: CoCoC's stdio
+             * keeps a slot's first buffer through fclose (the --args
+             * file may have used this one), so a larger size would run
+             * past it (DESIGN.md §10) */
+            if ( ! macfp1->_base)
+                macfp1->_bufsiz = 512;
 #endif
         }
 

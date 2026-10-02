@@ -208,9 +208,10 @@ unsigned	size;
 #endif
 #ifdef _OSK
 	if ((p = (char*) ebrk(size)) == -1)
-#elif defined(_OS9)
-	if ((p = (char*) sbrk(size)) == -1)
 #else
+	/* malloc on OS-9 too (it was sbrk): lw_select's index, freed
+	 * before linking, is then reused; memory freed to malloc is lost
+	 * to sbrk. Native --lwlink links of play ran out without it */
 	if ((p = (char*) malloc(size)) == NULL)
 #endif
 	{
@@ -243,7 +244,12 @@ char *old, *name;
         len = SYMLEN;
 
     if ( ! old || (strlen (old) < len))
+    {
+        if (old)
+            free (old);         /* a recycled SYMDAT's shorter name */
+
         old = grab (len + 1);
+    }
 
     strncpy (old, name, len);
     old[len] = '\0';

@@ -187,7 +187,8 @@ wrtmodule()
     }
 
 #ifdef _OS9
-    OutFile->_bufsiz = 512;
+    if (!OutFile->_base)        /* as InFile's (readrofs, rl_02.c) */
+        OutFile->_bufsiz = 512;
 #endif
 
     if (SETSIZE(fileno(OutFile), o9_int(mod_hdr.m_size)))

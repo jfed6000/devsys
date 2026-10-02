@@ -23,6 +23,7 @@ instruction counts).
   --trace         print every system call to stderr
   --map FILE      rlink's link map (-m) of the module: names for addresses
   --break NAME    each time NAME is entered, print the calls on the stack
+                  (NAME+HEX: each time that address inside NAME is reached)
                   (needs --map; repeatable)
   --stats         print instructions executed and memory used at exit
 
@@ -251,6 +252,9 @@ class Process:
         for off, n in self.syms:
             if n in breaks:
                 self.breaks[self.modbase + off] = n
+            for br in breaks:             # NAME+HEX: an address inside NAME
+                if "+" in br and br.split("+")[0] == n:
+                    self.breaks[self.modbase + off + int(br.split("+")[1], 16)] = br
 
     def where(self, addr):
         """function+offset for a code address"""
@@ -268,15 +272,15 @@ class Process:
         LBSR in the module) - a heuristic, but DCC code calls with LBSR."""
         c, m = self.cpu, self.cpu.mem
         out = []
-        for a in range(c.s, min(c.s + 256, 0xFE00), 1):
+        for a in range(c.s, min(c.s + 2048, 0xFE00), 1):
             r = m[a] << 8 | m[a + 1]
             if not (self.modbase < r < self.modbase + self.codesize):
                 continue
             if m[r - 3] in (0x17, 0xBD) or m[r - 2] == 0x8D:
                 out.append(self.where(r))
-            if len(out) == 6:
+            if len(out) == 40:
                 break
-        print(f"break {name}: " + " <- ".join(out), file=sys.stderr)
+        print(f"break {name}: S=${c.s:04X} " + " <- ".join(out), file=sys.stderr)
 
     # ----------------------------------------------------------- helpers
     def name_at(self, addr):
@@ -507,12 +511,14 @@ class Process:
             if f.scf:
                 raise OS9Error(E_UNKSVC)
             if code == 0x02:
+                f.f.flush()         # else fstat misses buffered writes
                 n = os.fstat(f.f.fileno()).st_size
             else:
                 n = f.f.tell()
             c.x, c.u = n >> 16, n & 0xFFFF
         elif code == 0x06:                                 # SS.EOF
             if not f.scf:
+                f.f.flush()
                 pos = f.f.tell()
                 if pos >= os.fstat(f.f.fileno()).st_size:
                     raise OS9Error(E_EOF)

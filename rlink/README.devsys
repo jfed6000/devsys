@@ -19,5 +19,11 @@ Changes:
            names stored at their own length (setname, D23), ext_ref entries
            at least dref_node size (they are reused as dref_nodes)
   phase 8  lwsel's 14K module table allocated only for --lwlink (D29)
+  phase 10 native --lwlink links fit (D31): lwsel skips constants-only
+           members' names, grows its module table, frees its index;
+           grab() uses malloc on OS-9 too; setname frees a replaced name.
+           _bufsiz set only before a FILE slot has its buffer (CoCoC keeps
+           the first one through freopen; 1,024 on a 256-byte buffer
+           overwrote OutFile's)
 
 Design and roadmap: ../docs/DESIGN.md

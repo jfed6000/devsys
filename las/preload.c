@@ -23,14 +23,21 @@
 
 #define PLBUCKETS 128
 
+/* The entries live in the banked blocks with the symbols (bank.c): the
+ * Level 2 defs export about 2,000 constants, some 30K, which don't fit
+ * in las's 64K on the 6809. A handle is good until another block is
+ * mapped, so each use maps the entry again (DESIGN.md D27) */
+
 struct pldef
 {
-    struct pldef *next;
+    unsigned next;              /* handle of the next in the bucket */
     int value;
     char name[1];               /* allocated at the name's length */
 };
 
-static struct pldef *PlTable[PLBUCKETS];
+#define PD(h) ((struct pldef *) bank_ptr (h))
+
+static unsigned PlTable[PLBUCKETS];
 static char *PlFiles[8];
 static int PlCount;
 
@@ -109,9 +116,15 @@ preload_find (name, value)
 #endif
 {
     register struct pldef *d;
+    unsigned h;
 
-    for (d = PlTable[plhash (name)]; d; d = d->next)
+    /* name is in main memory (sym_name copies it), so it stays valid
+     * while the entries' blocks are mapped */
+
+    for (h = PlTable[plhash (name)]; h; h = d->next)
     {
+        d = PD (h);
+
         if (plsame (d->name, name))
         {
             *value = d->value;
@@ -206,14 +219,15 @@ preload_load (ZILCH)
 
                 if ((type & 7) == (CODENT | DIRENT))    /* constants only */
                 {
-                    struct pldef *d = (struct pldef *)
-                            getmem (sizeof (struct pldef) + strlen (name));
+                    unsigned e = bank_alloc (sizeof (struct pldef) +
+                                             strlen (name));
+                    register struct pldef *d = PD (e);
                     int h = plhash (name);
 
                     strcpy (d->name, name);
                     d->value = (short) value;
                     d->next = PlTable[h];
-                    PlTable[h] = d;
+                    PlTable[h] = e;
                 }
             }
 

@@ -21,8 +21,14 @@ Suites (default: all):
   lw    native las assembles NitrOS9 module sources from the Level 2
         build (lwdiff's jobs.json; run harness/lwdiff.py first). Each
         module must equal las/build/nosz's (no ,pcr sizing, as natively)
-        on the same files. Slow: about 3 s of wall time per file. Not in
+        on the same files. Slow: about 40 s of wall time per file
+        (--shard to split it over several MAMEs). Not in
         the default set; --only TEXT picks files whose id contains TEXT
+  obj   phase 10: native las assembles the 90 object-format sources (the
+        libraries' and the .as programs'), merge builds libwildbitsl2,
+        libnet and libalib, and native rlink --lwlink links the build's 13
+        programs. Objects must equal las/build/nosz's, programs the host
+        rlink's from those objects. Not in the default set
 
   python3 harness/native.py                  # las, link, cc
   python3 harness/native.py lw --only scfg   # one NitrOS9 file
@@ -33,7 +39,10 @@ MAME (DESIGN.md "Phase 7 test plan"): ~/projects/wild/mame/mame, machine
 wbjr2, -bios turbo, headless, never modified. The image is always a copy,
 padded upward to 128 MB. A Lua script polls the image (with ToolShed's os9)
 for the marker file the last startup line writes, then ends the run.
-Work files go to harness/out/native/.
+Work files go to harness/out/native/ (--work DIR for another place).
+--shard K/N runs every Nth lw job starting at K, so N runs with their own
+--work directories can share the hour-long lw suite:
+  python3 harness/native.py lw --shard 0/6 --work harness/out/native0
 """
 import argparse
 import glob
@@ -123,6 +132,16 @@ def make_image(src, dsk):
 def rof_equal(a, b):
     """Equal ROFs, ignoring the 5-byte assembly date (header offset 7)."""
     return len(a) == len(b) and a[:7] == b[:7] and a[12:] == b[12:]
+
+
+def only_dtb(a, b, crc=0):
+    """a and b differ only in one run of at most 6 bytes: what dtb (the
+    assembly date and time, wbinfo) puts in the code. crc: also ignore
+    that many bytes at the end (a module's CRC, which the date changes)."""
+    if len(a) != len(b):
+        return False
+    diff = [i for i in range(len(a) - crc) if a[i] != b[i]]
+    return bool(diff) and diff[-1] - diff[0] < 6
 
 
 def suite_las(dsk):
@@ -263,6 +282,7 @@ JOBS = os.path.join(HERE, "out", "l2-jr2", "jobs.json")
 GEN = os.path.join(HERE, "out", "l2-jr2", "generated")
 NOSZ = os.path.join(DEVSYS, "las/build/nosz/las")
 ONLY = []
+SHARD = [0, 1]                  # this run's index, number of runs
 
 
 def is_text(path):
@@ -270,16 +290,17 @@ def is_text(path):
     return b"\0" not in data
 
 
-def stage_lw():
-    """lwdiff's module jobs and, for each, the files it reads, placed as
+def stage_lw(fmt="os9"):
+    """lwdiff's jobs of one format (os9: modules, obj: ROF objects) and, for each, the files it reads, placed as
     (source, [(file, place)]) where place is "S/name" (shared: the name
     is unique), "J/src/name" (the job's own) or "J/name" (reached as
     ../name from the source's directory)."""
     import json
     import collections
-    jobs = [j for j in json.load(open(JOBS)) if j["format"] == "os9"]
+    jobs = [j for j in json.load(open(JOBS)) if j["format"] == fmt]
     if ONLY:
         jobs = [j for j in jobs if any(o in j["id"] for o in ONLY)]
+    jobs = jobs[SHARD[0]::SHARD[1]]
 
     def find(name, here, incs):
         for d in [here] + incs + [GEN]:
@@ -313,6 +334,12 @@ def stage_lw():
             name = os.path.basename(path)
             if path == j["source"]:
                 place = "J/src/" + name
+            elif how and "/" in how:
+                # use ../defs/x.d: the same layout around the source
+                rel = os.path.normpath(os.path.join("src", how))
+                if rel.startswith(".."):
+                    sys.exit(f"{j['id']}: can't stage {how}")
+                place = "J/" + rel
             elif len(owners[name]) == 1:
                 place = "S/" + name
             elif how and how.startswith("../"):
@@ -347,6 +374,9 @@ def suite_lw(dsk):
             if target in done:
                 continue
             done.add(target)
+            sub = os.path.dirname(target)
+            if sub not in (jd, jd + "/src", "T/S"):
+                os9("makdir", f"{dsk},{sub}", check=False)
             put(path, f"{dsk},{target}", text=is_text(path))
         src = os.path.basename(j["source"])
         argfile = os.path.join(WORK, "args.tmp")
@@ -372,6 +402,7 @@ def suite_lw(dsk):
             for path, place in files:
                 t = os.path.join(jd, place[2:]) if place.startswith("J/") \
                     else os.path.join(hostroot, place)
+                os.makedirs(os.path.dirname(t), exist_ok=True)
                 shutil.copyfile(path, t)
             ref = os.path.join(jd, "ref")
             argv = [NOSZ, os.path.basename(j["source"])] + lw_args(j) + \
@@ -391,7 +422,162 @@ def suite_lw(dsk):
     return lines, check
 
 
-SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc, "lw": suite_lw}
+def link_cmds():
+    """The build's lwar and lwlink commands (lwdiff re-reads the recipe's
+    dry run), with each object named by its job id."""
+    import json
+    jobs = json.load(open(JOBS))
+    byobj = {os.path.normpath(os.path.join(j["cwd"], j["output"])): j["id"] for j in jobs}
+    tmp = os.path.join(WORK, "collect")
+    os.makedirs(tmp, exist_ok=True)
+    lwdiff.collect(lwdiff.DEFAULT_NITROS9, "l2", "jr2", tmp)
+    libs, links = [], []
+    for c in lwdiff.LINK_CMDS:
+        files = [a for a in c["argv"][1:] if not a.startswith("-")]
+        objs = [byobj[os.path.normpath(os.path.join(c["cwd"], f))]
+                for f in files if f.endswith(".o")]
+        if c["tool"] == "lwar":
+            libs.append((os.path.basename(files[0])[3:-2], objs))     # libX.a -> X
+        else:
+            seq = [("lib", a[2:]) if a.startswith("-l") else ("obj", objs.pop(0))
+                   for a in c["argv"][1:]
+                   if a.startswith("-l") or (not a.startswith("-") and a.endswith(".o"))]
+            name = next(a[2:] for a in c["argv"] if a.startswith("-o"))
+            links.append((name, seq))
+    return libs, links
+
+
+def suite_obj(dsk):
+    """Phase 10: the object-format sources (lib/, the .as programs)
+    assembled natively, the three libraries built from them with merge,
+    and the build's 13 programs linked natively with rlink --lwlink. The
+    reference is the same chain on Linux with las/build/nosz and rlink."""
+    staged = stage_lw("obj")
+    libs, links = link_cmds()
+    consts = [j["id"] for j, _ in staged if lwdiff.is_constants_object(j)]
+    staged.sort(key=lambda jf: jf[0]["id"] not in consts)   # constants first
+    for d in ("T/S", "T/O", "T/K"):
+        os9("makdir", f"{dsk},{d}", check=False)
+    done, lines, work = set(), [], []
+    for n, (j, files) in enumerate(staged):
+        jd = f"T/J{n}"
+        os9("makdir", f"{dsk},{jd}", check=False)
+        os9("makdir", f"{dsk},{jd}/src", check=False)
+        for path, place in files:
+            target = place.replace("J/", jd + "/") if place.startswith("J/") else "T/" + place
+            if target in done:
+                continue
+            done.add(target)
+            sub = os.path.dirname(target)
+            if sub not in (jd, jd + "/src", "T/S"):
+                os9("makdir", f"{dsk},{sub}", check=False)
+            put(path, f"{dsk},{target}", text=is_text(path))
+        defs = [] if j["id"] in consts else [f"--defs=/dd/T/O/{c}" for c in consts]
+        argfile = os.path.join(WORK, "args.tmp")
+        with open(argfile, "w") as f:
+            f.write("\n".join(lw_args(j) + defs + ["-i=/dd/T/S", f"-o=/dd/T/O/{j['id']}"]) + "\n")
+        put(argfile, f"{dsk},{jd}/src/A", text=True)
+        lines += [f"chd /dd/{jd}/src", f"las {os.path.basename(j['source'])} --args=A >L >>E"]
+        work.append((n, j, files))
+    # a library is its members one after another: merge them in groups
+    # that fit the shell's line, then merge the groups
+    lines.append("chd /dd/T/O")
+    for lib, members in libs:
+        parts = []
+        for i in range(0, len(members), 12):
+            parts.append(f"{lib}.{len(parts)}")
+            lines.append(f"merge {' '.join(members[i:i + 12])} >{parts[-1]}")
+        lines.append(f"merge {' '.join(parts)} >{lib}.l")
+    lines.append("chd /dd/T/K")
+    for name, seq in links:
+        args = " ".join(f"-l=/dd/T/O/{v}.l" if k == "lib" else f"/dd/T/O/{v}" for k, v in seq)
+        lines.append(f"rlink --lwlink {args} -o=/dd/T/K/{name} -n={name} >>{name}.e")
+    longest = max(len(l) for l in lines)
+    if longest > 199:
+        sys.exit(f"a startup line is {longest} characters (the shell takes 200)")
+
+    def check():
+        host = os.path.join(WORK, "objhost")
+        hostobj = os.path.join(host, "O")
+        os.makedirs(hostobj, exist_ok=True)
+        os.makedirs(os.path.join(host, "S"), exist_ok=True)
+        bad = 0
+        nat = os.path.join(WORK, "obj")
+        os.makedirs(nat, exist_ok=True)
+        for n, j, files in work:
+            jd = os.path.join(host, f"J{n}")
+            os.makedirs(os.path.join(jd, "src"), exist_ok=True)
+            for path, place in files:
+                t = os.path.join(jd, place[2:]) if place.startswith("J/") \
+                    else os.path.join(host, place)
+                os.makedirs(os.path.dirname(t), exist_ok=True)
+                shutil.copyfile(path, t)
+            ref = os.path.join(hostobj, j["id"])
+            defs = [] if j["id"] in consts else \
+                ["--defs=" + os.path.join(hostobj, c) for c in consts]
+            subprocess.run([NOSZ, os.path.basename(j["source"])] + lw_args(j) + defs +
+                           ["-i=" + os.path.join(host, "S"), "-o=" + ref],
+                           cwd=os.path.join(jd, "src"), env=lwdiff.clean_env(),
+                           capture_output=True)
+            out = os.path.join(nat, j["id"])
+            ok = get(f"{dsk},T/O/{j['id']}", out)
+            if ok and os.path.exists(ref):
+                a, b = open(out, "rb").read(), open(ref, "rb").read()
+                if rof_equal(a, b):
+                    continue
+                if only_dtb(a[12:], b[12:]):
+                    print(f"  obj {j['id']}: identical except the assembly date (dtb)")
+                    continue
+            bad += 1
+            err = (os9_text(f"{dsk},T/J{n}/src/E") or "").strip()
+            print(f"  obj {j['id']}: {'differs' if ok else 'no output'} {err[:150]}")
+        print(f"obj: {len(work) - bad} of {len(work)} objects identical to las/build/nosz")
+        # libraries: the native merge must equal the native members joined
+        badlib = 0
+        for lib, members in libs:
+            out = os.path.join(nat, lib + ".l")
+            ok = get(f"{dsk},T/O/{lib}.l", out)
+            want = b"".join(open(os.path.join(nat, m), "rb").read()
+                            for m in members if os.path.exists(os.path.join(nat, m)))
+            with open(os.path.join(hostobj, lib + ".l"), "wb") as f:
+                for m in members:
+                    if os.path.exists(os.path.join(hostobj, m)):
+                        f.write(open(os.path.join(hostobj, m), "rb").read())
+            if not (ok and open(out, "rb").read() == want):
+                badlib += 1
+                print(f"  lib {lib}: {'differs from its members' if ok else 'no output'}")
+        print(f"lib: {len(libs) - badlib} of {len(libs)} libraries built")
+        badlink = 0
+        hostk = os.path.join(host, "K")
+        os.makedirs(hostk, exist_ok=True)
+        for name, seq in links:
+            ref = os.path.join(hostk, name)
+            if os.path.exists(ref):
+                os.remove(ref)
+            subprocess.run([lwdiff.DEFAULT_RLINK, "--lwlink"] +
+                           [("-l=" + os.path.join(hostobj, v + ".l")) if k == "lib"
+                            else os.path.join(hostobj, v) for k, v in seq] +
+                           ["-o=" + name, "-n=" + name],
+                           cwd=hostk, env=lwdiff.clean_env(), capture_output=True)
+            out = os.path.join(nat, "K." + name)
+            ok = get(f"{dsk},T/K/{name}", out)
+            if ok and os.path.exists(ref):
+                a, b = open(out, "rb").read(), open(ref, "rb").read()
+                if a == b:
+                    continue
+                if only_dtb(a, b, crc=3):
+                    print(f"  link {name}: identical except the assembly date (dtb) and CRC")
+                    continue
+            badlink += 1
+            err = (os9_text(f"{dsk},T/K/{name}.e") or "").strip()
+            print(f"  link {name}: {'differs' if ok else 'no output'} {err[:150]}")
+        print(f"link: {len(links) - badlink} of {len(links)} programs identical to host rlink")
+        return bad == 0 and badlib == 0 and badlink == 0
+    return lines, check
+
+
+SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc, "lw": suite_lw,
+          "obj": suite_obj}
 DEFAULT = ["las", "link", "cc"]
 
 
@@ -446,14 +632,26 @@ def main():
     ap.add_argument("--keep", action="store_true", help="keep the test image")
     ap.add_argument("--only", action="append", default=[],
                     help="lw suite: only jobs whose id contains this (repeatable)")
+    ap.add_argument("--shard", default="0/1", help="lw suite: K/N, every Nth job from K")
+    ap.add_argument("--work", help="work directory (default harness/out/native)")
+    ap.add_argument("--no-build", action="store_true",
+                    help="don't run make in native/ (parallel shards)")
     args = ap.parse_args()
     ONLY[:] = args.only
+    k, n = (int(x) for x in args.shard.split("/"))
+    if not 0 <= k < n:
+        sys.exit("--shard K/N needs 0 <= K < N")
+    SHARD[:] = [k, n]
+    if args.work:
+        global WORK
+        WORK = os.path.abspath(args.work)
     suites = args.suites or DEFAULT
     for s in suites:
         if s not in SUITES:
             sys.exit(f"unknown suite {s}: choose from {', '.join(SUITES)}")
 
-    if subprocess.run(["make", "-s", "-f", "GNUmakefile"], cwd=NATIVE).returncode:
+    if not args.no_build and \
+            subprocess.run(["make", "-s", "-f", "GNUmakefile"], cwd=NATIVE).returncode:
         sys.exit("native build failed")
     shutil.rmtree(WORK, ignore_errors=True)
     os.makedirs(WORK)

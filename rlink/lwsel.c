@@ -34,6 +34,7 @@
 #endif
 
 #define MAXMODS 512
+#define MODSTEP 32              /* Mods grows by this many */
 
 struct lwmod
 {
@@ -49,10 +50,9 @@ struct lwmod
                                  * struct members (dref_node has refs) */
 };
 
-static struct lwmod *Mods;      /* MAXMODS of them, allocated by lw_select:
-                                 * a static array took 14K of the 6809's
-                                 * 64K whether --lwlink was used or not */
-static int NMods;
+static struct lwmod *Mods;      /* grown as modules are indexed: MAXMODS
+                                 * of them took 13K of the 6809's 64K */
+static int NMods, MaxMods;
 static char TmpName[256];
 
 static int
@@ -106,11 +106,21 @@ index_file (name, lib, ord)
     while (fread(h, 28, 1, fp) == 1)
     {
         struct lwmod *m;
-        int count, i, n, value;
+        int count, i, n, value, nonames;
         long skip;
 
         if (NMods >= MAXMODS)
             fatal("too many modules for --lwlink");
+
+        if (NMods == MaxMods)
+        {
+            MaxMods += MODSTEP;
+            Mods = (struct lwmod *)(Mods ? realloc(Mods, MaxMods * sizeof(*Mods))
+                                         : malloc(MaxMods * sizeof(*Mods)));
+
+            if (!Mods)
+                fatal("out of memory in lw_select");
+        }
 
         m = &Mods[NMods++];
         m->file = name;
@@ -124,12 +134,27 @@ index_file (name, lib, ord)
                       ((h[22] << 8) | h[23])) != 0;
         free(rdname(fp));                       /* psect name */
 
+        /* A constants-only library member (the defs library: 2,000
+         * names, 30K) is never copied, so its names aren't kept: the
+         * 6809 hasn't the room. rlink's own library scan still finds
+         * it. It doesn't count as a definer here (DESIGN.md D31) */
+
         count = rd(fp);
-        m->ndefs = count;
-        m->mdefs = (char **)malloc((count + 1) * sizeof(char *));
+        nonames = (lib >= 0) && !m->hassize;
+        m->ndefs = nonames ? 0 : count;
+        m->mdefs = (char **)malloc((m->ndefs + 1) * sizeof(char *));
 
         for (i = 0; i < count; ++i)
         {
+            if (nonames)
+            {
+                while (((n = getc(fp)) != EOF) && n)
+                    ;
+                getc(fp);
+                rd(fp);
+                continue;
+            }
+
             m->mdefs[i] = rdname(fp);
             getc(fp);                           /* type */
             value = rd(fp);
@@ -245,9 +270,6 @@ lw_select ()
     FILE *out;
     int i, j, n, changed;
 
-    if (!(Mods = (struct lwmod *)malloc(MAXMODS * sizeof(*Mods))))
-        fatal("out of memory in lw_select");
-
     /* Number the files in command-line order: input file i came after
      * the libraries given before it (lpos, rlink_main.c) */
 
@@ -330,6 +352,24 @@ lw_select ()
 
     fclose(out);
     free(order);
+
+    /* The index isn't needed again: give it back for rlink's own use */
+
+    for (i = 0; i < NMods; ++i)
+    {
+        for (j = 0; j < Mods[i].ndefs; ++j)
+            free(Mods[i].mdefs[j]);
+
+        for (j = 0; j < Mods[i].nrefs; ++j)
+            free(Mods[i].mrefs[j]);
+
+        free(Mods[i].mdefs);
+        free(Mods[i].mrefs);
+    }
+
+    free(Mods);
+    Mods = 0;
+    NMods = MaxMods = 0;
 
     filenames = (char **)malloc(2 * sizeof(char *));
     filenames[0] = TmpName;

@@ -1113,14 +1113,13 @@ do_reflist (parm)
 {
     register REFH sref = parm;
 
+    /* No fwrite of the entry, as RMA's 6809 build did: sref is a handle
+     * into a banked block (symtab.c), not an address */
+
     while (sref)
     {
-#   ifdef COCO
-        fwrite (sref, 3, 1, OutFile);
-#   else
         putc (ref_typ (sref), OutFile);
         PUTINT ((int) ref_off (sref), OutFile);
-#   endif
         sref = ref_next (sref);
     }
 }

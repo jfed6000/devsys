@@ -224,9 +224,11 @@ checkop(node)
 register expnode *node;
 {
     register expnode *lhs;
-    int flag;
+    int flag, chcall;
 
     flag=0;
+    /* a char function sets only B: test B, not D (devsys) */
+    chcall = node->op == CALL && (node->type == CHAR || node->type == UCHAR);
     switch(node->op){
         case AND:
             if((lhs = node->right)->op != CONST
@@ -268,7 +270,8 @@ register expnode *node;
         case YREG:
 #endif
         case UREG:
-            if (flag || shiftflag) gen(COMPARE,node->op,CONST,0);
+            if (chcall && node->op == DREG) ol("tstb");
+            else if (flag || shiftflag) gen(COMPARE,node->op,CONST,0);
             break;
         case CTOI:
             node=node->left;

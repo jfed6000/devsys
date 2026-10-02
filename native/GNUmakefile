@@ -40,6 +40,10 @@ las_DIR		:= $(DEVSYS)/las
 las_OBJS	:= rma_main findcmd part3 registers directives labels numeric \
 		   file_io macros symtab bank module lwobj preload sizing
 las_DEFS	:= -DCOCO
+# 16 pages: the stack and stdio buffers (a macro's work file takes 512
+# bytes) share this space; llwbsd overflowed without it. The data area
+# still fits the two blocks below the window slot (D30)
+las_MEM		:= 16
 
 rlink_DIR	:= $(DEVSYS)/rlink
 rlink_OBJS	:= rlink_main rl_02 rl_03 misc rl_05 util lwsel

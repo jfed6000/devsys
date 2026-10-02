@@ -38,7 +38,12 @@ readrofs ()
             cantopen ();
         }
 
-        InFile->_bufsiz = iobufsiz;
+        /* Only before the slot has a buffer: CoCoC's stdio allocates it
+         * once (ibrk) and keeps it through fclose and freopen, so a
+         * larger _bufsiz later runs past it, into the next buffer
+         * (OutFile's, in --lwlink mode) */
+        if (!InFile->_base)
+            InFile->_bufsiz = iobufsiz;
 #else
         if (InFile)
             fclose(InFile);
