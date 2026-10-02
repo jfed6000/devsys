@@ -995,7 +995,7 @@ bucket (char *name)
 <tr><td><code>dcc68</code></td><td>48,290</td><td>48,521</td></tr>
 <tr><td><code>dco68</code></td><td>11,558</td><td>11,187</td></tr>
 </tbody></table></div>
-<p><code>las</code> is the one that grew: it now speaks two dialects and builds modules and lwasm objects. That size matters below.</p>
+<p><code>las</code> is the one that grew: it now speaks two dialects and builds modules and lwasm objects. That size matters below. (These are phase 7's sizes. After phases 8 and 10, <code>las</code> is 36,576 bytes, <code>rlink</code> 19,155 and <code>dcc68</code> 48,355, which is 29 bytes under the limit described next.)</p>
 
 <h3>What fits in 64K, measured</h3>
 <p>Chapter 8 said a Level 2 process gets one 64K address space, split into eight 8K slots. A module is mapped in whole blocks at the top, and data grows up from <code>$0000</code>. Here is the real map of <code>las</code> on the F256:</p>
@@ -1036,6 +1036,7 @@ bucket (char *name)
 <p>MAME takes a couple of minutes per round trip and shows only the end result. So <code>harness/os9run.py</code> models one OS-9 process on Linux. A 6809 emulator (<code>cpu6809.py</code> from your Tempest port) runs the module. Whenever the program makes a system call, the script answers it with a Linux file: <code>I$Open</code>, <code>I$ReadLn</code>, <code>F$Mem</code> and the rest. It reproduced every MAME failure in about a second. Given rlink's link map, it also says who called what:</p>
 <pre><code>break e_report: get_param+278 &lt;- get_param+8 &lt;- do_math+13 …</code></pre>
 <p>That is, something was evaluating an expression for <code>endsect</code>. It led to the <code>q_long</code> bug in minutes. The model's limits are also a lesson. It answers system calls the way the script says, so it can't find a limit it doesn't model. It happily gave <code>dcc68</code> a second data block that the real kernel refuses. Use a model to find bugs quickly; take the verdict from the real thing.</p>
+<p>The model can also be wrong in the other direction. In phase 10 it said native las expanded nested macros wrongly. MAME said they were fine. The bug was in the model: it answered "how big is this file?" (<code>SS.Size</code>) from Linux's file size, while Python still held the program's last writes in its own buffer. Fixed by flushing first, but the lesson stands: when the model and MAME disagree, believe MAME.</p>
 
 <h3>Testing on the emulated F256</h3>
 <p><code>harness/native.py</code> is the real thing, short of hardware. It copies a Jr2 disk image, installs the tools, libraries and headers, puts the test inputs on it, and writes a <code>startup</code> file. MAME boots the image and the shell runs <code>startup</code>. When the last line writes a marker file, the script copies the results off the image and compares them with the host tools' output. Today:</p>
@@ -1046,12 +1047,57 @@ bucket (char *name)
 </ul>
 <p>One OS-9 detail cost a run: the shell's <code>&gt;</code> and <code>&gt;&gt;</code> <em>create</em> their file, and creating a file that already exists fails with <code>ERROR #218</code>. Two commands that both wrote their errors to <code>err</code> meant the second never ran.</p>
 <p>Two more limits appeared with NitrOS9's long command lines. The shell reads at most 200 characters of a line; the rest runs as a second, broken command (<code>WHAT?</code>). And a C program's start-up code, <code>cstart</code>, splits its arguments at commas as well as spaces, so <code>--pragma=pcaspcr,nosymbolcase</code> arrives as two words. <code>las</code> now accepts <code>--args=FILE</code>, which reads the arguments from a file, and that sidesteps both.</p>
+<p><strong>Running suites side by side.</strong> MAME emulates one 6809 on one PC core. The full NitrOS9 run, 200 module sources at about 40 seconds each, took two hours in one MAME. <code>native.py --shard K/N</code> takes every Nth file starting at K, and <code>--work DIR</code> gives each run its own disk image and output, so 8 MAMEs on 8 cores do it in 22 minutes. Splitting a big job into independent slices like this is called <strong>sharding</strong>. It works here because no file's result depends on another's.</p>
+
+<h3>Building NitrOS9's programs on the F256</h3>
+<p>Phase 10's goal is the other half of the Level 2 build: the 13 programs written as lwasm object files (<code>sysgo</code>, <code>grep</code>, <code>telnet</code>, <code>play</code> and the rest) and the three libraries they link against. The <code>obj</code> suite does what the real build does, on the F256:</p>
+<ol>
+<li>Assemble <code>lib/wildbitsl2.as</code>. It holds only constants (2,074 of them: system calls, error codes, hardware addresses), in a <code>_constant</code> section.</li>
+<li>Assemble the other 89 object sources, each with <code>--defs=wildbitsl2.o</code>, so las knows those constants (chapter 6, "Values only the linker knows"). las keeps them in its banked blocks next to the symbols (chapter 9): in its ordinary heap they took 30K, and every file failed with <code>symbol table overflow</code>.</li>
+<li>Build <code>libwildbitsl2</code>, <code>libnet</code> and <code>libalib</code>. A ROF library is just its members one after another, so the OS-9 <code>merge</code> command builds one: <code>merge a.o b.o c.o &gt;lib.l</code>. libalib has 75 members, too many for one 200-character line, so the suite merges them in groups and then merges the groups.</li>
+<li>Link each program with <code>rlink --lwlink</code>, the libraries in the build's order.</li>
+</ol>
+<p>Each object must equal the one Linux <code>las/build/nosz</code> makes from the same files, and each program the one Linux <code>rlink</code> links from those objects. One file needs care: <code>wbinfo</code> uses <code>dtb</code>, which writes the date and time of assembly into the program. Two runs a minute apart differ in those bytes (and in the module's CRC), so the check masks them.</p>
+<p>Getting there took several fixes. Each one is a kind of bug that only shows up on the real machine, so each is worth knowing.</p>
+
+<p class="cap">A char comes back in half a register</p>
+<p>A <strong>calling convention</strong> is the agreement between a function and its callers about where arguments and results go. DCC's says: a function returns its result in D, the 16-bit register made of A (high byte) and B (low byte). A function returning a <code>char</code> sets only B. Its caller has to widen the byte itself if it needs 16 bits, with <code>sex</code> (sign extend: copy B's top bit through A) or <code>clra</code>.</p>
+<p>dcc68 forgot that in one case: a <code>char</code> function used directly as a condition. Here is <code>docs/learn/examples/charcond.c</code> through CoCoC's own <code>dcc68</code>:</p>
+<pre><code>char next();
+skip() { if (next()) return 1; return 0; }
+
+ lbsr next
+ std -2,s      store D below the stack: sets the Z flag from all 16 bits
+ lbeq _2</code></pre>
+<p><code>std -2,s</code> is DCC's trick for testing D: storing a register sets the flags. But A holds whatever the callee left there. In las, <code>SkipSpac()</code> ends with <code>ldb 0,u</code>, and A still held <code>$FF</code> from the stack check at its start. So <code>if (SkipSpac ())</code> in <code>csectsetup</code> was always true, las tried to read a number from an empty operand, and native las rejected <code>section _constant</code> with "bad operand". The fix in <code>dcc/CC09/bool.c</code> tests B instead:</p>
+<pre><code> lbsr next
+ tstb          test the byte the function returned
+ lbeq _2</code></pre>
+<p>Only that one line in all six tools changed, and none of CoCoC's own sources, so the bug had been there since CoCoC and simply never mattered. On Linux the same C is compiled by gcc, which knows the rules, so only the 6809 build could show it.</p>
+
+<p class="cap">Two files, one buffer</p>
+<p>C's buffered I/O (<code>stdio</code>) reads a file a block at a time into a <strong>buffer</strong> and hands out bytes from it. CoCoC's library gives each open-file slot a buffer the first time it is used, with <code>ibrk</code>, and keeps that buffer for the slot's whole life, through <code>fclose</code> and <code>freopen</code>. The size it allocates is whatever <code>_bufsiz</code> says at that moment.</p>
+<p>rlink's original OS-9 code sets <code>InFile-&gt;_bufsiz = 1024</code> after every <code>freopen</code>. That is only safe if the buffer is allocated afterwards. In a <code>--lwlink</code> link the input slot had already been used with the default 256 bytes, and the output file's buffer had been placed right after it. The model showed the overlap directly:</p>
+<pre><code>InFile   base=$0797  end=$0B97   (claims 1,024 bytes; really owns 256)
+OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
+<p>Writing <code>sysgo</code>'s code to the output overwrote the input buffer, so the next object's reference names were read out of machine code ("symbol <code>The device isn't ready</code> not found"). rlink now sets the size only while the slot has no buffer. <code>las</code> had the same pattern for its macro work file and got the same guard.</p>
+
+<p class="cap">When the stack meets the heap</p>
+<p>A C program's data area holds three things: its static variables at the bottom, the <strong>heap</strong> (memory handed out at run time by <code>malloc</code> and friends) growing up from them, and the stack growing down from the top. CoCoC's start-up code checks at every function entry that the stack still clears the heap. If not, it prints <code>**** STACK OVERFLOW ****</code>, even when the real cause is a heap that grew.</p>
+<p>That message stopped <code>llwbsd</code>, the one module source of 200 that failed natively. Its macros make las open its work file, whose 512-byte buffer comes out of the same gap, and las had been linked with no extra room. rlink's <code>-M=16</code> adds 4K. It costs nothing: las's data already takes two 8K blocks, which had room to spare.</p>
+
+<p class="cap">A shortcut that outlived its pointer</p>
+<p>RMA's 6809 build wrote each reference record (type byte and 16-bit offset) by dumping the 3-byte structure straight from memory: <code>fwrite (sref, 3, 1, OutFile)</code>. Phase 8 turned <code>sref</code> from a pointer into a handle, a number that only means something to <code>symtab.c</code>. The line still compiled, and wrote 3 bytes from whatever address the number happened to equal. Every external reference native las wrote came out as type 0, offset 0.</p>
+<p>The Linux build uses the portable branch of that <code>#ifdef</code>, so no Linux test could see it. The <code>las</code> suite in MAME would have caught it in a minute, but phase 8 ran only the suites it thought the change affected. Now every suite runs after every change to a native tool.</p>
+
+<p class="cap">Measure where the memory goes</p>
+<p>The last problem was plain size. Linking a program against <code>libwildbitsl2</code> made native rlink hold all 2,074 constant names, and <code>play</code>, the largest program, still ran out after that was fixed. Counting every allocation in the model showed where it went: 19K went to <code>malloc</code> for the table rlink uses to choose library members, and was freed before linking. But rlink's own allocator used <code>sbrk</code>, which takes fresh memory from the top and can't reuse what <code>malloc</code> has freed. Switching rlink to <code>malloc</code> lets the link reuse it, and <code>play</code> now peaks at 24.5K. The same measurement showed the member table reserving room for 512 modules (13K) when the link has 77; it now grows as needed.</p>
 </section>
 
 <!-- 12 -->
 <section class="ch" id="project">
 <h2><span class="num">CHAPTER 12</span>Where this leads</h2>
-<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles NitrOS9 sources, and <code>rlink</code> links every tool. Next is speed: phase 9 saves the assembled defs so each build stops re-reading them.</p>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles 199 of the 200 NitrOS9 module sources, <code>rlink</code> links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Next is speed: phase 9 saves the assembled defs so each build stops re-reading them.</p>
 <p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
 </section>
 
@@ -1065,6 +1111,8 @@ bucket (char *name)
   <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
   <dt>binary search tree</dt><dd>A tree where each node has up to two branches: earlier-sorting names on the left, later on the right. Each comparison rules out a whole branch.</dd>
   <dt>bootstrapping</dt><dd>Getting a tool to build itself. The first version has to come from somewhere else, here a cross compiler.</dd>
+  <dt>buffer</dt><dd>Memory where buffered I/O (C's <code>stdio</code>) keeps a block of a file, so it can read or write a byte at a time without a system call each time. CoCoC gives each file slot one buffer, once.</dd>
+  <dt>calling convention</dt><dd>The rules for where a function's arguments and result go. DCC passes arguments on the stack and returns the result in D; a <code>char</code> result is in B only.</dd>
   <dt>check byte</dt><dd>Byte 8 of a module header: the first 8 bytes XORed together, with every bit flipped. Lets OS-9 recognise a real header.</dd>
   <dt>collision</dt><dd>Two different names that hash to the same bucket.</dd>
   <dt>CRC</dt><dd>Cyclic redundancy check: the 3-byte checksum at the end of every OS-9 module. Run over the whole module, CRC included, it always gives <code>80 0F E3</code>, which is how OS-9 checks a module.</dd>
@@ -1079,6 +1127,7 @@ bucket (char *name)
   <dt>fixup / relocation</dt><dd>A place in the code the linker must patch once final positions are known.</dd>
   <dt>forward reference</dt><dd>Using a label before it's defined. The reason assemblers make two passes.</dd>
   <dt>handle</dt><dd>A number that names something without being its address. <code>las</code> gives out symbol handles so the symbols can move between banked blocks.</dd>
+  <dt>heap</dt><dd>The part of a program's data area handed out while it runs (<code>malloc</code>, <code>sbrk</code>). It grows up towards the stack.</dd>
   <dt>hash function</dt><dd>A calculation that turns a name into a number, always the same number for the same name. Used to pick a bucket.</dd>
   <dt>include guard</dt><dd>A condition at the top of an include file that makes the file skip itself if it has already been read.</dd>
   <dt>interface</dt><dd>The set of operations a piece of code offers, with how it works kept private, so the inside can change without affecting callers.</dd>
@@ -1108,6 +1157,8 @@ bucket (char *name)
   <dt>ROF</dt><dd>Relocatable Object Format: Microware's object file format, made by RMA and read by rlink.</dd>
   <dt>ROF version</dt><dd>A byte in every ROF header naming the format that wrote it: 0 for Microware's tools, 1 for <code>las</code>. Version 1 adds common blocks, and tells rlink names were kept in full.</dd>
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
+  <dt>sharding</dt><dd>Splitting one big job into independent slices that run at the same time, like the 200 native NitrOS9 files over 8 MAMEs.</dd>
+  <dt>sign extension</dt><dd>Widening a signed number by copying its top bit into the new high bits. The 6809's <code>sex</code> does it from B into A.</dd>
   <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
   <dt>threaded tree</dt><dd>A tree whose unused right pointers point to the next node in order, so it can be walked without a stack.</dd>
   <dt>trial run</dt><dd>A throwaway pass 1 that <code>las</code> runs in a separate process to decide instruction sizes before assembling for real.</dd>
@@ -1118,7 +1169,7 @@ bucket (char *name)
 </dl>
 </section>
 
-<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
+<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24; phase 10 results from the same day): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
 </main>
 </div>
 

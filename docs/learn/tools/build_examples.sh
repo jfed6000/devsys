@@ -31,5 +31,12 @@ cd "$OUT"
 LAS=${LAS:-$HOME/projects/devsys/las/build/unix/las}
 "$LAS" "$EX/kinds.a" -l -s -o="$OUT/kinds.r" > kinds.lst
 
+# A char function as a condition (chapter 11): CoCoC's dcc68 tests all of D,
+# devsys's tests B (DESIGN.md D33)
+DEVSYS_DCC=${DEVSYS_DCC:-$HOME/projects/devsys/dcc}
+"$DCC/CPP/dcpp" "$EX/charcond.c" > charcond.i
+"$DCC/CC09/dcc68" charcond.i -o=charcond.cococ.a
+"$DEVSYS_DCC/CC09/dcc68" charcond.i -o=charcond.a
+
 echo "Built into $OUT:"
 ls -l "$OUT"

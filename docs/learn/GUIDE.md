@@ -89,7 +89,7 @@ Then add a line to the changelog at the bottom of this file.
 | 7. Native build | ✅ Ch 11 "Running on the F256": cross vs native, bootstrapping, the measured 64K map and the F256's two module limits, K&R traps (member namespace, arguments without prototypes), the host model, testing in MAME |
 | 8. Banked blocks | ✅ Ch 9 "Moving the table into banked blocks": handles instead of pointers, the 16-bit handle, the window and its memory map, the two-entries trap, the window-emulation test and its negative control, F$DelRAM at exit, results, "measure before you build" (rlink). Ch 11: the shell's 200-character line, cstart's comma splitting, --args |
 | 9. Precompiled defs | Saving and reloading a symbol table image; cache invalidation |
-| 10. Libraries | Library members, link order, how rlink searches `.l` files |
+| 10. Libraries | ✅ Ch 11 "Building NitrOS9's programs on the F256" (the obj suite's four steps, `merge` as a librarian, `dtb` masking) and the bugs only the F256 showed: a `char` result in half a register (calling convention, `std -2,s` vs `tstb`), two files sharing one stdio buffer, the stack meeting the heap, a shortcut that outlived its pointer, measuring where memory goes (`sbrk` vs `malloc`). Ch 11 "A small model": when the model is wrong. Still open: how rlink searches `.l` files in detail |
 | any | Macros and `rept`; the 6809 calling conventions used by DCC; how `cstart` sets up a C program |
 
 ## Changelog
@@ -147,3 +147,10 @@ Then add a line to the changelog at the bottom of this file.
   three-part fix table no longer promises one block per bucket; ch 11 notes
   the shell's line limit, cstart's commas and --args; ch 12 updated.
   Glossary: handle, window.
+- 2026-10-02 — Phase 10 and the end of phase 8: ch 11 sharding paragraph,
+  "Building NitrOS9's programs on the F256" with five bug stories (char
+  result in B, shared stdio buffer, stack meets heap, fwrite of a handle,
+  measuring memory), "A small model" gains the model-was-wrong case, size
+  note under the table; ch 12 updated. New example `examples/charcond.c`
+  (built with CoCoC's and devsys's dcc68). Glossary: buffer, calling
+  convention, heap, sharding, sign extension.
