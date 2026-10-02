@@ -83,7 +83,7 @@ Then add a line to the changelog at the bottom of this file.
 | 2. Compact entries | ✅ Ch 9 "Making the record fit the name", "Checking for memory mistakes" |
 | 3. Module mode | ✅ Ch 2 "Two location counters", "The header check byte", "The CRC"; ch 4 "Choosing instruction sizes" |
 | 3b. Operand sizing | Iterating to stable sizes: why extra passes converge (or don't); size choices only shrink |
-| 4. lwasm syntax | Local label scoping, conditional assembly, operator precedence, case folding |
+| 4. lwasm syntax | ✅ Ch 4 "Local labels", "Conditions across two passes", "Same symbols, different meaning", "Two dialects in one assembler" |
 | 5. Object mode | How `section`/`export` map onto ROF; linker defaults for the module header |
 | 6. Long names | Why name limits existed; how ROF stores names |
 | 7. Native build | Bootstrapping: building tools with themselves; cross vs native compilers |
@@ -119,3 +119,6 @@ Then add a line to the changelog at the bottom of this file.
   byte (worked XOR table for hello) and the CRC (incl. the 80 0F E3 residue);
   ch 4 "Choosing instruction sizes". Glossary: check byte, location counter,
   XOR; CRC entry expanded.
+- 2026-10-02 — Phase 4: four ch 4 sections (local label scopes, the include
+  guard and condition replay, precedence differences, the two dialects).
+  Glossary: dialect, include guard, local label, operator precedence.

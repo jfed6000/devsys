@@ -411,6 +411,42 @@ printit  lda   ,x+</code></pre>
 <p>For a label defined <em>earlier</em>, the assembler knows the distance and can pick the short form. For a label defined <em>later</em>, a forward reference, it doesn't know the distance yet in pass 1. A two-pass assembler has to guess, and the safe guess is the long form, because whatever it picks in pass 1 it must keep in pass 2, or every address after it would move. That would be a phasing error.</p>
 <p>lwasm avoids the guess by not limiting itself to two passes. It assembles, works out the sizes, and repeats until nothing changes. RMA always uses the long form for <code>,pcr</code> unless the source asks for the short one with <code>&lt;</code>, even for backward references. That's why <code>las</code> makes some modules a few bytes longer than lwasm does, and why matching lwasm exactly needs extra sizing passes. That's roadmap phase 3b.</p>
 
+<h3>Local labels</h3>
+<p>Every routine needs a loop label, and naming them all differently gets tedious. lwasm lets a name containing <code>@</code> be <strong>local</strong>: <code>loop@</code> in one routine and <code>loop@</code> in the next are different symbols. The interesting part is where one scope ends and the next begins. For lwasm the answer is surprising: a blank line ends it. A new ordinary label does not.</p>
+<pre><code>A    nop
+l@   nop          ← scope 0
+     bra  l@
+B    nop          ← still scope 0: a second l@ here is an error
+                  ← blank line: scope 1 starts
+l@   nop
+     bra  l@</code></pre>
+<p>A macro expansion gets a scope of its own and then hands the caller's scope back, so a label on the line that calls a macro is still visible afterwards. <code>las</code> stores local names with their scope number attached: its symbol table lists <code>l@~0</code>, <code>l@~1</code> and so on.</p>
+
+<h3>Conditions across two passes</h3>
+<p>Include files often protect themselves from being read twice. <code>os9.d</code> starts like this:</p>
+<pre><code>         IFNE  OS9.D-1      true while OS9.D is undefined (0)
+OS9.D    SET   1
+         ...the whole file...
+         ENDC</code></pre>
+<p>This is an <strong>include guard</strong>. In pass 1, <code>OS9.D</code> is undefined, so the test is true and the file is read. But a two-pass assembler starts pass 2 with everything pass 1 learned, including <code>OS9.D = 1</code>. Now the guard says “already included”, and pass 2 silently skips the whole file. Every address after it shifts, and the passes disagree: phasing errors.</p>
+<p>The fix comes from how lwasm works. It decides each condition once, when it first reads the line, but works out values later, when everything is known. So <code>las</code> records the outcome of every condition in pass 1, one bit each, and replays the same outcomes in pass 2. Both passes then read exactly the same lines, while values still use the final symbol table. That second half matters too: a forward reference to a <code>set</code> symbol gets its <em>final</em> value in lwasm, and my first attempt at a fix (resetting <code>set</code> symbols before pass 2) got that wrong. Testing both behaviours against lwasm is what caught it.</p>
+<p class="why">Fixing the guard also exposed errors that had been there all along. RMA reports errors only in pass 2, and pass 2 had been skipping the defs, so 171 files hid a real problem (<code>0x</code> hex numbers, which RMA didn't support) until the passes agreed.</p>
+
+<h3>Same symbols, different meaning</h3>
+<p>The two assemblers mostly agree on expressions, but not entirely. The biggest difference is <strong>operator precedence</strong>, which operator is applied first:</p>
+<div class="scroll"><table>
+<thead><tr><th>Expression</th><th>RMA</th><th>lwasm</th></tr></thead>
+<tbody>
+<tr><td class="num-col">2+3&amp;6</td><td>2+(3&amp;6) = 4</td><td>(2+3)&amp;6 = 4</td></tr>
+<tr><td class="num-col">A+B&amp;C</td><td><code>&amp;</code> before <code>+</code></td><td><code>+</code> before <code>&amp;</code></td></tr>
+<tr><td class="num-col">1024^2</td><td>error: <code>^</code> is only a prefix (complement)</td><td>1024 XOR 2 = 1026</td></tr>
+<tr><td class="num-col">$F0|$0F</td><td>error: no <code>|</code></td><td>$FF</td></tr>
+</tbody></table></div>
+<p>The first row happens to give the same answer either way, which is exactly why this kind of difference is dangerous: most expressions agree, and the ones that don't give a wrong number, not an error. <code>las</code> uses lwasm's precedence in lwasm mode and RMA's otherwise. Names follow the same pattern: NitrOS9 builds with case-insensitive symbols, so <code>HW.PAGE</code> in one file finds <code>HW.Page</code> in the defs.</p>
+
+<h3>Two dialects in one assembler</h3>
+<p><code>las</code> now speaks two dialects. By default it behaves like RMA, which RMA's own sources and the C compiler's output rely on. With <code>--lwasm</code> it behaves like lwasm: the local labels, condition replay, operators and the other differences above. Keeping them separate means each set of sources keeps the meaning it was written for, and the regression test can keep guarding RMA behaviour while lwasm behaviour is built up.</p>
+
 <h3>Reading a listing</h3>
 <p>This is part of RMA's listing for the C example from chapter 7:</p>
 <pre><code>00008 0000 3440       add:     pshs  u
@@ -816,6 +852,7 @@ bucket (char *name)
   <dt>CRC</dt><dd>Cyclic redundancy check: the 3-byte checksum at the end of every OS-9 module. Run over the whole module, CRC included, it always gives <code>80 0F E3</code>, which is how OS-9 checks a module.</dd>
   <dt>CRLF</dt><dd>Windows line endings: carriage return then line feed. Unix uses LF only; OS-9 uses CR only.</dd>
   <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
+  <dt>dialect</dt><dd>One assembler's version of the shared assembly language. <code>las</code> supports RMA's (default) and lwasm's (<code>--lwasm</code>).</dd>
   <dt>differential testing</dt><dd>Testing a program by giving it and a trusted program the same input and comparing the outputs.</dd>
   <dt>dry run</dt><dd><code>make -n</code>: print the commands a build would run without running them.</dd>
   <dt>emod</dt><dd>Ends a module-format source; the assembler appends the CRC here.</dd>
@@ -823,11 +860,13 @@ bucket (char *name)
   <dt>fixup / relocation</dt><dd>A place in the code the linker must patch once final positions are known.</dd>
   <dt>forward reference</dt><dd>Using a label before it's defined. The reason assemblers make two passes.</dd>
   <dt>hash function</dt><dd>A calculation that turns a name into a number, always the same number for the same name. Used to pick a bucket.</dd>
+  <dt>include guard</dt><dd>A condition at the top of an include file that makes the file skip itself if it has already been read.</dd>
   <dt>interface</dt><dd>The set of operations a piece of code offers, with how it works kept private, so the inside can change without affecting callers.</dd>
   <dt>K&amp;R C</dt><dd>The C language as it was before the 1989 ANSI standard.</dd>
   <dt>knock-on error</dt><dd>An error caused by an earlier error. Fixing the first one makes it disappear.</dd>
   <dt>library</dt><dd>A bundle of object files (members). The linker takes only the members it needs.</dd>
   <dt>linker</dt><dd>Joins object files and library members into one program and fills in cross-references.</dd>
+  <dt>local label</dt><dd>A label that only exists within part of a file. In lwasm, a name containing <code>@</code>, valid until the next blank line.</dd>
   <dt>location counter</dt><dd>The address where the assembler will put the next byte. Inside an OS-9 module there are two: <code>*</code> for code, <code>.</code> for data.</dd>
   <dt>LWOBJ</dt><dd>lwasm's object file format, read by lwlink.</dd>
   <dt>MMU</dt><dd>Hardware that maps 8K blocks of physical RAM into the 6809's 64K address space.</dd>
@@ -835,6 +874,7 @@ bucket (char *name)
   <dt>module</dt><dd>OS-9's unit of executable code: header, body, name, CRC.</dd>
   <dt>negative control</dt><dd>A deliberate fault fed to a test to show it can detect a problem.</dd>
   <dt>object file</dt><dd>Assembled code that isn't finished: it still has names to resolve and places to patch.</dd>
+  <dt>operator precedence</dt><dd>Which operators are applied first in an expression, as multiplication before addition in arithmetic.</dd>
   <dt>padding</dt><dd>Unused bytes a compiler adds inside or after a structure so its fields line up on convenient addresses.</dd>
   <dt>phasing error</dt><dd>An address that came out different in pass 2 than in pass 1.</dd>
   <dt>position-independent</dt><dd>Code that works wherever it's loaded, because it uses addresses relative to the program counter (<code>,pcr</code>).</dd>
