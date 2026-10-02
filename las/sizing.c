@@ -36,7 +36,8 @@
  *     check still guards the result.                               *
  *                                                                  *
  * Only in lwasm mode, and only where fork() exists. Elsewhere the  *
- * sizes stay as RMA chose them.                                    *
+ * sizes stay as RMA chose them. -DNOSIZING builds a host las       *
+ * without it (build/nosz), the reference for the 6809 build.       *
  *                                                                  *
  * Addresses are las's: if a file interleaves lwasm sections, las   *
  * lays them out in source order and lwasm doesn't.                 *
@@ -44,7 +45,8 @@
 
 #include "rma.h"
 
-#if defined(__unix) || defined(__unix__) || defined(__linux__)
+#if (defined(__unix) || defined(__unix__) || defined(__linux__)) \
+    && !defined(NOSIZING)
 #  define SZ_FORK
 #  include <unistd.h>
 #  include <fcntl.h>

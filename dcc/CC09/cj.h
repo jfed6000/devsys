@@ -96,7 +96,9 @@
 # define LONGTYPE	long
 # define FLOATYPE	float
 # define DBLETYPE	double
-# define ALLOCATE	ibrk
+# define ALLOCATE	sbrk	/* was ibrk: on the F256, F$Fork won't start a
+				 * 6-block module with more than 8K of data, but
+				 * sbrk can grow it later (devsys phase 7) */
 #endif
 
 #ifdef _OSK

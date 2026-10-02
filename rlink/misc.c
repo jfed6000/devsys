@@ -88,6 +88,7 @@ char *msg;
     fprintf (stderr, "linker fatal: ");
     fprintf (stderr, msg, s1, s2, s3);
     fprintf (stderr, "\n");
+    lw_cleanup ();
     exit (errcode ? errcode : (errcode = 1));
 }
 
@@ -181,7 +182,11 @@ L1d61(nam)
     }
     else
     {
-        eref = (struct ext_ref *)grab(sizeof(struct ext_ref));
+        /* Released entries go onto ExtStart, and rl_05.c takes nodes
+         * from there as dref_nodes, so each must be big enough for one */
+        eref = (struct ext_ref *)grab(sizeof(struct ext_ref) >
+                sizeof(struct dref_node) ? sizeof(struct ext_ref)
+                : sizeof(struct dref_node));
     }
 
     /* Set up curExtRef pointers */
@@ -219,6 +224,30 @@ unsigned	size;
 	 * AddressSanitizer every link crashed reading such a field. */
 	memset (p, 0, size);
 	return p;
+}
+
+
+/* ******************************************************************** *
+ * setname() - Store a name for a SYMDAT or ext_ref at its own length.  *
+ *          old is the entry's current name: an entry rlink is reusing  *
+ *          keeps that buffer when the new name fits. Returns the name. *
+ * ******************************************************************** */
+
+char *
+setname (old, name)
+char *old, *name;
+{
+    int len = strlen (name);
+
+    if (len > SYMLEN)
+        len = SYMLEN;
+
+    if ( ! old || (strlen (old) < len))
+        old = grab (len + 1);
+
+    strncpy (old, name, len);
+    old[len] = '\0';
+    return old;
 }
 
 
@@ -380,5 +409,6 @@ tidy ()
 		unlink (OutfName);
 	}
 
+	lw_cleanup ();
 	exit (errno);
 }

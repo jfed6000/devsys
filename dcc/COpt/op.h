@@ -2,6 +2,10 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef _OS9
+#define void int        /* DCC itself has no void (the 6809 build) */
+#endif
+
 #define LABELSIZE       32  /* dcc68's 31-character names, one spare; the
                                 * ':' export mark isn't stored (was 11) */
 #define MNEMSIZE        10

@@ -24,6 +24,10 @@ remote later; don't add one or push.
 | `corpus/` | NitrOS9 source the harness assembles: clones of the user's forks (`jfed6000/nitros9`, `jfed6000/nitros9-languages`, branch `devsys`), pinned by `harness/corpus.lock`. Not version-controlled. Set up or restore with `harness/corpus.sh`; `harness/corpus.sh update` moves to the newest `devsys` commits. Don't edit files in it. |
 | `harness/regress.py` | Checks that a change to `las` did **not** change behaviour: compares the working tree with `HEAD` (or `--ref REV`) on ~740 inputs. Must pass for refactors (phases 1, 2, 8, 9). `--skip lwdiff` when a change is meant to alter NitrOS9 results (then check the RMA/DCC differences one by one, as DESIGN.md §8 describes for phase 3). |
 | `las/build/stats`, `las/build/asan` | Extra builds of the same source: `stats` (`-DSYMSTATS`) prints symbol table memory, used by `harness/symstats.py`; `asan` checks memory errors: `ASAN_OPTIONS=detect_leaks=0 python3 harness/regress.py --current las/build/asan/las`. Run the asan check after any change to how memory is allocated. For rlink, build a sanitizer copy in scratch (`make -f GNUmakefile CFLAGS="-g -m32 -Wno-implicit-int -fsanitize=address" LFLAGS="-m32 -fsanitize=address"`) and pass it to lwdiff with `--rlink`. |
+| `native/GNUmakefile` | Phase 7 cross-build: compiles las, rlink and DCC for the 6809 with the host DCC passes, `las` and `rlink` into `native/bin/` (`make -f GNUmakefile`; `obj/TOOL.map` + `obj/TOOL/*.lst` give every address a name). DESIGN.md D20, D25. |
+| `harness/native.py` | Runs the cross-built tools on the F256 in MAME (suites `las`, `link`, `cc`) and compares with the host tools; about 1 minute. Run after any change to las, rlink or DCC that should work natively. `--keep` keeps `harness/out/native/test.dsk`. |
+| `harness/os9run.py` | Runs one OS-9 program on a host model (6809 from `harness/cpu6809.py` + system calls). For debugging native failures in seconds: `--trace`, `--stats`, `--map native/obj/las.map --break e_report`. Not the proof; MAME is. |
+| `las/build/nosz` | Host las built with `-DNOSIZING` (no `,pcr` sizing, as on OS-9): the reference for native lwasm-mode output (D21). |
 | `docs/DESIGN.md` | Decisions, measurements, roadmap (§9), open questions (§10). The project's record. |
 | `docs/learn/toolchain.html` | Teaching primer for the project owner. |
 | `docs/learn/GUIDE.md` | Rules for maintaining the primer, and its topic backlog. |
@@ -65,6 +69,9 @@ using examples from their own trees.
 - NitrOS9 lwasm flags are in `corpus/nitros9/rules.mak` (`AS` and `ASM`). The
   Level 2 F256 defs come from `-I nitros9/defs -I nitros9/level2/wildbits -Dwildbits=1`.
 - After a fresh checkout of `devsys`, run `harness/corpus.sh` before the harness.
+- Native testing (phase 7 on) uses the Wildbits MAME: see DESIGN.md "Phase 7
+  test plan" and `~/projects/wild/tempest/docs/port-guide.md` §13. Never modify
+  MAME, and mount a copy of a disk image, never the original.
 - `las` has two modes. Default: RMA behaviour. `--lwasm`: lwasm behaviour
   (DESIGN.md D12, §4). NitrOS9 sources need `--lwasm` plus the build's
   `--pragma=` list, which the harnesses pass. A change for lwasm compatibility

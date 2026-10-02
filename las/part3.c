@@ -646,7 +646,7 @@ do_brnch (ZILCH)
             }
 
 #ifdef COCO
-            MLCod.shrtlng.f_byt = _jmpsize;
+            MLCod.opers.shrtlng.f_byt = _jmpsize;   /* was MLCod.shrtlng: the prebyte */
 #else
             opr_ptr[0] = _jmpsize;
 #endif

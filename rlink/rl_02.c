@@ -3,7 +3,7 @@
 direct int  iobufsiz = 0x400;
 direct SYMDAT *curntsym = 0;
 
-struct ext_ref   curExtRef = {&curExtRef, &curExtRef,0,0,0,0,0,0};  /*D0067*/
+struct ext_ref   curExtRef = {&curExtRef, &curExtRef, 0, 0};  /*D0067*/
 char   *symEtxt = "etext";
 char   *symEDat = "edata";
 char   *symEnd = "end";
@@ -289,7 +289,8 @@ L0937 (bp, do_vars)
     while (gcount--)    /* L0a1c */
     {
         my_sym = newsym();
-        getname(my_sym->sname, SYMLEN);
+        getname(tmpnam, SYMLEN);
+        my_sym->sname = setname(my_sym->sname, tmpnam);
         my_sym->Type = getc(InFile);
         my_sym->Offset = getwrd(InFile);
 
@@ -401,7 +402,7 @@ L0937 (bp, do_vars)
             struct ext_ref *er;
 
             er = L1d61(tmpnam);
-            strcpy(er->name, tmpnam);
+            er->name = setname(er->name, tmpnam);
             er->myOb = newobj;
         }
 
@@ -448,7 +449,7 @@ L0937 (bp, do_vars)
             my_sym = newsym();
             my_sym->sprev = commnsyms;
             commnsyms = my_sym;
-            strcpy(my_sym->sname, tmpnam);
+            my_sym->sname = setname(my_sym->sname, tmpnam);
             my_sym->Type = 7;
             my_sym->Offset =  commnloc;
 
@@ -636,7 +637,7 @@ addsym(oldObj, oNam, oTyp)
     newsm = newsym();
     newsm->sprev = oldObj->symlist;
     oldObj->symlist = newsm;
-    strncpy(newsm->sname, oNam, SYMLEN);
+    newsm->sname = setname(newsm->sname, oNam);
     newsm->Type = oTyp;
     L1bcf(newsm);
 }
@@ -774,8 +775,7 @@ newalias (def, name)
 {
     SYMDAT *al = newsym ();
 
-    strncpy (al->sname, name, SYMLEN);
-    al->sname[SYMLEN] = '\0';
+    al->sname = setname (al->sname, name);
     al->Type = def->Type;
     al->Offset = def->Offset;
     return al;

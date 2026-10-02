@@ -280,13 +280,16 @@ do_rmb (ZILCH)
     {
         *(Adrs_Ptr = &CodeAddrs) = _curntorg ();
 
+        /* The casts matter on the 6809 (no prototypes there): l20a4
+         * takes a long, savcurorg an int, and NmbrInt is a long. */
+
         if (Label)
         {
             l2069 (WhereLoc & ~INIENT);
-            l20a4 (CodeAddrs);
+            l20a4 ((long) CodeAddrs);
         }
 
-        savcurorg (CodeAddrs + NmbrInt);
+        savcurorg ((int) (CodeAddrs + NmbrInt));
         return 1;
     }
 

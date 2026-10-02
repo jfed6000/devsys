@@ -218,6 +218,7 @@ main (argc, argv)
     }
     
     wrtmodule ();   /* L03c3 */
+    lw_cleanup ();
 }
 
 /* ================================================================ *
@@ -337,7 +338,8 @@ register char *arg;
 
 #ifdef __LIL_END__
 unsigned int
-o9_int(UINT val)
+o9_int (val)
+UINT val;
 {
     return ((val & 0xff00) >> 8) + ((val & 0xff) << 8);
 }

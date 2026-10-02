@@ -626,7 +626,9 @@ AsmblLin (ZILCH)
 
                             MLCod.opcode = Cod_Ent->op_cod;
 #ifdef COCO
-                            MLCod.q_long = 0;
+                            /* .opers: K&R C took "MLCod.q_long" as offset
+                             * 0 of MLCod and cleared prebyte and opcode */
+                            MLCod.opers.q_long = 0;
 #else
                             memset (MLCod.opers, 0, sizeof (MLCod.opers));
 #endif

@@ -37,6 +37,12 @@ Out of scope for now: Level 1, other CoCo platforms, ANSI C.
 | D17 | rlink `--lwlink` **lays modules out the way lwlink does**: by section rank (code, .text, data, .data), then command-line position with libraries at their place, then library order; las exports the rank as the constant `__lwsec`; the mainline may be anywhere and the entry point is `__start` | NitrOS9 links `-lwildbitsl2 -lnet -lalib prog.o`, so lwlink puts a `net` member (section `code`) before the program and an `alib` member (`.text`) after it |
 | D18 | **DCC forked** into `devsys/dcc` from the owner's CoCoC working tree (68fdbf9 plus uncommitted edits, kept as `dcc/uncommitted-at-fork.patch`): identifiers significant to **31** characters; symbol entries keep their old 8-character room and grow only for longer names; the optimizer takes 32-character labels (31 plus a spare byte); the driver runs `las` | 31 is C89's significance for internal names, well inside las's and rlink's 63. Compact growth keeps memory unchanged for short names on the 6809, as in phase 2 |
 | D19 | rlink matches a name from a **ROF version 0** module (Microware's tools) on **8 characters**: a long reference (`localtime`) to an 8-character definition (`localtim` in `clib.l`) gets an alias under the long name in the defining module. Version 1 modules (las) match exactly | Existing C libraries were built with 8 significant characters; rebuilding them is phase 10. Matching as the old toolchain did keeps them usable, without blurring names between new objects |
+| D20 | **Native tools are cross-built on Linux** by `native/GNUmakefile`: each `.c` goes through the host `dcpp` → `dcc68` → `dco68` → `las`, and host `rlink` links `cstart.r` + objects + `sys.l` + `clib.l` from CoCoC. Extra memory per tool (`-M`, pages): rlink 10, dco68 10 and dcpp 135 as in their original native makefiles; dcc68 10 (D25). The optimizer runs with `-2` (D4) | Same passes the `dcc` driver runs on the F256, so the native build *is* a DCC build, and the host tools are the ones already verified. Building on the F256 itself comes later (las and dcc68 can't be linked natively until phase 8) |
+| D21 | **Reference for native las output: `las/build/nosz`** (host las built with `-DNOSIZING`) | `sizing.c` needs `fork()`, so the 6809 las keeps RMA's long `,pcr` forms in lwasm mode. Native output is compared with a host build that does the same; RMA mode is unaffected (sizing is lwasm-only) |
+| D22 | **Two native test tools.** `harness/native.py` runs the tools in the Wildbits MAME and compares their output with the host's: the proof. `harness/os9run.py` runs an OS-9 program on a host model (the owner's `cpu6809.py` from tempest, plus the system calls a CoCoC program makes), with call traces and backtraces by function name: the debugging aid | A MAME round trip takes minutes and shows only the end result; the model reproduced every MAME result in seconds and named the failing function |
+| D23 | rlink stores **names at their own length** (`setname`, `misc.c`) instead of `SYMLEN + 1` arrays; module names in `MAXNAME + 1` | At 64 bytes a name (phase 5's `SYMLEN` 63), linking anything against `clib.l` ran the 6809 out of memory. Same idea as las's compact entries (phase 2) |
+| D24 | **All use of memory beyond one 64K process goes in phase 8**: las's symbol table *and* rlink's link of large programs (las, dcc68) | Owner's decision, 2026-10-02: handle all block switching in one phase. The F256 has 1800K+ of RAM |
+| D25 | **dcc68 fits the F256's module limit**: compiled with `-s` (no stack checks, as natively), without `-DPROF` (`dcc -p` profiling is unavailable natively), and with `sbrk` instead of `ibrk` for its tables (`CC09/cj.h`), starting from a small data area. Module 48,290 bytes | Measured in MAME with test modules: a module in 6 blocks may be at most **48,384 bytes** (it must end by `$FD00`; the top 768 bytes are reserved on this NitrOS9), else it takes a 7th block. And F$Fork refuses (`#207`) a process whose module blocks plus *initial* data blocks fill all 8 slots, while F$Mem can grow a running process to 8 (native las did, 24K of data). CoCoC's shipped dcc68 (48,521 bytes, 16K initial data) can't start on the F256 for both reasons |
 
 ## 3. Source styles the fork must accept
 
@@ -121,6 +127,15 @@ ROF stores names null-terminated, so the file format doesn't change.
 
 A Level 2 process has one 64K address space shared by its code, data and stack.
 For a DCC-compiled RMA fork, expect roughly **25–30K** free for tables.
+
+**Measured in phase 7:** the DCC-compiled las module is 34,149 bytes (RMA's
+original native build: 20,143). Level 2 maps it in 8K blocks at the top of
+the 64K (on this NitrOS9 a module must end by `$FD00`, D25), so data can
+only reach `$6000` (24K). Static data and the
+declared stack take 7,872 bytes, which leaves about **16K** for symbols.
+On the F256, `scfg.asm` stops with "symbol table overflow"; it needs about
+41K (1,933 symbols). The toolchain's own C sources fit (largest:
+`rma_main.a`, 24,064 bytes of data in total, just under the limit).
 
 ### Measured demand (lwasm, Level 2 wildbits defsfile)
 
@@ -238,6 +253,15 @@ errors fell (15 C library files 273 → 14 each), `getc.a` now assembles
 cleanly. Use `regress.py --skip lwdiff` while a change is meant to alter
 NitrOS9 results.
 
+**Native (phase 7).** `harness/native.py` runs three suites on the F256 in
+MAME: `las` (native las assembles the 56 `.a` files the cross-build made
+from las, rlink and DCC's C sources; each ROF must equal host las's, date
+masked), `link` (native rlink links rlink, dcc, dcpp and dco68; each module
+must equal the cross-built one) and `cc` (native `dcc` compiles, links and
+runs `harness/native/hello.c`; the module must equal the host passes').
+`harness/os9run.py` runs the same programs on a host model for debugging
+(`--map obj/TOOL.map --break FUNC` prints who called FUNC).
+
 Both harnesses run every `las` call in its own empty directory, because las
 writes its macro work file under a fixed name (`rma.tmp`, `rma.h:204`) in the
 current directory.
@@ -254,13 +278,47 @@ current directory.
 | **4. lwasm syntax** | lwasm syntax and semantics in lwasm mode; see §4 status table | most `.asm` files match | **done** 2026-10-02 (except `struct`, 1 file). 160 of 290 match (was 72). Every remaining DIFF is phase 3b sizing; remaining errors are phase 5 `section` files. RMA/DCC regression 450/450; AddressSanitizer clean |
 | **5. Object mode** | `section`/`export` → ROF; header defaults | `.as` files link with rlink and match | **done** 2026-10-02. `las/lwobj.c` (sections → psect/vsect/csect, `__os9`, export pragma, `rmb` by section type, `dtb`, `=`), `las/preload.c` (`--defs`), rlink fork with `--lwlink` (D13–D15). 90 of 90 object files assemble; 4 of 13 linked programs byte-identical to lwlink; the other 9 differ only by instruction sizing (10 objects larger than lwasm's, phase 3b). AddressSanitizer clean (las and rlink) |
 | **6. Long names downstream** | rlink and DCC name limits; DCC `ASSEMBLER` → `"las"` | 24-char names survive compile → link | **done** 2026-10-02. rlink `SYMLEN` 63 (phase 5) and 8-character matching for Microware objects (D19); DCC fork (D18) with 31-character names, driver runs `las`. `harness/dccdiff.py`: all 198 CoCoC sources that compile give identical output apart from longer names (59 files). A test program with names that collide at 8 characters, calling `localtime()`/`intercept()` from CoCoC's `clib.l`, builds with `dcc` and every call lands on the right address (the original rlink fails it). Fixed in DCC: `getword` overflow, two uninitialised pointers in declarations (`xlkmap.c` now compiles), an out-of-bounds read in the optimizer. regress uses the devsys DCC: 451/451. AddressSanitizer clean (dcc68, dco68, rlink, las) |
-| **7. Native build** | Compile fork + rlink + DCC with DCC; run on F256 | assembles `scfg.asm` on the F256 | not started |
-| **8. Banked blocks** | `F$AllRAM`/`F$MapBlk` symbol storage | `fm.asm`, `rbf.asm`, kernel assemble natively | not started |
+| **7. Native build** | Compile fork + rlink + DCC with DCC; run on F256 | the tools run on the F256 and give the host's output on every input that fits in 64K (`scfg.asm` moved to phase 8: it can't fit without banked symbols, §6) | **done** 2026-10-02. All six tools cross-build with DCC (`native/GNUmakefile`: las 34,149, rlink 18,654, dcc 9,589, dcpp 19,014, dcc68 48,290, dco68 11,558 bytes). In MAME (`harness/native.py`): native las assembles all 56 `.a` files of the toolchain's own C sources identically to host las; native rlink links rlink, dcc, dcpp and dco68 identically; native `dcc` compiles, links and runs a C program, module identical to the host passes'. las and dcc68 can't be linked natively yet (rlink runs out of memory: phase 8, D24). Fixed: three 6809-only las bugs (§10); rlink names at their own length (D23) and an `ext_ref` reuse overflow that change exposed; K&R and library gaps in rlink, COpt (§10); dcc68's memory (D25). Host results unchanged: regress 741/741, lwdiff 199 match and 13/13 links, AddressSanitizer clean (rlink) |
+| **8. Banked blocks** | `F$AllRAM`/`F$MapBlk` storage for las's symbols and rlink's link data (D24) | `scfg.asm`, `fm.asm`, `rbf.asm`, kernel assemble natively; native rlink links las and dcc68 | not started |
 | **9. Precompiled defs** | Saved defs images | measurable speedup, same output | not started |
 | **10. Libraries** | alib, net, wildbitsl2 as ROF `.l` | `.as` programs build natively | **started** in phase 5: a ROF library is its members' `.r` files concatenated; the harness builds all three from las output and they link. Native build of the libraries remains |
 
 Phases 3–6 can run alongside each other. Phase 7 should happen early enough to
 catch DCC/K&R surprises.
+
+### Phase 7 test plan: MAME
+
+Native tests run in the Wildbits MAME, as in
+`~/projects/wild/tempest/docs/port-guide.md` §13 ("Running the Wildbits MAME"):
+
+- Binary `~/projects/wild/mame/mame`, machine `wbjr2` (Jr2 image), `-bios turbo`.
+  Headless: `-video none -sound none -nothrottle -skip_gameinfo`, driven by a Lua
+  `-autoboot_script` (`manager.machine.natkeyboard:post(...)`, subscription kept
+  in a global), or by the image's own `startup` file, which is deterministic. A
+  marker command after the test (`echo done >/dd/MARKER`) shows it finished.
+- Mount a **copy** of the disk image (MAME writes into it). Image sizes must be
+  `odd × 2^n` blocks: pad **upward** only; truncating cuts the filesystem
+  (files then fail with error 214).
+- Move files on and off the image with ToolShed's `os9` (`~/projects/coco-shelf/bin/os9`,
+  e.g. `os9 copy`, `os9 attr`).
+- The check: the tools on the F256 process real inputs; copy the outputs off
+  the image and compare them byte for byte with the host tools'. MAME proves
+  correctness (crashes, OS-9 errors, output); its timing is no evidence, and
+  it is never modified.
+
+**As built (`harness/native.py`).** Starts from the newest Jr2 image
+(`~/projects/wild/netrek/nitros9/recipes/wildbits/l2/l2_wildbitsjr2.dsk`,
+`--image` for another), copies it to `harness/out/native/test.dsk` and pads
+it to 128 MB (2^27 bytes). Installs the tools and libraries, stages each
+suite's inputs (text with CR line ends, `os9 copy -l`) and writes a
+`startup` that begins with `-x` (the shell otherwise stops at the first
+error) and ends by writing `/dd/T/MARKER`. A Lua frame callback polls the
+image with `os9 dir` every 600 frames and exits MAME when the marker
+appears. MAME's exit log includes the text screen. Lessons: a link's `-o=`
+needs a full path (rlink's "x" mode, §10); a tool linked without its `-M`
+overflows its stack and can hang the machine; never stop MAME with
+`pgrep -f`/`pkill -f` on a pattern that is also in your own shell's command
+line.
 
 ## 10. Open questions and risks
 
@@ -268,10 +326,10 @@ catch DCC/K&R surprises.
 - [ ] How should `condundefzero` interact with RMA's undefined-symbol handling in pass 1?
 - [ ] lwasm's exact scoping rule for `@` local labels — confirm from lwasm source before implementing.
 - [ ] Defaults for lwlink-style header values (type, attr, rev, stack) — read them from `lwlink/script.c`.
-- [ ] Size of the DCC-compiled fork on the 6809 — sets the real memory budget.
+- [x] Size of the DCC-compiled fork on the 6809: 34,675 bytes, leaving about 16K for symbols (§6, phase 7).
 - [ ] `F$MapBlk` cost per call on the F256 — sets how much bank switching hurts.
-- [ ] How much RAM does the target F256 have free for symbol blocks?
-- [ ] DCC limits (no `void`, `enum`, `const`) when compiling the fork natively.
+- [ ] How much RAM does the target F256 have free for symbol blocks? The machine has 1800K+ (owner, 2026-10-02); measure what a running system leaves free in phase 8.
+- [x] DCC limits when compiling the tools natively (phase 7). What it took: K&R declarations in rlink's `proto.h`; `#define void int` in COpt; lwsel's struct members renamed (K&R C has one namespace for all struct members, and `refs` was taken); `atexit` and `ftruncate` replaced (CoCoC's clib has neither; `_ss_size` sets the size); the source directory searched before CoCoC's `Defs` (COpt has its own `ctype.h`). Three 6809-only bugs in las: `MLCod.q_long` and `MLCod.shrtlng.f_byt` (K&R took them as offset 0 of `MLCod`, clearing the opcode), and a `long` passed where `do_rmb`'s callees take an `int` (no prototypes, so the callee read the high word: 0). gcc's `-Wtraditional-conversion` over a copy where those values are `long` found the last kind; only two sites.
 - [ ] Does anything in the build depend on lwasm listing or map output?
 - [ ] `errexit()` exits with `errno`, which is 0 unless a system call just failed, so some fatal errors (e.g. "bad -D value", "symbol table overflow") report success to the shell. Fix: exit 1 when errno is 0. Changes exit codes, so do it as its own small step.
 - [x] `ifp1` blocks were read only in pass 1, so the defs' effect on the location counter (lwasm leaves `*` = 8 after the Level 2 wildbits defs) differed between passes. Solved in phase 4: lwasm mode makes `ifp1` true in both passes and replays conditionals (D12).
@@ -279,12 +337,17 @@ catch DCC/K&R surprises.
 - [ ] `struct`/`endstruct` (lwasm) not implemented; 1 file (`minted`).
 - [ ] `wbinfo` contains `dtb` (assembly date and time), so its link matches lwlink only when both run in the same second. The harness should mask those 6 bytes or treat the file as nondeterministic.
 - [ ] `--defs` resolves a value at assembly time where lwasm left it to the linker. Where that changes an instruction's size choice (e.g. an `equ` defined from defs constants then used as an address), las and lwasm may differ. None seen in the corpus after phase 3b.
-- [ ] **Sizing on the 6809 (phase 7).** The trial needs `fork()`, which OS-9 lacks; the CoCo build compiles sizing out and keeps RMA's long `,pcr` forms. Options: `F$Fork` las itself with a hidden option and a pipe, or reset pass-1 state in-process. The trial also doubles pass-1 time.
+- [ ] **Sizing on the 6809** (still open after phase 7; the native build has no sizing, D21). The trial needs `fork()`, which OS-9 lacks; the CoCo build compiles sizing out and keeps RMA's long `,pcr` forms. Options: `F$Fork` las itself with a hidden option and a pipe, or reset pass-1 state in-process. The trial also doubles pass-1 time.
 - [ ] Sizing model limits: a literal `,pcr` target (`leax 5,pcr`) and targets that are `equ *` symbols are treated as unreachable (long); forward-referenced constants in direct/extended and `n,X` operands keep RMA's long form where lwasm would shorten them; distances use las's layout, which differs from lwasm's if a file interleaves sections. None occur in the corpus.
 - [ ] lwasm's symbolic `org`: `scf.d` does `ORG PD.OPT` with `PD.OPT` external, so lwasm's `PD.EKO` is "PD.OPT+4" and `PD.EKO-PD.OPT` cancels to 4 (5-bit offset). las makes the labels absolute and keeps `PD.OPT` as a reference, so `opts.o` has three 16-bit offsets (not linked by any of the 13 programs). Fix: give labels under a symbolic `org` the base as a reference, and cancel +X/−X reference pairs.
 - [ ] **C libraries with long names** (phase 10): CoCoC's `clib.l` etc. still have 8-character names (`localtim`), served by D19's aliasing. Rebuilding them with the devsys DCC removes the need. Only one direction is handled: an old object referencing `localtim` would not find a rebuilt library's `localtime`.
 - [ ] DCC's `ttl` lines still cut function names to 8 characters (cosmetic: listing titles only).
-- [ ] On the F256, `dcc` looks for its libraries on the default drive (`/dd/lib`); the native build (phase 7) needs `las` and the long-name tools installed under the names the driver runs.
+- [x] On the F256, `dcc` looks for its libraries on the default drive. `harness/native.py` installs the layout it needs: the six tools in `/dd/CMDS`; `cstart.r`, `clib.l`, `sys.l`, `level1.patterns`, `level2.patterns` in `/dd/LIB`; CoCoC's headers in `/dd/DEFS`; `/dd/TMP` for temporary files.
+- [ ] On OS-9, rlink opens its output with mode `"wx+"`: a bare `-o=name` goes to the **execution directory** (`/dd/CMDS`), as Microware's `cc` did; the Linux build writes to the current directory. Keep (it's how `dcc` installs programs) or change for building NitrOS9 natively?
+- [ ] lwasm mode is untested natively: every NitrOS9 source needs the defs, which don't fit until phase 8. The native suites cover RMA mode (DCC output) only. Once phase 8 lands, run lwdiff's inputs natively against `las/build/nosz`.
+- [ ] dcpp with too little memory stops early **with exit status 0** and a truncated output file (seen with 16 pages). The `dcc` driver then compiles half a file. Make dcpp report it.
+- [ ] `harness/os9run.py` models a process as allowed to fill all 8 slots; the F256's two limits (D25) aren't modelled, so a memory problem can pass there and fail in MAME.
+- [ ] `harness/os9run.py` doesn't model `F$Link`, so the `dcc` driver (which links `Init` to find the default drive) only runs in MAME.
 - [ ] las merges all of a file's code-like sections into one psect; lwlink places `code`, `.text`, `data`, `.data` separately. A file mixing them is placed by its first (`__lwsec`).
 - [ ] Bugs fixed in the forked rlink during phase 5: `grab()` returned unzeroed memory that rlink relied on being zero (every link crashed under AddressSanitizer; worked by luck); `fprintf(OutFile, modname)` used the name as a format string; a 16-character psect name read into a 10-byte buffer; the unresolved-references report dereferenced a null pointer; the makefile lacked header dependencies (a SYMLEN change left stale objects). In las: an exported `set` symbol was counted twice in the ROF header (malformed ROF).
 - [ ] RMA assembles each input file as a separate unit (both passes, then that file's ROF trailer). Fine for ROF libraries; for modules, pass one source file.

@@ -13,10 +13,19 @@ LONGTYPE  IDatLoc;
 LONGTYPE  IDpdLoc;
 LONGTYPE  DTRefLoc;
 
-static int idat_crc(int tcount);
-extern void getref(def_ref *ref, char *filename);
+static int idat_crc();         /* (int tcount) */
+extern void getref();          /* (def_ref *ref, char *filename) */
 
 // creatdnodes();
+
+/* Set the output file's size before writing it. CoCoC's C library has
+ * no ftruncate(); _ss_size() is the OS-9 call (SS.Size) it would wrap. */
+
+#ifdef _OS9
+#   define SETSIZE(fd, n) _ss_size (fd, (long) (unsigned) (n))
+#else
+#   define SETSIZE(fd, n) ftruncate (fd, n)
+#endif
 
 #ifdef _OS9
 #   define WMODE "wx+"
@@ -75,7 +84,7 @@ wrtlwmod()
         fatal("can't create output file");
     }
 
-    if (ftruncate(fileno(OutFile), o9_int(mod_hdr.m_size)))
+    if (SETSIZE(fileno(OutFile), o9_int(mod_hdr.m_size)))
     {
         fatal("can't set file size");
     }
@@ -181,7 +190,7 @@ wrtmodule()
     OutFile->_bufsiz = 512;
 #endif
 
-    if (ftruncate(fileno(OutFile), o9_int(mod_hdr.m_size)))
+    if (SETSIZE(fileno(OutFile), o9_int(mod_hdr.m_size)))
     {
         fatal("can't set file size");
     }

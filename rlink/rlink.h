@@ -48,9 +48,13 @@ typedef int16_t INTTYPE;
 
 #define V0NAME 0x200
 
+/* Names are allocated at their own length (setname, misc.c), not in
+ * SYMLEN+1 arrays: at 64 bytes a name, linking against clib.l ran the
+ * 6809 out of memory (phase 7) */
+
 typedef struct sym_dat
 {
-    char            sname[SYMLEN + 1];
+    char           *sname;
     unsigned        Type;
     UINT            Offset;
     struct sym_dat *sprev;
@@ -59,7 +63,7 @@ typedef struct sym_dat
 
 typedef struct ob_files
 {
-    char             obname[SYMLEN + 1];
+    char             obname[MAXNAME + 1];   /* getname keeps 16 */
     int              x10;
     unsigned         myaddr;
     struct ob_files *o_next;
@@ -86,7 +90,7 @@ struct ext_ref
 {
     struct ext_ref *next;
     struct ext_ref *prev;
-    char            name[SYMLEN + 1];
+    char           *name;       /* setname */
     struct ob_files *myOb;      /* Don't know what this is */
 };
 

@@ -21,3 +21,8 @@ __pycache__/
 
 las/build/stats/las
 las/build/asan/las
+las/build/nosz/las
+
+# Cross-built 6809 tools (rebuild with make -C native -f GNUmakefile)
+native/obj/
+native/bin/

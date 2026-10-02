@@ -45,7 +45,8 @@ struct lwmod
     int    taken;
     int    hassize;             /* has code or data (not constants-only) */
     int    ndefs, nrefs;
-    char **defs, **refs;
+    char **mdefs, **mrefs;      /* m: K&R C has one namespace for all
+                                 * struct members (dref_node has refs) */
 };
 
 static struct lwmod Mods[MAXMODS];
@@ -123,15 +124,15 @@ index_file (name, lib, ord)
 
         count = rd(fp);
         m->ndefs = count;
-        m->defs = (char **)malloc((count + 1) * sizeof(char *));
+        m->mdefs = (char **)malloc((count + 1) * sizeof(char *));
 
         for (i = 0; i < count; ++i)
         {
-            m->defs[i] = rdname(fp);
+            m->mdefs[i] = rdname(fp);
             getc(fp);                           /* type */
             value = rd(fp);
 
-            if (!strcmp(m->defs[i], "__lwsec"))
+            if (!strcmp(m->mdefs[i], "__lwsec"))
                 m->rank = value;
         }
 
@@ -141,11 +142,11 @@ index_file (name, lib, ord)
 
         count = rd(fp);
         m->nrefs = count;
-        m->refs = (char **)malloc((count + 1) * sizeof(char *));
+        m->mrefs = (char **)malloc((count + 1) * sizeof(char *));
 
         for (i = 0; i < count; ++i)
         {
-            m->refs[i] = rdname(fp);
+            m->mrefs[i] = rdname(fp);
             n = rd(fp);
             fseek(fp, 3L * n, 1);
         }
@@ -180,7 +181,7 @@ defined_by_taken (name)
 
         for (j = 0; j < Mods[i].ndefs; ++j)
         {
-            if (!strcmp(Mods[i].defs[j], name))
+            if (!strcmp(Mods[i].mdefs[j], name))
                 return 1;
         }
     }
@@ -203,7 +204,7 @@ first_definer (name)
 
         for (j = 0; j < Mods[i].ndefs; ++j)
         {
-            if (!strcmp(Mods[i].defs[j], name))
+            if (!strcmp(Mods[i].mdefs[j], name))
                 return &Mods[i];
         }
     }
@@ -226,7 +227,10 @@ lw_order (a, b)
     return (int)(*a - *b);
 }
 
-static void
+/* Remove the temporary file. Called by fatal(), tidy() and at the end
+ * of main(), not through atexit(): CoCoC's C library has no atexit. */
+
+void
 lw_cleanup ()
 {
     if (TmpName[0])
@@ -271,10 +275,10 @@ lw_select ()
             {
                 struct lwmod *d;
 
-                if (defined_by_taken(Mods[i].refs[j]))
+                if (defined_by_taken(Mods[i].mrefs[j]))
                     continue;
 
-                if ((d = first_definer(Mods[i].refs[j])))
+                if ((d = first_definer(Mods[i].mrefs[j])))
                 {
                     d->taken = 1;
                     changed = 1;
@@ -302,8 +306,6 @@ lw_select ()
 
     if (!(out = fopen(TmpName, "w")))
         fatal("can't create '%s'", TmpName);
-
-    atexit(lw_cleanup);
 
     for (i = 0; i < n; ++i)
     {
