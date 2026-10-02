@@ -79,7 +79,10 @@ struct symblstr
                     *right;     /* Next entry, alphabet > this          */
     struct ref_xtrnal *reftbl;  /* Points to last ref in chained list
                                  * of all refs to this symbol           */
-    char symblnam[SYMLEN];      /* Symbol Name                  */
+    char symblnam[1];           /* Symbol Name. Must stay the last
+                                 * member: sym_add() allocates each
+                                 * symbol at its name's real length,
+                                 * so the array runs past [0].        */
 };
 
 /* This is a structure created for each reference in the program */

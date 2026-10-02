@@ -20,6 +20,7 @@ remote later; don't add one or push.
 | `harness/lwdiff.py` | Compares `las` with lwasm over the real Level 2 build. Run `python3 harness/lwdiff.py` after every change to `las`; `--only NAME --verbose` for one file. Report in `harness/reports/`. |
 | `corpus/` | NitrOS9 source the harness assembles: clones of the user's forks (`jfed6000/nitros9`, `jfed6000/nitros9-languages`, branch `devsys`), pinned by `harness/corpus.lock`. Not version-controlled. Set up or restore with `harness/corpus.sh`; `harness/corpus.sh update` moves to the newest `devsys` commits. Don't edit files in it. |
 | `harness/regress.py` | Checks that a change to `las` did **not** change behaviour: compares the working tree with `HEAD` (or `--ref REV`) on ~740 inputs. Must pass for refactors (phases 1, 2, 8, 9). |
+| `las/build/stats`, `las/build/asan` | Extra builds of the same source: `stats` (`-DSYMSTATS`) prints symbol table memory, used by `harness/symstats.py`; `asan` checks memory errors: `ASAN_OPTIONS=detect_leaks=0 python3 harness/regress.py --current las/build/asan/las`. Run the asan check after any change to how memory is allocated. |
 | `docs/DESIGN.md` | Decisions, measurements, roadmap (§9), open questions (§10). The project's record. |
 | `docs/learn/toolchain.html` | Teaching primer for the project owner. |
 | `docs/learn/GUIDE.md` | Rules for maintaining the primer, and its topic backlog. |

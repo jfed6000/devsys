@@ -15,6 +15,10 @@
  * a real right child. Note that the listing's symbol table prints  *
  * locmsk, so that bit shows there.                                 *
  *                                                                  *
+ * Each symbol is allocated at its name's real length: symblnam is  *
+ * the struct's last member, declared [1], and sym_add() asks for   *
+ * sizeof (struct symblstr) + strlen (name) bytes.                  *
+ *                                                                  *
  * sym_walk's order (bucket 0..63, alphabetical within a bucket)    *
  * decides the order of the listing's symbol table and of the ROF's *
  * global and external lists, so it must not change by accident.   *
@@ -25,6 +29,11 @@
 #define NBUCKETS 64
 
 static struct symblstr *Buckets[NBUCKETS];
+
+#ifdef SYMSTATS
+/* Measurement build only (make -C build/stats): see sym_stats() */
+static long StatSyms, StatNameChars, StatBytes;
+#endif
 
 static struct symblstr **
 #ifdef __STDC__
@@ -120,7 +129,14 @@ sym_add (name)
     int cmp;
 
     cmp = search (name, &parent);
-    new = (struct symblstr *) getmem (sizeof (struct symblstr));
+
+    /* sizeof already includes symblnam[1], room for the terminating 0 */
+    new = (struct symblstr *) getmem (sizeof (struct symblstr) + strlen (name));
+#ifdef SYMSTATS
+    ++StatSyms;
+    StatNameChars += strlen (name);
+    StatBytes += sizeof (struct symblstr) + strlen (name);
+#endif
 
     if (parent)
     {
@@ -198,3 +214,29 @@ sym_walk (fn)
         }
     }
 }
+
+#ifdef SYMSTATS
+/* ******************************************************************** *
+ * sym_stats() - Print symbol table memory use to stderr. Only in the   *
+ *               measurement build. On the 6809 a symbol's fixed part   *
+ *               is 12 bytes (2 chars, a long, 3 pointers) plus the     *
+ *               name and its terminating 0; before compact entries it  *
+ *               was 12 + 64 = 76 bytes whatever the name's length.     *
+ * ******************************************************************** */
+
+void
+#ifdef __STDC__
+sym_stats (long refs)
+#else
+sym_stats (refs)
+     long refs;
+#endif
+{
+    fprintf (stderr,
+        "symstats: symbols %ld namechars %ld hostbytes %ld "
+        "bytes6809 %ld fixed6809 %ld refs %ld refbytes6809 %ld\n",
+        StatSyms, StatNameChars, StatBytes,
+        StatSyms * 13 + StatNameChars, StatSyms * 76,
+        refs, refs * 5);
+}
+#endif

@@ -102,6 +102,14 @@ main (argc, argv)
 
     closmac ();
 
+#ifdef SYMSTATS
+    {
+        extern long StatRefs;
+
+        sym_stats (StatRefs);
+    }
+#endif
+
     if (HadError)
     {
         /* if an output file exists, and "keep r-file" has not

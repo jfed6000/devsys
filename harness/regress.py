@@ -26,6 +26,8 @@ Usage:
     python3 harness/regress.py              # compare working tree with HEAD
     python3 harness/regress.py --ref 9b3c026
     python3 harness/regress.py --show 3     # print the first 3 differences
+    ASAN_OPTIONS=detect_leaks=0 python3 harness/regress.py --current las/build/asan/las
+                                            # memory-check build (las/build/asan)
 """
 import argparse
 import concurrent.futures
@@ -240,10 +242,15 @@ def main():
     ap.add_argument("--ref", default="HEAD", help="git revision to compare against (default HEAD)")
     ap.add_argument("--show", type=int, default=10, help="how many differences to print")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--current", help="test this las binary instead of building las/build/unix "
+                    "(e.g. las/build/asan/las, with ASAN_OPTIONS=detect_leaks=0)")
     args = ap.parse_args()
 
     ref_bin, commit = build_reference(args.ref)
-    cur_bin, warnings = build_current()
+    if args.current:
+        cur_bin, warnings = os.path.abspath(args.current), []
+    else:
+        cur_bin, warnings = build_current()
     for w in warnings:
         print("build warning:", w, file=sys.stderr)
 

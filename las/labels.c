@@ -23,6 +23,10 @@ struct symblstr *parm
 
 static int phaserr ();
 
+#ifdef SYMSTATS
+long StatRefs;      /* measurement build: reference records created */
+#endif
+
 /* ******************************************************************** *
  * MovLbl() - Moves a label to destpos (parameter) if the first char    *
  *            in the buffer is a legal label char.                      *
@@ -449,6 +453,9 @@ RefCreat (mylabel, rtyp, adrs)    /*   L21c9()  */
     register struct ref_xtrnal *newref;
 
     newref = (struct ref_xtrnal *) getmem (sizeof (struct ref_xtrnal));
+#ifdef SYMSTATS
+    ++StatRefs;
+#endif
     newref->RfTyp = rtyp;
     newref->r_offset = adrs;
     newref->NxtRef = mylabel->reftbl;

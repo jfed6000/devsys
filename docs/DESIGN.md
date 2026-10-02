@@ -118,7 +118,23 @@ For a DCC-compiled RMA fork, expect roughly **25–30K** free for tables.
 | `fm.asm` | 2,353 | 609 | 18.6K |
 
 Current RMA entry = 76 bytes on the 6809 (`char symblnam[64]` inline plus 12 bytes of fields; 84 in the 32-bit Linux build) → `fm.asm` ≈ 179K.
-Compact entry ≈ 18 bytes → `fm.asm` ≈ 42K. Neither fits alone.
+Compact entry = 12 bytes + name + 1 (phase 2, done). Neither fits alone.
+
+### Measured after phase 2 (las, 6809 sizes)
+
+From `harness/symstats.py` (report: `harness/reports/symstats.md`), using the
+`las/build/stats` measurement build over all regress inputs that run to the end:
+
+| Inputs | Before (76 bytes/symbol) | After | Over 25K |
+|---|---|---|---|
+| 178 RMA sources + 198 DCC-compiled C files | largest 40.4K | largest 10.7K incl. references | 14 → 0 |
+| 265 NitrOS9 Level 2 files (full defs) | median 109K, largest 185K | median 30.6K, largest 49K | 151 → 149 |
+
+Compact entries cut the table about 3.5×. The C toolchain's own inputs now
+fit; NitrOS9 sources don't, because the defs alone add about 1,500 symbols
+(average name 8 characters). Phases 8 and 9 are still required for them.
+NitrOS9 reference counts are a floor: those files stop generating code after
+`mod` fails today.
 
 ### Design: one interface, three layers
 
@@ -206,7 +222,7 @@ current directory.
 |---|---|---|---|
 | **0. Harness** | Linux build of fork; diff harness over Level 2 wildbits tree; baseline report | report lists every file and its status | **done** 2026-10-02. Baseline: 0 of 290 match (267 errors, 23 fatal) |
 | **1. Symbol interface** | Put RMA's symbol code behind `sym_find` / `sym_add` | output byte-identical to unmodified RMA | **done** 2026-10-02. `las/symtab.c`: `sym_find`, `sym_add`, `sym_walk`; tree code removed from `labels.c`/`file_io.c`. regress.py: 740 of 740 identical |
-| **2. Compact entries** | Variable-length names | identical output, memory use measured | not started |
+| **2. Compact entries** | Variable-length names | identical output, memory use measured | **done** 2026-10-02. `symblnam[1]` as last member, allocated at the name's length. regress 740/740; AddressSanitizer build clean on all 740 (and catches a deliberate 4-byte under-allocation). Measured: see §6 |
 | **3. Module mode** | `mod`/`emod`, header, CRC | simple `.asm` commands match lwasm | not started |
 | **4. lwasm syntax** | `@` locals, `ifdef/ifndef`, `fill`, `fcn`, `<<`/`>>`, `;` comments, CR/LF/CRLF, `-D`, data outside sections, pragma behaviours (see §4) | most `.asm` files match | not started |
 | **5. Object mode** | `section`/`export` → ROF; header defaults | `.as` files link with rlink and match | not started |
@@ -232,4 +248,5 @@ catch DCC/K&R surprises.
 - [ ] Does anything in the build depend on lwasm listing or map output?
 - [ ] las's macro work file has a fixed name (`rma.tmp` in the current directory), so two las runs in one directory collide, natively too. Use a unique name (process ID) or a temp directory.
 - [ ] Phase 8 (banked blocks): symbol fields (`smbltyp`, `locmsk`, `s_ofst`, `reftbl`) are still read directly through pointers in `labels.c`, `directives.c`, `registers.c`, `file_io.c`, and `ref_xtrnal.r_offset` stores symbol pointers cast to `int`. Phase 1 isolated *finding and storing*; banking also needs those pointers to stay valid, so decide in phase 8 whether entries stay in main memory and only names move to banks.
+- [ ] Variable-length symbols on the 6809: the Linux build pads `struct symblstr` to a multiple of 4, so AddressSanitizer can't see an under-allocation of 1–3 bytes there. The 6809 build has no padding, so such a bug would corrupt memory only natively. Keep `sizeof (struct symblstr) + strlen (name)` and don't trim it.
 - [ ] Phase 2/8: `LOC1BYT` in `locmsk` doubles as the tree's "real right child" flag and is printed in the listing's symbol table. A different storage layout will change that column; it isn't in lwasm's output, so harmless for lwdiff, but regress.py will flag it and the reference must be moved deliberately.

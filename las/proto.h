@@ -72,6 +72,9 @@ void *getmem(int memreq);
 struct symblstr *sym_find(char *name);
 struct symblstr *sym_add(char *name);
 void sym_walk(void (*fn)(struct symblstr *));
+#ifdef SYMSTATS
+void sym_stats(long refs);
+#endif
 /* macros.c */
 int createMac(void);
 int mcWrtLin(void);
@@ -207,6 +210,9 @@ void *getmem();
 struct symblstr *sym_find();
 struct symblstr *sym_add();
 void sym_walk();
+#ifdef SYMSTATS
+void sym_stats();
+#endif
 /* macros.c */
 int createMac();
 int mcWrtLin();
