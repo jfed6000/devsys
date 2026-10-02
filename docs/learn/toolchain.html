@@ -508,6 +508,62 @@ OS9.D    SET   1
 <p class="cap">Why the module format needs no linker</p>
 <p>A <code>mod</code>/<code>emod</code> file has no needed names (everything comes from the file plus its <code>use</code> includes) and no fixups (the code is position-independent and the data is reached through <code>U</code>). With nothing to resolve or patch, the assembler can do step 5 itself.</p>
 </div>
+
+<h3>Two linkers, two module layouts</h3>
+<p>Both rlink and lwlink end with step 5, writing a module, but they don't write the same one. Here is a small program linked by Microware's rlink, next to what lwlink makes from lwasm-style sources:</p>
+<div class="scroll"><table>
+<thead><tr><th>After the 13-byte header</th><th>rlink (Microware)</th><th>lwlink</th></tr></thead>
+<tbody>
+<tr><td>first</td><td>the module's name, then its edition</td><td>the code</td></tr>
+<tr><td>then</td><td>the code</td><td>the name, then the edition (only if one was given)</td></tr>
+<tr><td>then</td><td>tables for initialised data, and the name again</td><td>nothing</td></tr>
+<tr><td>last</td><td>the CRC</td><td>the CRC</td></tr>
+</tbody></table></div>
+<p>The extra tables are for Microware's C compiler. A C program's start-up code (<code>cstart</code>) reads them at run time to copy initial values into the data area. Assembly programs built by lwlink don't need them. Both layouts are valid OS-9 modules; the operating system only cares about the header and the CRC. But they can never be byte-identical, so <code>las</code>'s rlink got a second mode, <code>--lwlink</code>, that writes lwlink's layout.</p>
+<p>Header values differ too. rlink takes the module type, attributes and stack from the main file's <code>psect</code> line. lwlink takes them from a special section called <code>__os9</code>, and uses defaults (program, 6809 code, re-entrant, no extra stack) when there isn't one.</p>
+
+<h3>Choosing library members</h3>
+<p>Microware's rlink reads each library once, from start to end, taking a member if it defines a name something still needs. That fails here:</p>
+<pre><code>libalib.a:  ... fputs ... puts ...
+program needs PUTS  →  take puts
+puts needs FPUTS    →  but fputs was already passed</code></pre>
+<p>lwlink keeps going round until a full pass adds nothing new, so it finds <code>fputs</code> on the second pass. And it lays the members out in the order they sit in the library, not the order it found them. The order matters: it decides where every routine ends up, and so every address in the module. <code>las</code>'s rlink does the same in <code>--lwlink</code> mode: it decides the members up front, exactly as lwlink would, and then links them in library order.</p>
+
+<h3>Values only the linker knows</h3>
+<p>Many NitrOS9 object-format files never include the defs. Names like <code>F$Exit</code> or <code>Prgrm</code> are simply undefined while assembling, so they become external references, and the linker fills in the numbers from a library that exports the defs (<code>wildbitsl2</code>).</p>
+<p>The two object formats differ in what they can ask of the linker. lwasm's can store a whole expression: “take <code>Prgrm</code>, add <code>Objct</code>, multiply by 256”, or “the complement of <code>Carry</code>”. ROF can only say “add (or subtract) this symbol's value here”. So <code>ldd #(Prgrm+Objct)*256</code> has no way to be written in ROF.</p>
+<p>The solution is to let the assembler see those constants too. <code>las --defs=wildbitsl2.r</code> reads the constants that library exports. References to them still stay external, so the instructions keep the sizes lwasm chose and the linker fills them in, except where ROF can't express the expression. There, <code>las</code> uses the value itself. The result is the same bytes the linker would have produced.</p>
+
+<p class="cap">Three real references, in both formats</p>
+<div class="scroll"><table>
+<thead><tr><th>Source line</th><th>lwasm's object file (lwobjdump)</th><th>ROF from <code>las</code> (rofdump)</th></tr></thead>
+<tbody>
+<tr><td><code>os9 F$Exit</code><br><span class="why">gfxstatus, code offset $02B0</span></td>
+<td><code>( FLAGS=01 ES=F$Exit ) @ 02B0</code><br>an 8-bit value, external <code>F$Exit</code></td>
+<td><code>F$Exit $02B0 (code 8-bit)</code><br>the same thing</td></tr>
+<tr><td><code>cmpd #'0*256+C$SPAC</code><br><span class="why">gfxstatus, offset $044B</span></td>
+<td><code>( I16=12288 ES=C$SPAC OP=PLUS ) @ 044B</code><br>12288 plus <code>C$SPAC</code></td>
+<td>the bytes at $044B already hold <code>30 00</code> (12288), and the reference says <code>C$SPAC $044B (code)</code>: add <code>C$SPAC</code> to them</td></tr>
+<tr><td><code>ldd #(Prgrm+Objct)*256</code><br><span class="why">pick, offset $008D</span></td>
+<td><code>( I16=256 ES=Prgrm OP=TIMES I16=256 ES=Objct OP=TIMES OP=PLUS ) @ 008D</code><br>a small program for the linker to run</td>
+<td>no way to say “times”. With <code>--defs</code>, <code>las</code> knows <code>Prgrm</code> = $10 and <code>Objct</code> = $01 and writes <code>cc 11 00</code> directly</td></tr>
+</tbody></table></div>
+<p>The first two show what ROF <em>can</em> do: a symbol on its own, or a symbol plus a constant, with the constant already sitting in the instruction's bytes. The third needs a calculation on a value nobody knows yet, which only lwasm's format can describe.</p>
+
+<p class="cap">When the module header depends on it</p>
+<p><code>inetd</code> describes its own module header in an <code>__os9</code> section:</p>
+<pre><code>         section  __os9
+type     equ      Prgrm
+lang     equ      Objct
+attr     equ      ReEnt
+rev      equ      $00
+edition  equ      4
+stack    equ      200
+         endsect</code></pre>
+<p>lwlink works these out at link time, when <code>Prgrm</code> and the rest are known. But a ROF file carries the module type as a number in its header, written by the assembler. Without the defs, <code>las</code> could only write 0, and rlink then refused the file: “contains no mainline”, Microware's term for “this isn't a main program”. With <code>--defs</code>, <code>las</code> writes type $11 (program, 6809 code), attributes $80 (re-entrant), edition 4 and a 200-byte stack, as lwlink would.</p>
+
+<p class="cap">A value too big for its place</p>
+<p><code>play</code> contains <code>lda #MIDIMMC_DEVICE_ALL*256+$09</code>. <code>MIDIMMC_DEVICE_ALL</code> is $7F, so the value is $7F09, which can't fit in <code>lda</code>'s one byte. lwasm can't see that: to it the value is unknown, so it just records an 8-bit reference (<code>FLAGS=01 … @ 05A1</code>), and lwlink later keeps the low byte, $09. Once <code>--defs</code> made the value known, <code>las</code> reported “value out of range” instead. To produce the same module, <code>las</code> now does what the linker would: for an 8-bit value that came from <code>--defs</code> constants, it keeps the low byte and writes <code>86 09</code>. The source probably meant something else, but matching lwasm means matching this too.</p>
 </section>
 
 <!-- 7 -->
@@ -699,6 +755,8 @@ buffer  00 a2 0000  |  SIZE   06 82 0040</code></pre>
 <p>Get the size calculation wrong by a few bytes, and each name overwrites the start of whatever was allocated next. The output might still look right, until it doesn't. The regression test can't reliably see that. A special build can: <strong>AddressSanitizer</strong>, a compiler option that surrounds every allocation with guard zones and stops the program the moment anything touches one. All 740 regression inputs ran clean under it.</p>
 <p>Then the negative control from chapter 10: deliberately allocating names too short. It needed 4 bytes too short, not 1, before the sanitizer complained. The reason is <strong>padding</strong>. On Linux the compiler rounds the record up to a multiple of 4 bytes so its fields line up efficiently, and those spare bytes quietly absorb a small mistake. The 6809 has no such rule, so there a 1-byte mistake would corrupt memory, and only on the F256. Knowing where your safety net has holes is part of using it.</p>
 
+<p><strong>Memory that's never been set.</strong> The same tool caught a bug that had been in rlink all along. Its allocator handed out memory without clearing it, and some of rlink's code assumed new records started at zero. Under the sanitizer, which deliberately fills new memory with a recognisable pattern (<code>0xBE</code>), every link crashed. In a normal build, fresh memory from the system usually happens to be zero, so rlink had been working by luck. Clearing each allocation fixed it. Bugs like this are the worst kind: invisible until something about the memory changes, such as moving to a different machine.</p>
+
 <h3>Finding a name quickly: hashing</h3>
 <p>The assembler looks names up constantly. Every label is added in pass 1 and found again in pass 2. Every operand that names a symbol (<code>os9 F$Exit</code>, <code>lda #MMU_SLOT_0</code>, <code>lbsr print</code>) is a lookup. That's thousands of lookups per file, so the cost of one lookup is multiplied thousands of times.</p>
 <p>Here are three ways to find one of the 1,664 names in the Level 2 F256 defs, measured on those real names:</p>
@@ -869,6 +927,7 @@ bucket (char *name)
   <dt>local label</dt><dd>A label that only exists within part of a file. In lwasm, a name containing <code>@</code>, valid until the next blank line.</dd>
   <dt>location counter</dt><dd>The address where the assembler will put the next byte. Inside an OS-9 module there are two: <code>*</code> for code, <code>.</code> for data.</dd>
   <dt>LWOBJ</dt><dd>lwasm's object file format, read by lwlink.</dd>
+  <dt>mainline</dt><dd>In rlink, the one object file that is the program itself, as opposed to library members. It supplies the module type and entry point.</dd>
   <dt>MMU</dt><dd>Hardware that maps 8K blocks of physical RAM into the 6809's 64K address space.</dd>
   <dt>mod</dt><dd>Starts a module-format source and supplies the header fields.</dd>
   <dt>module</dt><dd>OS-9's unit of executable code: header, body, name, CRC.</dd>
@@ -886,6 +945,7 @@ bucket (char *name)
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
   <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
   <dt>threaded tree</dt><dd>A tree whose unused right pointers point to the next node in order, so it can be walked without a stack.</dd>
+  <dt>uninitialised memory</dt><dd>Memory a program uses before ever setting it. It holds whatever was there before, which may happen to be zero.</dd>
   <dt>XOR</dt><dd>Exclusive or: compares two bits and gives 1 where they differ. Used in check bytes and CRCs.</dd>
 </dl>
 </section>

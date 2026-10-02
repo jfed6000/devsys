@@ -84,7 +84,7 @@ Then add a line to the changelog at the bottom of this file.
 | 3. Module mode | ✅ Ch 2 "Two location counters", "The header check byte", "The CRC"; ch 4 "Choosing instruction sizes" |
 | 3b. Operand sizing | Iterating to stable sizes: why extra passes converge (or don't); size choices only shrink |
 | 4. lwasm syntax | ✅ Ch 4 "Local labels", "Conditions across two passes", "Same symbols, different meaning", "Two dialects in one assembler" |
-| 5. Object mode | How `section`/`export` map onto ROF; linker defaults for the module header |
+| 5. Object mode | ✅ Ch 6 "Two linkers, two module layouts", "Choosing library members", "Values only the linker knows"; ch 9 uninitialised memory |
 | 6. Long names | Why name limits existed; how ROF stores names |
 | 7. Native build | Bootstrapping: building tools with themselves; cross vs native compilers |
 | 8. Banked blocks | `F$AllRAM`/`F$MapBlk` in detail; (block, offset) pointers; hashing to blocks |
@@ -122,3 +122,9 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-02 — Phase 4: four ch 4 sections (local label scopes, the include
   guard and condition replay, precedence differences, the two dialects).
   Glossary: dialect, include guard, local label, operator precedence.
+- 2026-10-02 — Phase 5: three ch 6 sections (rlink vs lwlink layouts, library
+  member choice, link-time expressions and --defs) and a ch 9 paragraph on
+  rlink's uninitialised-memory bug. Glossary: mainline, uninitialised memory.
+- 2026-10-02 — Ch 6 "Values only the linker knows": worked examples (F$Exit,
+  '0*256+C$SPAC, (Prgrm+Objct)*256 in lwobjdump vs rofdump form), the __os9
+  header case (inetd), and play's 8-bit truncation.
