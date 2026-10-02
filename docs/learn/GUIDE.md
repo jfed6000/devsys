@@ -31,6 +31,9 @@ Then add a line to the changelog at the bottom of this file.
    `tools/build_examples.sh` then `python3 tools/check_hex.py`. Both must
    pass. A new dump needs an entry in `HEX_DUMPS` (and `IGNORE` for any
    timestamp bytes).
+   Chapter 9's hashing figures (bucket sizes, comparison counts, the bucket
+   25 tree) come from `tools/hash_data.py`; rerun it if the defs or
+   `las/symtab.c` change, and update the page to match.
 3. **Concept first, then the example.** Say what the thing is and why it
    exists in plain words, then show it in the reader's own files.
 4. **Cite real paths** (`level2/wildbits/cmds/gfxstatus.as`,
@@ -76,7 +79,7 @@ Then add a line to the changelog at the bottom of this file.
 | Roadmap phase | Topic for the page |
 |---|---|
 | 0. Harness | ✅ Chapter 10: differential testing, dry runs, first vs knock-on errors |
-| 1. Symbol interface | Interfaces/abstraction: changing a data structure without touching its callers |
+| 1. Symbol interface | ✅ Ch 9 "Hiding the table behind an interface"; ch 10 "Testing a change that shouldn't change anything" |
 | 2. Compact entries | Variable-length records, `sbrk`-style allocation, the free-list problem |
 | 3. Module mode | How the module header parity byte and the 24-bit CRC are computed |
 | 4. lwasm syntax | Local label scoping, conditional assembly, operator precedence, case folding |
@@ -96,3 +99,15 @@ Then add a line to the changelog at the bottom of this file.
   Where this leads → 11, Glossary → 12. Glossary: CRLF, differential testing,
   dry run, knock-on error, reference.
 - 2026-10-02 — Chapter 10: added "Holding the test still" (pinned corpus).
+- 2026-10-02 — Phase 1: ch 9 interface section; ch 10 regression testing and
+  negative controls. Glossary: interface, negative control, refactor,
+  regression test.
+- 2026-10-02 — Ch 4: "Files bigger than memory" (what streams, what stays in memory).
+- 2026-10-02 — Ch 9: replaced "Finding a name quickly" with a full hashing
+  section: hash calculator, bucket-size chart, real bucket 25 tree with a
+  search path, the algorithm and `symtab.c` code, threaded trees. Data from
+  `tools/hash_data.py`. Glossary: binary search tree, collision, hash
+  function, threaded tree (and sorted the glossary).
+- 2026-10-02 — Ch 9: "What one symbol looks like": struct symblstr, decoded
+  smbltyp/locmsk/s_ofst/reftbl from `examples/kinds.a` (built by
+  build_examples.sh). Corrected entry size 73 → 76 bytes (179K for fm.asm).

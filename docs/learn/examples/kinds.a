@@ -1,0 +1,18 @@
+ psect kinds,$11,$81,1,200,entry
+SIZE equ 64
+COUNT set 3
+ vsect dp
+fast rmb 1
+ endsect
+ vsect
+buffer rmb SIZE
+total: rmb 2
+ endsect
+entry: lda fast
+ ldd buffer,u
+ lbsr helper
+ lbsr printf
+ rts
+helper lda #COUNT
+ rts
+ endsect

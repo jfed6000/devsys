@@ -117,7 +117,7 @@ For a DCC-compiled RMA fork, expect roughly **25–30K** free for tables.
 | `rbf.asm` | 1,977 | 415 | 15.4K |
 | `fm.asm` | 2,353 | 609 | 18.6K |
 
-Current RMA entry ≈ 73 bytes (`char symblnam[64]` inline) → `fm.asm` ≈ 170K.
+Current RMA entry = 76 bytes on the 6809 (`char symblnam[64]` inline plus 12 bytes of fields; 84 in the 32-bit Linux build) → `fm.asm` ≈ 179K.
 Compact entry ≈ 18 bytes → `fm.asm` ≈ 42K. Neither fits alone.
 
 ### Design: one interface, three layers

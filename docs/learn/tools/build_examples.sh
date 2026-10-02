@@ -27,5 +27,9 @@ cd "$OUT"
 "$DCC/COpt/dco68" < sum.a > sum.opt.a
 "$RMA" sum.opt.a -o=sum.r -l > sum.lst
 
+# Symbol table kinds: kinds.a -> kinds.lst (listing with -s symbol table), used in chapter 9
+LAS=${LAS:-$HOME/projects/devsys/las/build/unix/las}
+"$LAS" "$EX/kinds.a" -l -s -o="$OUT/kinds.r" > kinds.lst
+
 echo "Built into $OUT:"
 ls -l "$OUT"

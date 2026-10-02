@@ -24,7 +24,7 @@ remote later; don't add one or push.
 | `docs/learn/toolchain.html` | Teaching primer for the project owner. |
 | `docs/learn/GUIDE.md` | Rules for maintaining the primer, and its topic backlog. |
 | `docs/learn/examples/` | Sources for the primer's examples; `out/` is generated. |
-| `docs/learn/tools/` | `build_examples.sh` regenerates examples; `check_hex.py` verifies the page's hex dumps. |
+| `docs/learn/tools/` | `build_examples.sh` regenerates examples; `check_hex.py` verifies the page's hex dumps; `hash_data.py` recomputes chapter 9's hashing figures. |
 
 Related trees (reference sources; don't modify without asking):
 `~/projects/dcc/rma` (RMA C source), `~/projects/dcc/mw-rlink`,

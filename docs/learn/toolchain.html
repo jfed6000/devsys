@@ -155,6 +155,47 @@ dl.gloss dd { margin: 0; font-size: 15.5px; }
 @media (max-width: 560px) { dl.gloss { grid-template-columns: minmax(0, 1fr); gap: 2px; } dl.gloss dd { margin-bottom: 10px; } }
 
 footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 14px; }
+/* Hashing section: calculator, bucket chart, tree */
+.calc { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; margin: 16px 0; display: grid; gap: 8px; }
+.calc label { font-family: var(--font-display); font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.calc input { font-family: var(--font-mono); font-size: 16px; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); color: var(--fg); max-width: 320px; width: 100%; }
+.calc input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chars { display: flex; flex-wrap: wrap; gap: 4px; }
+.ch1 { display: grid; text-align: center; min-width: 34px; padding: 3px 4px; border-radius: 4px; background: var(--code-bg); font-family: var(--font-mono); }
+.ch1 b { font-size: 15px; font-weight: 600; }
+.ch1 span { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.calc-line { font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.calc-line .low { color: var(--accent); font-weight: 600; }
+.calc-line .bkt { color: var(--accent); font-weight: 600; }
+.chartwrap { position: relative; margin: 16px 0 6px; }
+.chartwrap .cap { margin: 0 0 6px; }
+svg.bars { width: 100%; height: auto; display: block; min-width: 560px; }
+.bars-scroll { margin: 0; }
+svg.bars .bar { fill: var(--hdr); }
+svg.bars .bar.hi { fill: var(--accent); }
+svg.bars .grid { stroke: var(--rule); stroke-width: 1; }
+svg.bars .mean { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+svg.bars .ax { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+svg.bars .lab { fill: var(--fg); font-family: var(--font-mono); font-size: 10.5px; }
+svg.bars .lab.hi { fill: var(--accent); font-weight: 600; }
+svg.bars .hit { fill: transparent; cursor: default; }
+svg.bars .hit:hover + * {}
+.tip { position: absolute; pointer-events: none; background: var(--fg); color: var(--bg); font-family: var(--font-mono); font-size: 12.5px; padding: 4px 8px; border-radius: 4px; white-space: nowrap; transform: translate(-50%, -100%); }
+details.tbl { margin: 4px 0 14px; font-size: 14.5px; }
+details.tbl summary { cursor: pointer; color: var(--accent); font-family: var(--font-display); }
+table.grid8 { min-width: 0; }
+table.grid8 td { padding: 4px 8px; font-size: 13px; }
+.treewrap { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 8px; }
+svg.tree { display: block; }
+svg.tree .edge { stroke: var(--rule); stroke-width: 1.5; }
+svg.tree .edge.on { stroke: var(--accent); stroke-width: 2.5; }
+svg.tree .node { fill: var(--bg); stroke: var(--rule); stroke-width: 1; }
+svg.tree .node.on { stroke: var(--accent); stroke-width: 2; }
+svg.tree .node.found { fill: var(--mod-bg); }
+svg.tree .nt { fill: var(--fg); font-family: var(--font-mono); font-size: 11px; }
+svg.tree .step { fill: var(--accent); font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+ol.steps { padding-left: 22px; max-width: 66ch; }
+ol.steps li { margin: 4px 0; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 html { scroll-behavior: smooth; }
 </style>
@@ -348,6 +389,19 @@ printit  lda   ,x+</code></pre>
 00028 0030=17ffcd              lbsr  printf</code></pre>
 <p>Columns: source line, address, bytes produced, then the source. The <code>=</code> after the address means “this instruction uses a name from another file”. RMA can't know where <code>printf</code> will end up, so it writes a placeholder and leaves a note for the linker. That note is what the next chapter is about.</p>
 <p><code>bsr add</code> → <code>8D DE</code> needed no note: <code>add</code> is in the same file, $22 bytes back, so the assembler knew the distance (<code>$DE</code> = −34).</p>
+
+<h3>Files bigger than memory</h3>
+<p>The assembler never holds the whole source file. It reads one line into a 256-byte buffer, assembles it, and reads the next. At the end of pass 1 it rewinds the file and reads it all again for pass 2. <code>use</code> files are read the same way while the outer file waits. Macro definitions go to a work file on disk (<code>rma.tmp</code>) and are read back each time the macro is used.</p>
+<p>Output streams too. Pass 1 has already worked out every size, so pass 2 can write the object file's header first and then each line's bytes straight into their place in the file, seeking between the code and data regions as the source switches between them. At the end it goes back to patch one header byte (“assembled without errors”) and writes the reference lists.</p>
+<p>Only a few things must stay in memory until the end:</p>
+<div class="scroll"><table>
+<thead><tr><th>Kept in memory</th><th>Grows with</th></tr></thead>
+<tbody>
+<tr><td>Symbol table</td><td>the number of names, including about 1,600 from the defs</td></tr>
+<tr><td>Reference lists, the object file's “names needed” and “fixups”</td><td>how often the code uses outside names or needs patching</td></tr>
+<tr><td>Macro names and their positions in the work file</td><td>the number of macros, not their length</td></tr>
+</tbody></table></div>
+<p class="why">So a long program with few names fits easily. What runs out on a 6809 is names and references, not lines. That's why chapter 9 is about the symbol table.</p>
 </section>
 
 <!-- 5 -->
@@ -489,13 +543,135 @@ _3 fcc "%d"
 
 <h3>Why long names hurt</h3>
 <p>The old Microware tools kept only the first 8 characters of a name. That made every entry small, but <code>MMU_SLOT_0</code> through <code>MMU_SLOT_7</code> would all become the same name, <code>MMU_SLOT</code>. The F256 defs have 167 such collisions, so long names are a must.</p>
-<p>The C version of RMA allows 63 characters, but stores every name in a fixed 64-byte box. With about 9 bytes of bookkeeping, that's roughly 73 bytes per symbol. For <code>fm.asm</code>: 2,353 × 73 ≈ <strong>170K</strong>. The process has about 25–30K to spare.</p>
+<p>The C version of RMA allows 63 characters, but stores every name in a fixed 64-byte box. With 12 bytes of other fields, that's 76 bytes per symbol on the 6809. For <code>fm.asm</code>: 2,353 × 76 ≈ <strong>179K</strong>. The process has about 25–30K to spare.</p>
 
-<h3>Finding a name quickly</h3>
-<p>Checking every entry one by one would mean about 1,000 comparisons per lookup. RMA does two smarter things:</p>
-<p><strong>Hashing.</strong> It adds up the characters of the name and uses the low 6 bits to pick one of 64 buckets. A name always lands in the same bucket, so a lookup only searches that bucket.</p>
-<p><strong>A tree in each bucket.</strong> Each bucket is a binary search tree: at each entry, go left if the name sorts earlier, right if later.</p>
-<p>Simulated on the real defs, a lookup takes about 5 comparisons on average. With one tree and no hashing it would be about 18. Most comparisons stop at the first or second character.</p>
+<h3>What one symbol looks like</h3>
+<p>Each symbol is one record, a C <code>struct</code> defined in <code>las/rstruct.h</code>:</p>
+<pre><code>struct symblstr
+{
+    char smbltyp,               /* what kind of symbol        1 byte  */
+         locmsk;                /* status flags               1 byte  */
+    long s_ofst;                /* its value                  4 bytes */
+    struct symblstr *left,      /* tree: earlier names        2 bytes */
+                    *right;     /* tree: later names          2 bytes */
+    struct ref_xtrnal *reftbl;  /* where it's used            2 bytes */
+    char symblnam[64];          /* the name                  64 bytes */
+};</code></pre>
+<p>That's 76 bytes, and 64 of them are the name box. Here is a real symbol table. This file (<code>examples/kinds.a</code>) defines one symbol of each common kind:</p>
+<pre><code> psect kinds,$11,$81,1,200,entry
+SIZE   equ 64
+COUNT  set 3
+ vsect dp
+fast   rmb 1
+ endsect
+ vsect
+buffer rmb SIZE
+total: rmb 2
+ endsect
+entry: lda fast
+ ldd buffer,u
+ lbsr helper
+ lbsr printf
+ rts
+helper lda #COUNT
+ rts
+ endsect</code></pre>
+<p>Assembled with <code>-s</code>, <code>las</code> prints its symbol table. The columns are name, <code>smbltyp</code>, <code>locmsk</code> and <code>s_ofst</code>, all in hex:</p>
+<pre><code>helper  04 a2 000d  |  COUNT  05 82 0003  |  printf  00 10 0000
+total   00 a6 0040  |  fast   02 a2 0000  |  entry   04 a6 0000
+buffer  00 a2 0000  |  SIZE   06 82 0040</code></pre>
+
+<p><strong><code>smbltyp</code></strong> says what kind of symbol it is. These are the same type codes the object file uses for the names it provides:</p>
+<div class="scroll"><table>
+<thead><tr><th>Code</th><th>Kind</th><th>Here</th></tr></thead>
+<tbody>
+<tr><td class="num-col">00</td><td>variable (<code>rmb</code> in a <code>vsect</code>)</td><td><code>buffer</code>, <code>total</code></td></tr>
+<tr><td class="num-col">01</td><td>initialised variable (<code>fcb</code> in a <code>vsect</code>)</td><td></td></tr>
+<tr><td class="num-col">02</td><td>direct-page variable (<code>vsect dp</code>)</td><td><code>fast</code></td></tr>
+<tr><td class="num-col">03</td><td>initialised direct-page variable</td><td></td></tr>
+<tr><td class="num-col">04</td><td>code label</td><td><code>entry</code>, <code>helper</code></td></tr>
+<tr><td class="num-col">05</td><td><code>set</code> value (can be changed later)</td><td><code>COUNT</code></td></tr>
+<tr><td class="num-col">06</td><td><code>equ</code> constant</td><td><code>SIZE</code></td></tr>
+<tr><td class="num-col">07</td><td>common block</td><td></td></tr>
+</tbody></table></div>
+
+<p><strong><code>locmsk</code></strong> is a set of yes/no flags, one per bit:</p>
+<div class="scroll"><table>
+<thead><tr><th>Bit</th><th>Means</th><th>Here</th></tr></thead>
+<tbody>
+<tr><td class="num-col">$80</td><td>defined in this file</td><td>all but <code>printf</code></td></tr>
+<tr><td class="num-col">$40</td><td>defined twice (an error)</td><td></td></tr>
+<tr><td class="num-col">$20</td><td>its value is an address the linker must adjust, not a plain number</td><td>labels; not <code>SIZE</code> or <code>COUNT</code></td></tr>
+<tr><td class="num-col">$10</td><td>used before it was defined. Still set at the end means never defined, so it's <strong>external</strong></td><td><code>printf</code></td></tr>
+<tr><td class="num-col">$08</td><td>not about the symbol: the tree's “has a real right branch” flag</td><td></td></tr>
+<tr><td class="num-col">$04</td><td>exported with <code>label:</code>, so it goes in the object file's list of names this file provides</td><td><code>entry</code>, <code>total</code> (a6 instead of a2)</td></tr>
+<tr><td class="num-col">$02</td><td>set on every symbol defined here; its exact role isn't documented in the source</td><td></td></tr>
+</tbody></table></div>
+
+<p><strong><code>s_ofst</code></strong> is the value: an offset within its section for a label (<code>helper</code> is at code offset $000D, and <code>total</code> sits at data offset $0040, just after the 64-byte <code>buffer</code>), or the number itself for <code>equ</code> and <code>set</code>.</p>
+<p><strong><code>reftbl</code></strong> points to a list of small records, one for each place the name is used. For <code>printf</code> it says “used at code offset $000A”. At the end, that list becomes the object file's “names this file needs” section, the red part of chapter 5's hex dump.</p>
+
+<h3>Finding a name quickly: hashing</h3>
+<p>The assembler looks names up constantly. Every label is added in pass 1 and found again in pass 2. Every operand that names a symbol (<code>os9 F$Exit</code>, <code>lda #MMU_SLOT_0</code>, <code>lbsr print</code>) is a lookup. That's thousands of lookups per file, so the cost of one lookup is multiplied thousands of times.</p>
+<p>Here are three ways to find one of the 1,664 names in the Level 2 F256 defs, measured on those real names:</p>
+<div class="scroll"><table>
+<thead><tr><th>Method</th><th>Average comparisons</th><th>Worst case</th></tr></thead>
+<tbody>
+<tr><td>Check every name in turn</td><td class="num-col">832</td><td class="num-col">1,664</td></tr>
+<tr><td>One sorted tree of all names</td><td class="num-col">20.7</td><td class="num-col">53</td></tr>
+<tr><td>64 buckets, a small tree in each (RMA, <code>las</code>)</td><td class="num-col">5.1</td><td class="num-col">14</td></tr>
+</tbody></table></div>
+
+<h3>Step 1: pick a bucket</h3>
+<p>A <strong>hash function</strong> turns a name into a number, always the same number for the same name. RMA's is about as simple as one can be: add up the character codes, then keep the lowest 6 bits. Six bits hold 0 to 63, so that's the bucket number.</p>
+<p>For <code>F$Exit</code>: F (70) + $ (36) + E (69) + x (120) + i (105) + t (116) = 516. 516 is 8 × 64 + 4, so the low 6 bits are 4, and <code>F$Exit</code> lives in bucket 4. Try any name:</p>
+
+<div class="calc">
+  <label for="hash-name">Symbol name</label>
+  <input id="hash-name" type="text" value="F$Exit" maxlength="40" spellcheck="false" autocomplete="off">
+  <div class="calc-out" id="hash-out" aria-live="polite"></div>
+</div>
+
+<p><strong>Why 64, a power of two?</strong> Keeping the low 6 bits is the same as taking the remainder after dividing by 64, but it's a single <code>ANDB #$3F</code> instruction. The 6809 has no divide instruction, so a bucket count like 50 would need a slow division routine for every lookup. And 64 bucket pointers take only 128 bytes.</p>
+<p>Once the bucket is known, the search only looks there. Every other name is ruled out without a single comparison.</p>
+
+<h3>How evenly the names spread</h3>
+<div class="chartwrap"><p class="cap">Names per bucket · Level 2 F256 defs, 1,664 names · dashed line: average 26</p><div class="scroll bars-scroll"><svg class="bars" viewBox="0 0 660 200" role="img" aria-label="Bar chart of how many defs names fall in each of the 64 buckets: smallest 15, largest 41, average 26"><line class="grid" x1="34" x2="652" y1="170.0" y2="170.0"/><text class="ax" x="28" y="174.0" text-anchor="end">0</text><line class="grid" x1="34" x2="652" y1="136.2" y2="136.2"/><text class="ax" x="28" y="140.2" text-anchor="end">10</text><line class="grid" x1="34" x2="652" y1="102.4" y2="102.4"/><text class="ax" x="28" y="106.4" text-anchor="end">20</text><line class="grid" x1="34" x2="652" y1="68.7" y2="68.7"/><text class="ax" x="28" y="72.7" text-anchor="end">30</text><line class="grid" x1="34" x2="652" y1="34.9" y2="34.9"/><text class="ax" x="28" y="38.9" text-anchor="end">40</text><path class="bar" d="M35.0,170.0 V107.8 Q35.0,105.8 37.0,105.8 H40.7 Q42.7,105.8 42.7,107.8 V170.0 Z"/><rect class="hit" x="34.0" y="18" width="9.7" height="152" data-b="0" data-n="19"/><path class="bar" d="M44.7,170.0 V90.9 Q44.7,88.9 46.7,88.9 H50.3 Q52.3,88.9 52.3,90.9 V170.0 Z"/><rect class="hit" x="43.7" y="18" width="9.7" height="152" data-b="1" data-n="24"/><path class="bar" d="M54.3,170.0 V104.4 Q54.3,102.4 56.3,102.4 H60.0 Q62.0,102.4 62.0,104.4 V170.0 Z"/><rect class="hit" x="53.3" y="18" width="9.7" height="152" data-b="2" data-n="20"/><path class="bar" d="M64.0,170.0 V94.3 Q64.0,92.3 66.0,92.3 H69.6 Q71.6,92.3 71.6,94.3 V170.0 Z"/><rect class="hit" x="63.0" y="18" width="9.7" height="152" data-b="3" data-n="23"/><path class="bar" d="M73.6,170.0 V97.7 Q73.6,95.7 75.6,95.7 H79.3 Q81.3,95.7 81.3,97.7 V170.0 Z"/><rect class="hit" x="72.6" y="18" width="9.7" height="152" data-b="4" data-n="22"/><path class="bar" d="M83.3,170.0 V94.3 Q83.3,92.3 85.3,92.3 H88.9 Q90.9,92.3 90.9,94.3 V170.0 Z"/><rect class="hit" x="82.3" y="18" width="9.7" height="152" data-b="5" data-n="23"/><path class="bar" d="M92.9,170.0 V77.4 Q92.9,75.4 94.9,75.4 H98.6 Q100.6,75.4 100.6,77.4 V170.0 Z"/><rect class="hit" x="91.9" y="18" width="9.7" height="152" data-b="6" data-n="28"/><path class="bar" d="M102.6,170.0 V63.9 Q102.6,61.9 104.6,61.9 H108.2 Q110.2,61.9 110.2,63.9 V170.0 Z"/><rect class="hit" x="101.6" y="18" width="9.7" height="152" data-b="7" data-n="32"/><path class="bar" d="M112.2,170.0 V84.2 Q112.2,82.2 114.2,82.2 H117.9 Q119.9,82.2 119.9,84.2 V170.0 Z"/><rect class="hit" x="111.2" y="18" width="9.7" height="152" data-b="8" data-n="26"/><path class="bar" d="M121.9,170.0 V84.2 Q121.9,82.2 123.9,82.2 H127.6 Q129.6,82.2 129.6,84.2 V170.0 Z"/><rect class="hit" x="120.9" y="18" width="9.7" height="152" data-b="9" data-n="26"/><path class="bar" d="M131.6,170.0 V84.2 Q131.6,82.2 133.6,82.2 H137.2 Q139.2,82.2 139.2,84.2 V170.0 Z"/><rect class="hit" x="130.6" y="18" width="9.7" height="152" data-b="10" data-n="26"/><path class="bar" d="M141.2,170.0 V77.4 Q141.2,75.4 143.2,75.4 H146.9 Q148.9,75.4 148.9,77.4 V170.0 Z"/><rect class="hit" x="140.2" y="18" width="9.7" height="152" data-b="11" data-n="28"/><path class="bar" d="M150.9,170.0 V57.2 Q150.9,55.2 152.9,55.2 H156.5 Q158.5,55.2 158.5,57.2 V170.0 Z"/><rect class="hit" x="149.9" y="18" width="9.7" height="152" data-b="12" data-n="34"/><path class="bar" d="M160.5,170.0 V94.3 Q160.5,92.3 162.5,92.3 H166.2 Q168.2,92.3 168.2,94.3 V170.0 Z"/><rect class="hit" x="159.5" y="18" width="9.7" height="152" data-b="13" data-n="23"/><path class="bar" d="M170.2,170.0 V80.8 Q170.2,78.8 172.2,78.8 H175.8 Q177.8,78.8 177.8,80.8 V170.0 Z"/><rect class="hit" x="169.2" y="18" width="9.7" height="152" data-b="14" data-n="27"/><path class="bar" d="M179.8,170.0 V63.9 Q179.8,61.9 181.8,61.9 H185.5 Q187.5,61.9 187.5,63.9 V170.0 Z"/><rect class="hit" x="178.8" y="18" width="9.7" height="152" data-b="15" data-n="32"/><path class="bar" d="M189.5,170.0 V80.8 Q189.5,78.8 191.5,78.8 H195.2 Q197.2,78.8 197.2,80.8 V170.0 Z"/><rect class="hit" x="188.5" y="18" width="9.7" height="152" data-b="16" data-n="27"/><path class="bar" d="M199.2,170.0 V107.8 Q199.2,105.8 201.2,105.8 H204.8 Q206.8,105.8 206.8,107.8 V170.0 Z"/><rect class="hit" x="198.2" y="18" width="9.7" height="152" data-b="17" data-n="19"/><path class="bar" d="M208.8,170.0 V118.0 Q208.8,116.0 210.8,116.0 H214.5 Q216.5,116.0 216.5,118.0 V170.0 Z"/><rect class="hit" x="207.8" y="18" width="9.7" height="152" data-b="18" data-n="16"/><path class="bar" d="M218.5,170.0 V90.9 Q218.5,88.9 220.5,88.9 H224.1 Q226.1,88.9 226.1,90.9 V170.0 Z"/><rect class="hit" x="217.5" y="18" width="9.7" height="152" data-b="19" data-n="24"/><path class="bar" d="M228.1,170.0 V87.6 Q228.1,85.6 230.1,85.6 H233.8 Q235.8,85.6 235.8,87.6 V170.0 Z"/><rect class="hit" x="227.1" y="18" width="9.7" height="152" data-b="20" data-n="25"/><path class="bar" d="M237.8,170.0 V87.6 Q237.8,85.6 239.8,85.6 H243.4 Q245.4,85.6 245.4,87.6 V170.0 Z"/><rect class="hit" x="236.8" y="18" width="9.7" height="152" data-b="21" data-n="25"/><path class="bar" d="M247.4,170.0 V107.8 Q247.4,105.8 249.4,105.8 H253.1 Q255.1,105.8 255.1,107.8 V170.0 Z"/><rect class="hit" x="246.4" y="18" width="9.7" height="152" data-b="22" data-n="19"/><path class="bar" d="M257.1,170.0 V107.8 Q257.1,105.8 259.1,105.8 H262.8 Q264.8,105.8 264.8,107.8 V170.0 Z"/><rect class="hit" x="256.1" y="18" width="9.7" height="152" data-b="23" data-n="19"/><path class="bar" d="M266.8,170.0 V97.7 Q266.8,95.7 268.8,95.7 H272.4 Q274.4,95.7 274.4,97.7 V170.0 Z"/><rect class="hit" x="265.8" y="18" width="9.7" height="152" data-b="24" data-n="22"/><path class="bar hi" d="M276.4,170.0 V121.3 Q276.4,119.3 278.4,119.3 H282.1 Q284.1,119.3 284.1,121.3 V170.0 Z"/><rect class="hit" x="275.4" y="18" width="9.7" height="152" data-b="25" data-n="15"/><path class="bar" d="M286.1,170.0 V97.7 Q286.1,95.7 288.1,95.7 H291.7 Q293.7,95.7 293.7,97.7 V170.0 Z"/><rect class="hit" x="285.1" y="18" width="9.7" height="152" data-b="26" data-n="22"/><path class="bar" d="M295.7,170.0 V77.4 Q295.7,75.4 297.7,75.4 H301.4 Q303.4,75.4 303.4,77.4 V170.0 Z"/><rect class="hit" x="294.7" y="18" width="9.7" height="152" data-b="27" data-n="28"/><path class="bar" d="M305.4,170.0 V104.4 Q305.4,102.4 307.4,102.4 H311.0 Q313.0,102.4 313.0,104.4 V170.0 Z"/><rect class="hit" x="304.4" y="18" width="9.7" height="152" data-b="28" data-n="20"/><path class="bar" d="M315.0,170.0 V114.6 Q315.0,112.6 317.0,112.6 H320.7 Q322.7,112.6 322.7,114.6 V170.0 Z"/><rect class="hit" x="314.0" y="18" width="9.7" height="152" data-b="29" data-n="17"/><path class="bar" d="M324.7,170.0 V101.1 Q324.7,99.1 326.7,99.1 H330.3 Q332.3,99.1 332.3,101.1 V170.0 Z"/><rect class="hit" x="323.7" y="18" width="9.7" height="152" data-b="30" data-n="21"/><path class="bar" d="M334.3,170.0 V90.9 Q334.3,88.9 336.3,88.9 H340.0 Q342.0,88.9 342.0,90.9 V170.0 Z"/><rect class="hit" x="333.3" y="18" width="9.7" height="152" data-b="31" data-n="24"/><path class="bar" d="M344.0,170.0 V60.5 Q344.0,58.5 346.0,58.5 H349.7 Q351.7,58.5 351.7,60.5 V170.0 Z"/><rect class="hit" x="343.0" y="18" width="9.7" height="152" data-b="32" data-n="33"/><path class="bar" d="M353.7,170.0 V74.0 Q353.7,72.0 355.7,72.0 H359.3 Q361.3,72.0 361.3,74.0 V170.0 Z"/><rect class="hit" x="352.7" y="18" width="9.7" height="152" data-b="33" data-n="29"/><path class="bar" d="M363.3,170.0 V80.8 Q363.3,78.8 365.3,78.8 H369.0 Q371.0,78.8 371.0,80.8 V170.0 Z"/><rect class="hit" x="362.3" y="18" width="9.7" height="152" data-b="34" data-n="27"/><path class="bar" d="M373.0,170.0 V47.0 Q373.0,45.0 375.0,45.0 H378.6 Q380.6,45.0 380.6,47.0 V170.0 Z"/><rect class="hit" x="372.0" y="18" width="9.7" height="152" data-b="35" data-n="37"/><path class="bar" d="M382.6,170.0 V74.0 Q382.6,72.0 384.6,72.0 H388.3 Q390.3,72.0 390.3,74.0 V170.0 Z"/><rect class="hit" x="381.6" y="18" width="9.7" height="152" data-b="36" data-n="29"/><path class="bar" d="M392.3,170.0 V97.7 Q392.3,95.7 394.3,95.7 H397.9 Q399.9,95.7 399.9,97.7 V170.0 Z"/><rect class="hit" x="391.3" y="18" width="9.7" height="152" data-b="37" data-n="22"/><path class="bar" d="M401.9,170.0 V97.7 Q401.9,95.7 403.9,95.7 H407.6 Q409.6,95.7 409.6,97.7 V170.0 Z"/><rect class="hit" x="400.9" y="18" width="9.7" height="152" data-b="38" data-n="22"/><path class="bar" d="M411.6,170.0 V90.9 Q411.6,88.9 413.6,88.9 H417.2 Q419.2,88.9 419.2,90.9 V170.0 Z"/><rect class="hit" x="410.6" y="18" width="9.7" height="152" data-b="39" data-n="24"/><path class="bar" d="M421.2,170.0 V90.9 Q421.2,88.9 423.2,88.9 H426.9 Q428.9,88.9 428.9,90.9 V170.0 Z"/><rect class="hit" x="420.2" y="18" width="9.7" height="152" data-b="40" data-n="24"/><path class="bar" d="M430.9,170.0 V84.2 Q430.9,82.2 432.9,82.2 H436.6 Q438.6,82.2 438.6,84.2 V170.0 Z"/><rect class="hit" x="429.9" y="18" width="9.7" height="152" data-b="41" data-n="26"/><path class="bar" d="M440.6,170.0 V77.4 Q440.6,75.4 442.6,75.4 H446.2 Q448.2,75.4 448.2,77.4 V170.0 Z"/><rect class="hit" x="439.6" y="18" width="9.7" height="152" data-b="42" data-n="28"/><path class="bar" d="M450.2,170.0 V67.3 Q450.2,65.3 452.2,65.3 H455.9 Q457.9,65.3 457.9,67.3 V170.0 Z"/><rect class="hit" x="449.2" y="18" width="9.7" height="152" data-b="43" data-n="31"/><path class="bar" d="M459.9,170.0 V63.9 Q459.9,61.9 461.9,61.9 H465.5 Q467.5,61.9 467.5,63.9 V170.0 Z"/><rect class="hit" x="458.9" y="18" width="9.7" height="152" data-b="44" data-n="32"/><path class="bar" d="M469.5,170.0 V94.3 Q469.5,92.3 471.5,92.3 H475.2 Q477.2,92.3 477.2,94.3 V170.0 Z"/><rect class="hit" x="468.5" y="18" width="9.7" height="152" data-b="45" data-n="23"/><path class="bar" d="M479.2,170.0 V74.0 Q479.2,72.0 481.2,72.0 H484.8 Q486.8,72.0 486.8,74.0 V170.0 Z"/><rect class="hit" x="478.2" y="18" width="9.7" height="152" data-b="46" data-n="29"/><path class="bar" d="M488.8,170.0 V60.5 Q488.8,58.5 490.8,58.5 H494.5 Q496.5,58.5 496.5,60.5 V170.0 Z"/><rect class="hit" x="487.8" y="18" width="9.7" height="152" data-b="47" data-n="33"/><path class="bar" d="M498.5,170.0 V97.7 Q498.5,95.7 500.5,95.7 H504.2 Q506.2,95.7 506.2,97.7 V170.0 Z"/><rect class="hit" x="497.5" y="18" width="9.7" height="152" data-b="48" data-n="22"/><path class="bar" d="M508.2,170.0 V67.3 Q508.2,65.3 510.2,65.3 H513.8 Q515.8,65.3 515.8,67.3 V170.0 Z"/><rect class="hit" x="507.2" y="18" width="9.7" height="152" data-b="49" data-n="31"/><path class="bar" d="M517.8,170.0 V70.7 Q517.8,68.7 519.8,68.7 H523.5 Q525.5,68.7 525.5,70.7 V170.0 Z"/><rect class="hit" x="516.8" y="18" width="9.7" height="152" data-b="50" data-n="30"/><path class="bar" d="M527.5,170.0 V57.2 Q527.5,55.2 529.5,55.2 H533.1 Q535.1,55.2 535.1,57.2 V170.0 Z"/><rect class="hit" x="526.5" y="18" width="9.7" height="152" data-b="51" data-n="34"/><path class="bar" d="M537.1,170.0 V111.2 Q537.1,109.2 539.1,109.2 H542.8 Q544.8,109.2 544.8,111.2 V170.0 Z"/><rect class="hit" x="536.1" y="18" width="9.7" height="152" data-b="52" data-n="18"/><path class="bar" d="M546.8,170.0 V60.5 Q546.8,58.5 548.8,58.5 H552.4 Q554.4,58.5 554.4,60.5 V170.0 Z"/><rect class="hit" x="545.8" y="18" width="9.7" height="152" data-b="53" data-n="33"/><path class="bar" d="M556.4,170.0 V70.7 Q556.4,68.7 558.4,68.7 H562.1 Q564.1,68.7 564.1,70.7 V170.0 Z"/><rect class="hit" x="555.4" y="18" width="9.7" height="152" data-b="54" data-n="30"/><path class="bar" d="M566.1,170.0 V84.2 Q566.1,82.2 568.1,82.2 H571.8 Q573.8,82.2 573.8,84.2 V170.0 Z"/><rect class="hit" x="565.1" y="18" width="9.7" height="152" data-b="55" data-n="26"/><path class="bar" d="M575.8,170.0 V67.3 Q575.8,65.3 577.8,65.3 H581.4 Q583.4,65.3 583.4,67.3 V170.0 Z"/><rect class="hit" x="574.8" y="18" width="9.7" height="152" data-b="56" data-n="31"/><path class="bar" d="M585.4,170.0 V74.0 Q585.4,72.0 587.4,72.0 H591.1 Q593.1,72.0 593.1,74.0 V170.0 Z"/><rect class="hit" x="584.4" y="18" width="9.7" height="152" data-b="57" data-n="29"/><path class="bar" d="M595.1,170.0 V33.5 Q595.1,31.5 597.1,31.5 H600.7 Q602.7,31.5 602.7,33.5 V170.0 Z"/><rect class="hit" x="594.1" y="18" width="9.7" height="152" data-b="58" data-n="41"/><path class="bar" d="M604.7,170.0 V87.6 Q604.7,85.6 606.7,85.6 H610.4 Q612.4,85.6 612.4,87.6 V170.0 Z"/><rect class="hit" x="603.7" y="18" width="9.7" height="152" data-b="59" data-n="25"/><path class="bar" d="M614.4,170.0 V57.2 Q614.4,55.2 616.4,55.2 H620.0 Q622.0,55.2 622.0,57.2 V170.0 Z"/><rect class="hit" x="613.4" y="18" width="9.7" height="152" data-b="60" data-n="34"/><path class="bar" d="M624.0,170.0 V90.9 Q624.0,88.9 626.0,88.9 H629.7 Q631.7,88.9 631.7,90.9 V170.0 Z"/><rect class="hit" x="623.0" y="18" width="9.7" height="152" data-b="61" data-n="24"/><path class="bar" d="M633.7,170.0 V87.6 Q633.7,85.6 635.7,85.6 H639.3 Q641.3,85.6 641.3,87.6 V170.0 Z"/><rect class="hit" x="632.7" y="18" width="9.7" height="152" data-b="62" data-n="25"/><path class="bar" d="M643.3,170.0 V84.2 Q643.3,82.2 645.3,82.2 H649.0 Q651.0,82.2 651.0,84.2 V170.0 Z"/><rect class="hit" x="642.3" y="18" width="9.7" height="152" data-b="63" data-n="26"/><line class="mean" x1="34" x2="652" y1="82.2" y2="82.2"/><text class="lab" x="598.9" y="26.5" text-anchor="middle">41</text><text class="lab hi" x="280.2" y="114.3" text-anchor="middle">15</text><text class="ax" x="38.8" y="186" text-anchor="middle">0</text><text class="ax" x="193.3" y="186" text-anchor="middle">16</text><text class="ax" x="347.8" y="186" text-anchor="middle">32</text><text class="ax" x="502.3" y="186" text-anchor="middle">48</text><text class="ax" x="647.2" y="186" text-anchor="middle">63</text><text class="ax" x="343.0" y="198" text-anchor="middle">bucket</text></svg></div><div class="tip" id="bucket-tip" hidden></div></div>
+<details class="tbl"><summary>Bucket sizes as a table</summary><div class="scroll"><table class="grid8"><tbody><tr><td class="num-col">0: 19</td><td class="num-col">1: 24</td><td class="num-col">2: 20</td><td class="num-col">3: 23</td><td class="num-col">4: 22</td><td class="num-col">5: 23</td><td class="num-col">6: 28</td><td class="num-col">7: 32</td></tr><tr><td class="num-col">8: 26</td><td class="num-col">9: 26</td><td class="num-col">10: 26</td><td class="num-col">11: 28</td><td class="num-col">12: 34</td><td class="num-col">13: 23</td><td class="num-col">14: 27</td><td class="num-col">15: 32</td></tr><tr><td class="num-col">16: 27</td><td class="num-col">17: 19</td><td class="num-col">18: 16</td><td class="num-col">19: 24</td><td class="num-col">20: 25</td><td class="num-col">21: 25</td><td class="num-col">22: 19</td><td class="num-col">23: 19</td></tr><tr><td class="num-col">24: 22</td><td class="num-col">25: 15</td><td class="num-col">26: 22</td><td class="num-col">27: 28</td><td class="num-col">28: 20</td><td class="num-col">29: 17</td><td class="num-col">30: 21</td><td class="num-col">31: 24</td></tr><tr><td class="num-col">32: 33</td><td class="num-col">33: 29</td><td class="num-col">34: 27</td><td class="num-col">35: 37</td><td class="num-col">36: 29</td><td class="num-col">37: 22</td><td class="num-col">38: 22</td><td class="num-col">39: 24</td></tr><tr><td class="num-col">40: 24</td><td class="num-col">41: 26</td><td class="num-col">42: 28</td><td class="num-col">43: 31</td><td class="num-col">44: 32</td><td class="num-col">45: 23</td><td class="num-col">46: 29</td><td class="num-col">47: 33</td></tr><tr><td class="num-col">48: 22</td><td class="num-col">49: 31</td><td class="num-col">50: 30</td><td class="num-col">51: 34</td><td class="num-col">52: 18</td><td class="num-col">53: 33</td><td class="num-col">54: 30</td><td class="num-col">55: 26</td></tr><tr><td class="num-col">56: 31</td><td class="num-col">57: 29</td><td class="num-col">58: 41</td><td class="num-col">59: 25</td><td class="num-col">60: 34</td><td class="num-col">61: 24</td><td class="num-col">62: 25</td><td class="num-col">63: 26</td></tr></tbody></table></div></details>
+<p>Every bucket gets used. The emptiest holds 15 names and the fullest 41, around an average of 26. That evenness is what makes hashing pay off: each lookup searches about 26 names instead of 1,664.</p>
+<p>Adding characters ignores their order, so different names can have the same total. In the defs, 1,337 names share their total with at least one other name. For example, <code>F$Link</code>, <code>SS.DRAM</code>, <code>E$Sect</code> and <code>WIZ_MR</code> all add up to 504, so all four share bucket 56. Two names in one bucket is called a <strong>collision</strong>. It's normal, and the tree in each bucket sorts it out. On the other hand, names that differ in one character land near each other but not together: <code>MMU_SLOT_0</code> goes to bucket 31, <code>MMU_SLOT_1</code> to 32, and so on up to <code>MMU_SLOT_7</code> in 38.</p>
+<p class="why">A stronger hash (CRC) spreads names a little more evenly, but on these names it still averages 5.1 comparisons, improving only the worst case, from 14 to 12. The cheap hash is good enough because the trees absorb the unevenness.</p>
+
+<h3>Step 2: search the bucket's tree</h3>
+<p>Each bucket is a <strong>binary search tree</strong>: every name has up to two branches, with names that sort earlier on the left and later on the right. Here is bucket 25, the emptiest, built from its 15 names in the order the defs files define them: <code>D.SWPage</code>, <code>D.BTHI</code>, <code>M$IDSize</code>, <code>P$SWI2</code>, <code>P$DeadLk</code>, <code>FMWRIT</code>, <code>V$DESC</code>, <code>E$NoVRef</code>, <code>PD.T0S</code>, <code>PD.DCP</code>, <code>PE.FilNm</code>, <code>FDSL.B</code>, <code>ROMBlock</code>, <code>T1_CTRL</code>, <code>VS_HDAT0</code>.</p>
+<div class="scroll treewrap"><svg class="tree" width="732" height="326" viewBox="0 0 732 326" role="img" aria-label="Binary search tree of the 15 names in bucket 25, with the 6-step search path to PE.FilNm highlighted"><line class="edge" x1="90" y1="27" x2="44" y2="45"/><line class="edge" x1="228" y1="107" x2="136" y2="125"/><line class="edge" x1="136" y1="147" x2="182" y2="165"/><line class="edge" x1="274" y1="67" x2="228" y2="85"/><line class="edge on" x1="90" y1="27" x2="274" y2="45"/><line class="edge" x1="366" y1="107" x2="320" y2="125"/><line class="edge on" x1="274" y1="67" x2="366" y2="85"/><line class="edge" x1="458" y1="187" x2="412" y2="205"/><line class="edge on" x1="642" y1="147" x2="458" y2="165"/><line class="edge on" x1="458" y1="187" x2="504" y2="205"/><line class="edge" x1="504" y1="227" x2="550" y2="245"/><line class="edge" x1="550" y1="267" x2="596" y2="285"/><line class="edge on" x1="366" y1="107" x2="642" y2="125"/><line class="edge" x1="642" y1="147" x2="688" y2="165"/><rect class="node" x="14" y="45" width="60" height="22" rx="4"/><text class="nt" x="44" y="60" text-anchor="middle">D.BTHI</text><rect class="node on" x="60" y="5" width="60" height="22" rx="4"/><text class="nt" x="90" y="20" text-anchor="middle">D.SWPage</text><text class="step" x="57" y="8" text-anchor="end">1</text><rect class="node" x="106" y="125" width="60" height="22" rx="4"/><text class="nt" x="136" y="140" text-anchor="middle">E$NoVRef</text><rect class="node" x="152" y="165" width="60" height="22" rx="4"/><text class="nt" x="182" y="180" text-anchor="middle">FDSL.B</text><rect class="node" x="198" y="85" width="60" height="22" rx="4"/><text class="nt" x="228" y="100" text-anchor="middle">FMWRIT</text><rect class="node on" x="244" y="45" width="60" height="22" rx="4"/><text class="nt" x="274" y="60" text-anchor="middle">M$IDSize</text><text class="step" x="241" y="48" text-anchor="end">2</text><rect class="node" x="290" y="125" width="60" height="22" rx="4"/><text class="nt" x="320" y="140" text-anchor="middle">P$DeadLk</text><rect class="node on" x="336" y="85" width="60" height="22" rx="4"/><text class="nt" x="366" y="100" text-anchor="middle">P$SWI2</text><text class="step" x="333" y="88" text-anchor="end">3</text><rect class="node" x="382" y="205" width="60" height="22" rx="4"/><text class="nt" x="412" y="220" text-anchor="middle">PD.DCP</text><rect class="node on" x="428" y="165" width="60" height="22" rx="4"/><text class="nt" x="458" y="180" text-anchor="middle">PD.T0S</text><text class="step" x="425" y="168" text-anchor="end">5</text><rect class="node on found" x="474" y="205" width="60" height="22" rx="4"/><text class="nt" x="504" y="220" text-anchor="middle">PE.FilNm</text><text class="step" x="471" y="208" text-anchor="end">6</text><rect class="node" x="520" y="245" width="60" height="22" rx="4"/><text class="nt" x="550" y="260" text-anchor="middle">ROMBlock</text><rect class="node" x="566" y="285" width="60" height="22" rx="4"/><text class="nt" x="596" y="300" text-anchor="middle">T1_CTRL</text><rect class="node on" x="612" y="125" width="60" height="22" rx="4"/><text class="nt" x="642" y="140" text-anchor="middle">V$DESC</text><text class="step" x="609" y="128" text-anchor="end">4</text><rect class="node" x="658" y="165" width="60" height="22" rx="4"/><text class="nt" x="688" y="180" text-anchor="middle">VS_HDAT0</text></svg></div>
+<p>Finding <code>PE.FilNm</code> takes 6 comparisons, shown as steps 1 to 6: <code>D.SWPage</code> → <code>M$IDSize</code> → <code>P$SWI2</code> → <code>V$DESC</code> → <code>PD.T0S</code> → <code>PE.FilNm</code>. Each comparison rules out a whole branch.</p>
+<p>“Sorts earlier” means comparing character codes, as C's <code>strcmp</code> does. In those codes <code>$</code> (36) comes before <code>.</code> (46), digits come before capital letters, and capitals before lower case. That's why <code>P$SWI2</code> sorts before <code>PD.T0S</code>.</p>
+<p>The tree's shape depends on the order names arrive. <code>D.SWPage</code> came first, so it's the root. When names arrive already in alphabetical order, each one goes to the right of the last, and the tree becomes a long chain. That's the reason for the occasional worst case of 14 comparisons.</p>
+
+<h3>The algorithm</h3>
+<p>Finding a name, as <code>sym_find</code> in <code>las/symtab.c</code> does it:</p>
+<ol class="steps">
+<li>Add up the name's character codes and keep the low 6 bits. That's the bucket.</li>
+<li>Start at the bucket's first node. If the bucket is empty, the name isn't defined.</li>
+<li>Compare the name with this node's name.</li>
+<li>If they're equal, this is the symbol. If the name sorts earlier, move to the left branch; if later, to the right branch.</li>
+<li>If there's no branch that way, the name isn't defined. This spot is also exactly where <code>sym_add</code> attaches a new name.</li>
+</ol>
+<pre><code>static struct symblstr **
+bucket (char *name)
+{
+    register char *p = name;
+    int sum = 0;
+
+    do
+    {
+        sum += *p;
+    } while (*(++p) != '\0');
+
+    return &amp;Buckets[sum &amp; (NBUCKETS - 1)];
+}</code></pre>
+<p>The tree has one more trick. To print the symbol table and write the object file, the assembler visits every name in order. Normally that needs a stack to remember the way back up the tree, and stack space is precious on a 6809. RMA avoids it with a <strong>threaded tree</strong>: when a node has no right branch, its unused right pointer points instead to the next node in order. One flag bit, <code>LOC1BYT</code>, says which kind of pointer it is. Walking the whole table is then just following pointers.</p>
 
 <h3>The three-part fix</h3>
 <div class="scroll"><table>
@@ -506,6 +682,18 @@ _3 fcc "%d"
 <tr><td>Precompiled defs</td><td>Assemble the defs once and save the finished table blocks to disk. Later builds load the saved blocks instead of re-reading 1,600 definitions twice.</td><td>Much faster builds; the defs table is shared and read-only.</td></tr>
 </tbody></table></div>
 <p class="why">Precompiled headers in modern C compilers use the same trick: do the expensive, unchanging work once and save the result.</p>
+
+<h3>Hiding the table behind an interface</h3>
+<p>All three parts change how the table is <em>stored</em>. If code all over the assembler walked the trees itself, each change would mean editing every one of those places, and missing one would break something quietly. So the first step, roadmap phase 1, changed nothing visible. It moved all the code that knows how symbols are stored into one file, <code>las/symtab.c</code>, behind three functions:</p>
+<div class="scroll"><table>
+<thead><tr><th>Function</th><th>What the rest of the assembler gets</th></tr></thead>
+<tbody>
+<tr><td><code>sym_find(name)</code></td><td>The symbol, or nothing if it isn't defined.</td></tr>
+<tr><td><code>sym_add(name)</code></td><td>A new, empty symbol.</td></tr>
+<tr><td><code>sym_walk(fn)</code></td><td>Calls <code>fn</code> once for every symbol, in table order. Used to print the symbol table and to write the object file's name lists.</td></tr>
+</tbody></table></div>
+<p>That's an <strong>interface</strong>: a promise about what you can ask for, with the how kept private. Before, the hashing and tree code was spread over <code>labels.c</code> and <code>file_io.c</code>. Now the hashing, the buckets and the tree are invisible outside <code>symtab.c</code>, so compact entries and banked blocks can replace them without touching the callers.</p>
+<p>One detail had to be preserved exactly: the order <code>sym_walk</code> visits symbols in. It decides the order of names in the listing and in the object file, so changing it would change the output, even though no symbol changed.</p>
 </section>
 
 <!-- 10 -->
@@ -549,6 +737,13 @@ _3 fcc "%d"
 <p>A measurement only means something if just one thing changes at a time. If the NitrOS9 source changed between two runs, a new match could come from a fix in <code>las</code> or from an edit in NitrOS9, and you couldn't tell which. So the harness doesn't read your working copy of NitrOS9. It assembles <code>corpus/</code>, clones of your <code>devsys</code> branches pinned to exact commits listed in <code>harness/corpus.lock</code>. Moving to newer NitrOS9 is a separate, deliberate step, and every report records which commits it ran against.</p>
 </section>
 
+<h3>Testing a change that shouldn't change anything</h3>
+<p>Comparing against lwasm shows progress, but it can't check a refactor like phase 1, because nearly every file fails anyway. A refactor needs a different question: does the new <code>las</code> do <em>exactly</em> what the old <code>las</code> did? That's <strong>regression testing</strong>, and <code>harness/regress.py</code> does it. It builds the last committed <code>las</code> as the reference, runs both versions on about 740 inputs, and compares everything they produce: object file, listing, symbol table, error messages and exit code. Any difference fails.</p>
+<p>The inputs are code RMA already handles: 252 hand-written RMA source files, plus 198 C files compiled to assembly by DCC. That's real compiler output, and 430 of these assemble cleanly, so the test exercises working paths, not just error messages.</p>
+<p>Two lessons from building it:</p>
+<p><strong>Prove the test can fail.</strong> A test that has never failed might not be checking anything. So before the refactor, I made a deliberate small change (32 hash buckets instead of 64) and confirmed the test caught it: 617 of 740 files changed. This is called a <strong>negative control</strong>. Only then is “740 of 740 identical” worth something.</p>
+<p><strong>Make sure the test doesn't disturb itself.</strong> The first run failed with no code changes at all. The assembler writes macro expansions to a scratch file with a fixed name, <code>rma.tmp</code>, in the current directory. Running the old and new versions side by side in the same directory let them overwrite each other's scratch file. The fix was to give every run its own empty directory. It also revealed a real problem to fix later: two assemblies in one directory on the F256 would collide the same way.</p>
+
 <!-- 11 -->
 <section class="ch" id="project">
 <h2><span class="num">CHAPTER 11</span>Where this leads</h2>
@@ -562,6 +757,8 @@ _3 fcc "%d"
 <dl class="gloss">
   <dt>assembler</dt><dd>Turns assembly language into machine-code bytes.</dd>
   <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
+  <dt>binary search tree</dt><dd>A tree where each node has up to two branches: earlier-sorting names on the left, later on the right. Each comparison rules out a whole branch.</dd>
+  <dt>collision</dt><dd>Two different names that hash to the same bucket.</dd>
   <dt>CRC</dt><dd>The 3-byte checksum at the end of every OS-9 module. OS-9 checks it before running the module.</dd>
   <dt>CRLF</dt><dd>Windows line endings: carriage return then line feed. Unix uses LF only; OS-9 uses CR only.</dd>
   <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
@@ -571,6 +768,8 @@ _3 fcc "%d"
   <dt>external reference</dt><dd>A name used in one file and defined in another. Resolved by the linker.</dd>
   <dt>fixup / relocation</dt><dd>A place in the code the linker must patch once final positions are known.</dd>
   <dt>forward reference</dt><dd>Using a label before it's defined. The reason assemblers make two passes.</dd>
+  <dt>hash function</dt><dd>A calculation that turns a name into a number, always the same number for the same name. Used to pick a bucket.</dd>
+  <dt>interface</dt><dd>The set of operations a piece of code offers, with how it works kept private, so the inside can change without affecting callers.</dd>
   <dt>K&amp;R C</dt><dd>The C language as it was before the 1989 ANSI standard.</dd>
   <dt>knock-on error</dt><dd>An error caused by an earlier error. Fixing the first one makes it disappear.</dd>
   <dt>library</dt><dd>A bundle of object files (members). The linker takes only the members it needs.</dd>
@@ -579,14 +778,18 @@ _3 fcc "%d"
   <dt>MMU</dt><dd>Hardware that maps 8K blocks of physical RAM into the 6809's 64K address space.</dd>
   <dt>mod</dt><dd>Starts a module-format source and supplies the header fields.</dd>
   <dt>module</dt><dd>OS-9's unit of executable code: header, body, name, CRC.</dd>
+  <dt>negative control</dt><dd>A deliberate fault fed to a test to show it can detect a problem.</dd>
   <dt>object file</dt><dd>Assembled code that isn't finished: it still has names to resolve and places to patch.</dd>
   <dt>phasing error</dt><dd>An address that came out different in pass 2 than in pass 1.</dd>
   <dt>position-independent</dt><dd>Code that works wherever it's loaded, because it uses addresses relative to the program counter (<code>,pcr</code>).</dd>
   <dt>psect / vsect</dt><dd>RMA's code section and variable section.</dd>
+  <dt>refactor</dt><dd>Restructuring code without changing what it does.</dd>
   <dt>reference</dt><dd>In testing, the trusted program whose output counts as correct. Here, lwasm.</dd>
+  <dt>regression test</dt><dd>A test that checks a change didn't alter existing behaviour, by comparing against the previous version.</dd>
   <dt>ROF</dt><dd>Relocatable Object Format: Microware's object file format, made by RMA and read by rlink.</dd>
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
   <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
+  <dt>threaded tree</dt><dd>A tree whose unused right pointers point to the next node in order, so it can be walked without a stack.</dd>
 </dl>
 </section>
 
@@ -665,6 +868,57 @@ _3 fcc "%d"
   }
   render(moduleSegs, "hex-module", "legend-module");
   render(rofSegs, "hex-rof", "legend-rof");
+
+  // Hash calculator: character sum, low 6 bits, bucket.
+  (function () {
+    var input = document.getElementById("hash-name"), out = document.getElementById("hash-out");
+    if (!input || !out) return;
+    function show() {
+      var name = input.value;
+      out.textContent = "";
+      if (!name) { out.textContent = "Type a name to see its bucket."; return; }
+      var chars = document.createElement("div"); chars.className = "chars";
+      var sum = 0;
+      for (var i = 0; i < name.length; i++) {
+        var code = name.charCodeAt(i) & 0xff; sum += code;
+        var c = document.createElement("div"); c.className = "ch1";
+        var b = document.createElement("b"); b.textContent = name[i];
+        var n = document.createElement("span"); n.textContent = code;
+        c.appendChild(b); c.appendChild(n); chars.appendChild(c);
+      }
+      var bucket = sum & 63, bin = sum.toString(2);
+      var hi = bin.length > 6 ? bin.slice(0, -6) : "", lo = bin.slice(-6).padStart(6, "0");
+      var l1 = document.createElement("div"); l1.className = "calc-line";
+      l1.textContent = "sum = " + sum + " = " + Math.floor(sum / 64) + " \u00d7 64 + " + bucket;
+      var l2 = document.createElement("div"); l2.className = "calc-line";
+      l2.appendChild(document.createTextNode("binary " + hi));
+      var low = document.createElement("span"); low.className = "low"; low.textContent = lo; l2.appendChild(low);
+      l2.appendChild(document.createTextNode("  \u2192 low 6 bits = "));
+      var bk = document.createElement("span"); bk.className = "bkt"; bk.textContent = "bucket " + bucket; l2.appendChild(bk);
+      out.appendChild(chars); out.appendChild(l1); out.appendChild(l2);
+    }
+    input.addEventListener("input", show);
+    show();
+  })();
+
+  // Bucket chart tooltips.
+  (function () {
+    var svg = document.querySelector("svg.bars"), tip = document.getElementById("bucket-tip");
+    if (!svg || !tip) return;
+    var wrap = svg.parentNode;
+    svg.querySelectorAll(".hit").forEach(function (r) {
+      r.addEventListener("mouseenter", function () {
+        var box = r.getBoundingClientRect(), w = wrap.getBoundingClientRect();
+        var n = r.getAttribute("data-n");
+        tip.textContent = "bucket " + r.getAttribute("data-b") + ": " + n + " names";
+        tip.style.left = (box.left - w.left + box.width / 2) + "px";
+        tip.style.top = (box.top - w.top + 14) + "px";
+        tip.hidden = false;
+      });
+      r.addEventListener("mouseleave", function () { tip.hidden = true; });
+    });
+  })();
+
 })();
 </script>
 </body>
