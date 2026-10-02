@@ -85,7 +85,7 @@ Then add a line to the changelog at the bottom of this file.
 | 3b. Operand sizing | ✅ "Choosing instruction sizes" (lwasm's settle / worst case / force rule, gfxstatus example, the trial run, fork's shared file offset); ch 6 section-name layout order |
 | 4. lwasm syntax | ✅ Ch 4 "Local labels", "Conditions across two passes", "Same symbols, different meaning", "Two dialects in one assembler" |
 | 5. Object mode | ✅ Ch 6 "Two linkers, two module layouts", "Choosing library members", "Values only the linker knows"; ch 9 uninitialised memory |
-| 6. Long names | Why name limits existed; how ROF stores names |
+| 6. Long names | ✅ Ch 7 "Long names, end to end" (each tool's limit, the collision example, ROF version and aliases for old libraries, testing for one kind of difference) |
 | 7. Native build | Bootstrapping: building tools with themselves; cross vs native compilers |
 | 8. Banked blocks | `F$AllRAM`/`F$MapBlk` in detail; (block, offset) pointers; hashing to blocks |
 | 9. Precompiled defs | Saving and reloading a symbol table image; cache invalidation |
@@ -132,3 +132,8 @@ Then add a line to the changelog at the bottom of this file.
   actual rule and a real example; how las's trial run works; fork() shares file
   offsets. Ch 6: lwlink orders by section name before command line. Glossary:
   trial run, unsettled.
+- 2026-10-02 — Phase 6: ch 7 "Long names, end to end". Glossary: alias,
+  ROF version.
+- 2026-10-02 — Ch 7 "How long can a name be, and why": every name limit in
+  the chain and its reason, C89's 31/6 rule (and C99's 63/31), measurements
+  from CoCoC and the defs, what a limit costs.

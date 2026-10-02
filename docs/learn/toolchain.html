@@ -645,6 +645,51 @@ _3 fcc "%d"
 <p><strong>It's the RMA object format</strong>, with <code>psect</code>, <code>vsect</code> and <code>label:</code> exports. That's why the C toolchain needs RMA and rlink no matter which compiler you use.</p>
 <p><strong>The calling convention.</strong> Arguments go on the stack, the result comes back in <code>D</code>. Globals are reached through <code>Y</code>, which the C startup code points at the data area. Hand-written assembly usually uses <code>U</code> for this.</p>
 <p><strong>The optimizer's work.</strong> <code>dco68</code> made two changes. It turned <code>lbsr add</code> into <code>bsr add</code>, a shorter instruction, since <code>add</code> is close by. And it removed <code>ldd total,y</code>, because <code>D</code> already holds the value that was just stored. Small wins like these, made by matching patterns, are all a peephole optimizer does.</p>
+
+<h3>Long names, end to end</h3>
+<p>A C function's name passes through four programs before it becomes an address, and each one had its own idea of how long a name may be:</p>
+<div class="scroll"><table>
+<thead><tr><th>Program</th><th>Job</th><th>Old limit</th><th>Now</th></tr></thead>
+<tbody>
+<tr><td><code>dcc68</code></td><td>compiler's symbol table</td><td>8</td><td>31</td></tr>
+<tr><td><code>dco68</code></td><td>optimizer's label field</td><td>11</td><td>32</td></tr>
+<tr><td><code>las</code> (RMA)</td><td>assembler</td><td>63</td><td>63</td></tr>
+<tr><td><code>rlink</code></td><td>linker</td><td>9, cut silently</td><td>63</td></tr>
+</tbody></table></div>
+<p>A chain is only as strong as its weakest link, and here the weakest link decides what a name is. Here is a test program, compiled with the original tools:</p>
+<pre><code>int increment_counter_alpha() { … }
+int increment_counter_beta()  { … }
+main() { … localtime(&amp;now); … }
+
+rlink: symbol already defined: increment
+rlink: Unresolved references: localtime</code></pre>
+<p>Two different functions became the same name, <code>increment</code>, and the program can't be built. With the devsys versions it links, and decoding each call in the finished module shows it lands on the right function.</p>
+<h3>How long can a name be, and why</h3>
+<p>Each limit in the chain has its own reason, so here they all are in one place, with what we measured in your trees.</p>
+<div class="scroll"><table>
+<thead><tr><th>Where</th><th>Limit</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>C names in <code>dcc68</code></td><td>31</td><td>The C89 standard: a compiler must treat at least the first 31 characters of an internal name (and of a macro name) as significant. We follow it exactly.</td></tr>
+<tr><td>Macro names in <code>dcpp</code></td><td>64</td><td>Already 64 in DCC's preprocessor, more than C89's 31. Left as it was.</td></tr>
+<tr><td>Labels in <code>dco68</code></td><td>32</td><td>Enough for <code>dcc68</code>'s 31, with one byte spare. The <code>:</code> that marks a name as exported is read separately and not stored.</td></tr>
+<tr><td>Symbols in <code>las</code></td><td>63</td><td>Inherited from RMA's C source (<code>SYMLEN 64</code>: 63 characters plus the zero that ends a C string). lwasm's limit is far beyond anything NitrOS9 uses.</td></tr>
+<tr><td>Symbols in <code>rlink</code></td><td>63</td><td>Set to match <code>las</code>, so no name the assembler accepts gets cut at link time. It was 9, and cut names <em>silently</em>.</td></tr>
+<tr><td>Names inside a ROF file</td><td>none</td><td>Stored as text ending in a zero byte, so the format never had a limit. Only the programs reading it did.</td></tr>
+<tr><td>Microware's old tools</td><td>8</td><td>Every symbol record reserved room for the full maximum, so each extra character cost memory on every symbol. Hence the aliases for old libraries, below.</td></tr>
+</tbody></table></div>
+<p><strong>What C89 actually says.</strong> The standard sets minimums a compiler must meet, not maximums. For names visible only inside one file it requires 31 significant characters. For <em>external</em> names, the ones the linker sees, it promised only 6, and those could be compared without regard to case. That was a concession to the linkers of the 1980s, which had exactly the kind of limits rlink had. C99 raised the minimums to 63 and 31. Since our linker keeps 63, DCC's external names get all 31 too, which C89 allows because 6 is only the floor.</p>
+<p><strong>Is 31 enough?</strong> Measured on CoCoC's C sources (340 files, 5,440 different names), the longest name is 20 characters (<code>NOT_COLON_DEFINITION</code>). Cut to 8 characters, 40 of those names collide with another. Cut to 31, none do. On the assembly side, the longest name in the NitrOS9 defs is 24 characters, and 167 of them collide at 8 (chapter 9). Both limits have plenty of room.</p>
+<p><strong>What a limit costs.</strong> With fixed records, a higher limit costs memory on every symbol, which is why the old tools stopped at 8. With records that are only as long as their name (chapter 9), the limit costs nothing until a name actually uses it. That's what made generous limits affordable on a 64K machine.</p>
+
+<p class="cap">Old libraries, new names</p>
+<p>The <code>localtime</code> failure has a second cause. CoCoC's <code>clib.l</code> was built with the 8-character tools, so the library itself calls the function <code>localtim</code>. The same goes for <code>intercep</code>, <code>sdiffere</code> and dozens of others. A compiler that keeps long names asks for <code>localtime</code>, and the library doesn't have it.</p>
+<p>The fix uses a byte that was there all along. Every ROF header records the format version that wrote it: Microware's tools wrote 0, and <code>las</code> writes 1. So rlink knows which objects came from tools that kept only 8 characters, and treats their names the way those tools did. When <code>localtime</code> is wanted and a version-0 module defines <code>localtim</code>, rlink gives that module an <strong>alias</strong>, a second name for the same address. The map shows both:</p>
+<pre><code>     localtim  code 031c
+     localtime code 031c</code></pre>
+<p>Between new objects, names still have to match in full. The old rule only applies where the old tools were used. Rebuilding the libraries with the new compiler (roadmap phase 10) will make the aliases unnecessary.</p>
+<p class="cap">Checking that nothing else changed</p>
+<p>After the change, 59 of CoCoC's C files compiled differently, which was expected. But "expected" isn't checked. The comparison tool (<code>harness/dccdiff.py --names8</code>) splits both outputs into words and accepts a difference only where the new word is longer than 8 characters and the old one is its first 8. All 59 passed, so nothing changed except the names. That's a pattern worth reusing: when you know <em>what kind</em> of difference a change should make, write a test that allows exactly that kind and nothing else.</p>
+<p>The symbol entries use chapter 9's trick. Each keeps the old room for 8 characters, and only a longer name gets a longer entry, so short names cost the same memory on the 6809 as before. And testing under AddressSanitizer turned up the usual suspects: a pointer that was never set, in the code for <code>struct tag x[3]</code>. It had worked only while fresh memory happened to be zero, and one XLisp source crashed the original compiler. It compiles now.</p>
 </section>
 
 <!-- 8 -->
@@ -919,6 +964,7 @@ bucket (char *name)
 <h2><span class="num">CHAPTER 12</span>Glossary</h2>
 <dl class="gloss">
   <dt>AddressSanitizer</dt><dd>A compiler option that makes a program stop as soon as it reads or writes outside memory it allocated.</dd>
+  <dt>alias</dt><dd>A second name for the same address. rlink adds one when a long name like <code>localtime</code> is wanted and an old library only has its first 8 characters, <code>localtim</code>.</dd>
   <dt>assembler</dt><dd>Turns assembly language into machine-code bytes.</dd>
   <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
   <dt>binary search tree</dt><dd>A tree where each node has up to two branches: earlier-sorting names on the left, later on the right. Each comparison rules out a whole branch.</dd>
@@ -959,6 +1005,7 @@ bucket (char *name)
   <dt>reference</dt><dd>In testing, the trusted program whose output counts as correct. Here, lwasm.</dd>
   <dt>regression test</dt><dd>A test that checks a change didn't alter existing behaviour, by comparing against the previous version.</dd>
   <dt>ROF</dt><dd>Relocatable Object Format: Microware's object file format, made by RMA and read by rlink.</dd>
+  <dt>ROF version</dt><dd>A byte in every ROF header naming the format that wrote it: 0 for Microware's tools, 1 for <code>las</code>. Version 1 adds common blocks, and tells rlink names were kept in full.</dd>
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
   <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
   <dt>threaded tree</dt><dd>A tree whose unused right pointers point to the next node in order, so it can be walked without a stack.</dd>
