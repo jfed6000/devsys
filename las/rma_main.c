@@ -164,6 +164,7 @@ read_fil (ZILCH)
     precodeset ();
     mod_pass ();
     sec_pass ();
+    img_pass ();
     HadError = d0025 = FALSE;
     _If_Dpth = FalseIf = d0027 = ListLin = ListPag = 0;
     list_lin = d00da = 0;
@@ -380,6 +381,11 @@ AsmblLin (ZILCH)
     {
         Operatr = LabelName;
         SkipSpac ();
+
+        if (ImgRec && ! FalseIf && ! MacDefining)
+        {
+            img_op (LabelName);     /* recording the defs (defsimg.c) */
+        }
 
         /* If opcode is a macro, process and return */
 

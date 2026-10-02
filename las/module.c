@@ -112,6 +112,36 @@ cond_log (result)
     return (CondBits[i >> 3] >> (i & 7)) & 1;
 }
 
+/* The log as defsimg.c sees it: how many, one result, skip n in pass 2 */
+
+int
+cond_count (ZILCH)
+{
+    return CondCount;
+}
+
+int
+#ifdef __STDC__
+cond_bit (int i)
+#else
+cond_bit (i)
+     int i;
+#endif
+{
+    return (CondBits[i >> 3] >> (i & 7)) & 1;
+}
+
+void
+#ifdef __STDC__
+cond_skip (int n)
+#else
+cond_skip (n)
+     int n;
+#endif
+{
+    CondNext += n;
+}
+
 /* ******************************************************************** *
  * mod_pass() - Reset module state at the start of each pass.           *
  * ******************************************************************** */

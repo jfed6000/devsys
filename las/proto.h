@@ -76,6 +76,23 @@ void RefCreat(SYMH mylabel, int rtyp, int adrs);
 char SkipSpac(void);
 void *getmem(int memreq);
 void do_defines(void);
+/* defsimg.c */
+int img_use(char *name);
+void img_pass(void);
+void img_end(void);
+void img_bad(void);
+void img_touch(SYMH h);
+void img_op(char *op);
+void img_file(char *use);
+int preload_count(void);
+int cond_count(void);
+int cond_bit(int i);
+void cond_skip(int n);
+unsigned bank_mark(void);
+unsigned bank_after(unsigned h, int size);
+SYMH sym_after(SYMH h);
+FILE *u_find(char *fna, char *fmo);
+
 /* preload.c */
 void preload_add(char *file);
 int preload_find(char *name, int *value);
@@ -272,6 +289,23 @@ void RefCreat();
 char SkipSpac();
 void *getmem();
 void do_defines();
+/* defsimg.c */
+int img_use();
+void img_pass();
+void img_end();
+void img_bad();
+void img_touch();
+void img_op();
+void img_file();
+int preload_count();
+int cond_count();
+int cond_bit();
+void cond_skip();
+unsigned bank_mark();
+unsigned bank_after();
+SYMH sym_after();
+FILE *u_find();
+
 /* preload.c */
 void preload_add();
 int preload_find();

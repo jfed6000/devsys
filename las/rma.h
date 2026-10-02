@@ -225,6 +225,13 @@ GLOBAL char ExplArrow;      /* operand had "<" or ">" (registers.c) */
 GLOBAL char SzTrial;        /* this is the sizing trial (sizing.c) */
 GLOBAL int CurSecId;        /* which lwasm section we are in (lwobj.c) */
 
+/* precompiled defs (defsimg.c) */
+extern char *ImgName,       /* --defsimg=FILE */
+            ImgRec,         /* recording: report lookups and creations */
+            ImgOn;          /* report changes to symbols */
+extern FILE **ImgBase;      /* use-file stack level of the recorded use */
+extern char UsePath[];      /* path u_find() opened (file_io.c) */
+
 /* lwasm pragmas set with --pragma= (file_io.c GetOpts) */
 GLOBAL char PragExport,     /* export: section labels are exported */
             InSection,      /* inside a "section" (lwobj.c) */

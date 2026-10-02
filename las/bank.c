@@ -39,6 +39,7 @@
 
 static int NBlk;                /* blocks allocated */
 static int Used;                /* bytes used in the last one */
+static int BlkUsed[MAXBLK];     /* bytes used in each full one */
 static int Cur = -1;            /* block in the window */
 #if defined(COCO) || defined(BANKWIN)
 static long Switches;           /* window changes (bank_stats) */
@@ -89,6 +90,11 @@ newblock (ZILCH)
         errexit ("symbol table overflow");
     }
 #endif
+
+    if (NBlk)
+    {
+        BlkUsed[NBlk - 1] = Used;
+    }
 
     ++NBlk;
     Used = 0;
@@ -175,6 +181,39 @@ bank_alloc (size)
     Used += size;
     memset (bank_ptr (h), 0, size);
     return h;
+}
+
+/* ******************************************************************** *
+ * bank_mark() - A handle below every later allocation's (handles grow  *
+ *               with each allocation).                                 *
+ * bank_after() - The handle allocated after h, whose size was size.    *
+ * (defsimg.c walks the symbols the defs created with them.)            *
+ * ******************************************************************** */
+
+unsigned
+bank_mark (ZILCH)
+{
+    return NBlk ? HANDLE (NBlk - 1, Used) : HANDLE (0, 0);
+}
+
+unsigned
+#ifdef __STDC__
+bank_after (unsigned h, int size)
+#else
+bank_after (h, size)
+     unsigned h;
+     int size;
+#endif
+{
+    int b = HBLK (h);
+    int o = HOFF (h) + ((size + 1) & ~1);
+
+    if ((b < NBlk - 1) && (o >= BlkUsed[b]))
+    {
+        return HANDLE (b + 1, 0);
+    }
+
+    return HANDLE (b, o);
 }
 
 /* ******************************************************************** *

@@ -38,12 +38,17 @@ BIN	:= bin
 # and _OS9, as the native cc does. See docs/DESIGN.md D20 and D25.
 las_DIR		:= $(DEVSYS)/las
 las_OBJS	:= rma_main findcmd part3 registers directives labels numeric \
-		   file_io macros symtab bank module lwobj preload sizing
+		   file_io macros symtab bank module lwobj preload sizing defsimg
 las_DEFS	:= -DCOCO
 # 16 pages: the stack and stdio buffers (a macro's work file takes 512
 # bytes) share this space; llwbsd overflowed without it. The data area
 # still fits the two blocks below the window slot (D30)
 las_MEM		:= 16
+# No stack checks (-s) in these: they don't recurse, and every call into
+# them comes from a checked function. The symbol accessors are las's
+# hottest calls, and the 6-byte check per function is room las needs: the
+# module must stay at most 40,192 bytes (5 blocks ending by $FD00, D35)
+las_NOCHECK	:= symtab bank defsimg module preload
 
 rlink_DIR	:= $(DEVSYS)/rlink
 rlink_OBJS	:= rlink_main rl_02 rl_03 misc rl_05 util lwsel
@@ -86,7 +91,7 @@ $(1): $(BIN)/$(1)
 
 $(OBJ)/$(1)/%.r: $$($(1)_DIR)/%.c $$(wildcard $$($(1)_DIR)/*.h) $(HOSTTOOLS) | $(OBJ)/$(1)
 	cd $(OBJ)/$(1) && $(DCPP) $$($(1)_DEFS) -I=$$($(1)_DIR) -I=$(COCOC)/Defs $$< >$$*.i
-	cd $(OBJ)/$(1) && $(DCC68) $$($(1)_CC) $$*.i -o=$$*.raw.a
+	cd $(OBJ)/$(1) && $(DCC68) $$($(1)_CC) $$(if $$(filter $$*,$$($(1)_NOCHECK)),-s) $$*.i -o=$$*.raw.a
 	cd $(OBJ)/$(1) && $(DCO68) $(OPTFLAGS) <$$*.raw.a >$$*.a
 	cd $(OBJ)/$(1) && $(LAS) -l -s -o=$$*.r $$*.a >$$*.lst || { grep -B1 -A1 '\*\*\*' $$*.lst; exit 1; }
 

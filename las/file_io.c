@@ -322,6 +322,10 @@ one_arg (arg)
     {
         args_file (arg + 7);
     }
+    else if (strncmp (arg, "--defsimg=", 10) == 0)
+    {
+        ImgName = arg + 10;     /* defsimg.c */
+    }
     else if ((*arg == '-') && (arg[1] == 'D'))
     {
         /* -D is case-sensitive: lower-case -d is the page depth */
@@ -424,9 +428,51 @@ f_opn (fna, fmo)
     return fptr;
 }
 
-/* Open a use-file
- * Returns File * to file on success, NULL on failure
+/* Find and open a use-file: the name as given, else in each include
+ * directory. Returns the FILE * (UsePath is the path opened), or 0.
  */
+
+char UsePath[128];
+
+FILE *
+#ifdef __STDC__
+u_find(char *fna, char *fmo)
+#else
+u_find(fna, fmo)
+    char *fna,
+         *fmo;
+#endif
+{
+     FILE           *fptr;
+     int            i;
+
+    /* First try the raw entry */
+
+    strncpy(UsePath, fna, sizeof (UsePath) - 1);
+
+    if ((fptr = fopen(UsePath, fmo)) != 0)
+    {
+        return fptr;
+    }
+
+    /* Try each include-path to open the use-file */
+
+    for (i = 0; i < inccount; i++)
+    {
+        /* Prepend include dirs in front */
+
+        sprintf(UsePath, "%s/%s", incdirs[i], fna);
+
+        if ((fptr = fopen(UsePath, fmo)) != 0)
+        {
+            return fptr;
+        }
+    }
+
+    return 0;
+}
+
+/* Open a use-file; it is an error if it can't be found */
 
 FILE *
 #ifdef __STDC__
@@ -438,30 +484,10 @@ u_opn(fna, fmo)
 #endif
 {
      FILE           *fptr;
-     char           f[128];
-     int            i;
 
-    /* First try the raw entry */
-
-    if ((fptr = fopen(fna, fmo)) != 0)
+    if ((fptr = u_find(fna, fmo)) != 0)
     {
         return fptr;
-    }
-
-    /* Try each include-path to open the use-file
-     * If file not found, return NULL
-     */
-
-    for (i = 0; i < inccount; i++)
-    {
-        /* Prepend include dirs in front */
-
-        sprintf(f, "%s/%s", incdirs[i], fna);
-
-        if ((fptr = fopen(f, fmo)) != 0)
-        {
-            return fptr;
-        }
     }
 
     fprintf(stderr, "\"%s\" - ", fna);
@@ -645,6 +671,12 @@ DecSFil (ZILCH)
     }
 
     SrcFile = *(--ThisFile);
+
+    if (ThisFile == ImgBase)
+    {
+        img_end ();             /* the use defsimg.c records has ended */
+    }
+
     return 1;
 }
 

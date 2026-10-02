@@ -3,10 +3,10 @@
 RDIR = RELS
 ODIR = test
 OBJS = rma_main.r findcmd.r part3.r registers.r directives.r labels.r \
-   numeric.r file_io.r macros.r symtab.r bank.r module.r lwobj.r preload.r sizing.r
+   numeric.r file_io.r macros.r symtab.r bank.r module.r lwobj.r preload.r sizing.r defsimg.r
 
 PROTOS = rma_main.c findcmd.c part3.c registers.c directives.c labels.c \
-   numeric.c file_io.c macros.c symtab.c bank.c module.c lwobj.c preload.c sizing.c
+   numeric.c file_io.c macros.c symtab.c bank.c module.c lwobj.c preload.c sizing.c defsimg.c
 
 CFLAGS = -v=/dd/defs -dCOCO
 #CFLAGS = -dCOCO
@@ -20,7 +20,7 @@ all: $(OBJS) $(ODIR)/las
 
 .PHONY: all
 
-rma_main.r findcmd.r part3.r registers.r directives.r labels.r file_io.r macros.r symtab.r bank.r module.r lwobj.r preload.r sizing.r:
+rma_main.r findcmd.r part3.r registers.r directives.r labels.r file_io.r macros.r symtab.r bank.r module.r lwobj.r preload.r sizing.r defsimg.r:
 	$(CC) $(CFLAGS) $*.c -r -s
 
 numeric.r:

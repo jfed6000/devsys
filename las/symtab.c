@@ -296,6 +296,22 @@ sym_add (name)
 }
 
 /* ******************************************************************** *
+ * sym_after() - The symbol created after h, if nothing else was        *
+ *               allocated between them (defsimg.c)                     *
+ * ******************************************************************** */
+
+SYMH
+#ifdef __STDC__
+sym_after (SYMH h)
+#else
+sym_after (h)
+     SYMH h;
+#endif
+{
+    return bank_after (h, sizeof (struct symblstr) + strlen (SP (h)->symblnam));
+}
+
+/* ******************************************************************** *
  * next() - The node after this one in alphabetical order, or 0.        *
  * ******************************************************************** */
 
@@ -406,7 +422,15 @@ sym_settyp (h, v)
      int v;
 #endif
 {
-    SP (h)->smbltyp = v;
+    register struct symblstr *s = SP (h);
+
+    if (ImgOn && (s->smbltyp != (char) v))
+    {
+        img_touch (h);          /* defsimg.c watches the defs' symbols */
+        s = SP (h);
+    }
+
+    s->smbltyp = v;
 }
 
 void
@@ -418,7 +442,15 @@ sym_setmsk (h, v)
      int v;
 #endif
 {
-    SP (h)->locmsk = v;
+    register struct symblstr *s = SP (h);
+
+    if (ImgOn && (s->locmsk != (char) v))
+    {
+        img_touch (h);
+        s = SP (h);
+    }
+
+    s->locmsk = v;
 }
 
 /* Called through the sym_setval() macro (proto.h), which casts the
@@ -434,7 +466,15 @@ sym_setv (h, v)
      SVAL v;
 #endif
 {
-    SP (h)->s_ofst = v;
+    register struct symblstr *s = SP (h);
+
+    if (ImgOn && (s->s_ofst != v))
+    {
+        img_touch (h);
+        s = SP (h);
+    }
+
+    s->s_ofst = v;
 }
 
 void
@@ -446,7 +486,15 @@ sym_setrefs (h, r)
      REFH r;
 #endif
 {
-    SP (h)->reftbl = r;
+    register struct symblstr *s = SP (h);
+
+    if (ImgOn && (s->reftbl != r))
+    {
+        img_touch (h);
+        s = SP (h);
+    }
+
+    s->reftbl = r;
 }
 
 /* sym_name() - The symbol's name, copied: good until the next call. */
@@ -479,7 +527,14 @@ ref_new (typ, offset, next)
      REFH next;
 #endif
 {
-    REFH r = bank_alloc (sizeof (struct ref_xtrnal));
+    REFH r;
+
+    if (ImgRec)
+    {
+        img_bad ();             /* the defs can't be recorded with these */
+    }
+
+    r = bank_alloc (sizeof (struct ref_xtrnal));
 
     RP (r)->RfTyp = typ;
     RP (r)->r_offset = offset;

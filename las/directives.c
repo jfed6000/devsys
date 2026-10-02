@@ -806,8 +806,20 @@ do_use (ZILCH)
 
     _chr = *_end;
     *_end = '\0';
-    *(ThisFile++) = SrcFile;
-    SrcFile = u_opn (SrcChar, "r");
+
+    /* the defs image may stand for the file (defsimg.c) */
+
+    if ( ! img_use (SrcChar))
+    {
+        *(ThisFile++) = SrcFile;
+        SrcFile = u_opn (SrcChar, "r");
+
+        if (ImgRec)
+        {
+            img_file (SrcChar);
+        }
+    }
+
     *_end = _chr;
     SrcChar = _end;
 

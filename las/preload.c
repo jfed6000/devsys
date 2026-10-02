@@ -61,6 +61,14 @@ preload_add (file)
     PlFiles[PlCount++] = file;
 }
 
+/* preload_count() - how many --defs files (defsimg.c: none allowed) */
+
+int
+preload_count (ZILCH)
+{
+    return PlCount;
+}
+
 static int
 #ifdef __STDC__
 plhash (char *name)
