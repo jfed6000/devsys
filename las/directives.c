@@ -91,7 +91,7 @@ addbyte (parm)
     *(char *) (CmdCod + (NumBytes++)) = parm;
 }
 
-static int
+int
 l1723 (ZILCH)
 {
     register struct symblstr *smbl_tmp = CurntLabel;
@@ -826,7 +826,8 @@ precodeset (ZILCH)
     CurLclRef = 0;
     TypeBasic = CODENT;
     DLocField = CODLOC | RELATIVE;
-    S_Addrs = CurntOrg = 0;
+    S_Addrs = 0;
+    CurntOrg = &AbsCtr;     /* the top level's location counter (module.c) */
     TmpLocMsk = 0;
     return 1;
 }

@@ -225,23 +225,15 @@ def define_lines(defines):
 
 
 def run_las(job, las, lasdir, gen):
-    """Assemble the same source with las.
+    """Assemble the same source with las, with the same -D definitions.
 
-    las has no -D option yet, so defines go into a small prelude file that
-    is assembled first (RMA assembles several input files as one). lwasm
-    also looks for `use` files next to the source, so the source's own
-    directory goes first in the include list.
+    lwasm also looks for `use` files next to the source, so the source's
+    own directory goes first in the include list.
     """
     out = os.path.join(lasdir, job["id"])
-    prelude = None
-    sources = [job["source"]]
-    if job["defines"]:
-        prelude = os.path.join(lasdir, job["id"] + ".defines.a")
-        with open(prelude, "w") as f:
-            f.write("\n".join(define_lines(job["defines"])) + "\n")
-        sources.insert(0, prelude)
     incs = [os.path.dirname(job["source"])] + job["includes"] + [gen]
-    argv = [las] + sources + [f"-i={d}" for d in incs] + [f"-o={out}"]
+    argv = ([las, job["source"]] + [f"-D{d}" for d in job["defines"]]
+            + [f"-i={d}" for d in incs] + [f"-o={out}"])
     if os.path.exists(out):
         os.remove(out)
     # Run in an empty directory of its own: las writes its macro work file
@@ -405,8 +397,6 @@ def write_report(results, jobs, args, workdir, report_path, corpus):
              ", ".join(f"`{k}`" for k in pragmas) + ".\n")
     if other:
         L.append("Other options: " + ", ".join(f"`{k}` ({v})" for k, v in other.most_common()) + ".\n")
-    L.append("The harness works around the missing `-D` option by assembling a prelude "
-             "file of `NAME set VALUE` lines before the source.\n")
 
     L.append("## Files\n")
     L.append("| File | Source | Status | Detail |\n|---|---|---|---|")
@@ -446,6 +436,8 @@ def main():
     ap.add_argument("--no-report", action="store_true", help="don't write the report or history")
     args = ap.parse_args()
     args.nitros9 = os.path.abspath(args.nitros9)
+    args.las = os.path.abspath(args.las)       # las runs in its own scratch directory
+    args.lwasm = os.path.abspath(args.lwasm)
 
     if not os.path.exists(args.las):
         sys.exit(f"las not found at {args.las}; build it with: cd las/build/unix && make")

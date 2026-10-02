@@ -752,6 +752,12 @@ do_endc (ZILCH)
 int
 _psect (ZILCH)
 {
+    if (UsedModule)
+    {
+        return e_report ("mod and psect can't be mixed");
+    }
+
+    SawPsect = 1;
     codsetup ();    /* Set up now to allow reading of real commands */
     do_psect ();
     CodeSize = 0;
@@ -823,6 +829,7 @@ vsectsetup (ZILCH)
     CodTbBgn = S_Rmb3;
     CodTbEnd = Rmb3End;
     jmp_ptr = VsecTbl;
+    CurntOrg = 0;       /* as before module.c gave the top level a counter */
     TypeBasic = 0;
 
     if (is_dp ())

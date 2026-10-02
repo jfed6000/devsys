@@ -11,6 +11,7 @@
 /* directives.c */
 int do_rzb(void);
 int do_rmb(void);
+int l1723(void);
 int do_equ(void);
 int do_set(void);
 int do_comon(void);
@@ -68,6 +69,15 @@ void l20a4(int address);
 void RefCreat(struct symblstr *mylabel, int rtyp, int adrs);
 char SkipSpac(void);
 void *getmem(int memreq);
+void do_defines(void);
+/* module.c */
+void mod_pass(void);
+void mod_write(char *bytes, int len);
+int do_mod(void);
+int mod_emod(void);
+int mod_rmb(void);
+int mod_org(void);
+int mod_dot(void);
 /* symtab.c */
 struct symblstr *sym_find(char *name);
 struct symblstr *sym_add(char *name);
@@ -149,6 +159,7 @@ void errexit(char *report);
 /* directives.c */
 int do_rzb();
 int do_rmb();
+int l1723();
 int do_equ();
 int do_set();
 int do_comon();
@@ -206,6 +217,15 @@ void l20a4();
 void RefCreat();
 char SkipSpac();
 void *getmem();
+void do_defines();
+/* module.c */
+void mod_pass();
+void mod_write();
+int do_mod();
+int mod_emod();
+int mod_rmb();
+int mod_org();
+int mod_dot();
 /* symtab.c */
 struct symblstr *sym_find();
 struct symblstr *sym_add();

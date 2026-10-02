@@ -40,6 +40,7 @@ main (argc, argv)
     inccount++;
 
     GetOpts (argc, argv);
+    do_defines ();
 
     if (ListFlg)
     {
@@ -84,8 +85,11 @@ main (argc, argv)
         Pass2 = TRUE;
         read_fil ();
 
-        wrtvalid ();
-        wrt_refs ();
+        if ( ! UsedModule)      /* a module has no ROF header or refs */
+        {
+            wrtvalid ();
+            wrt_refs ();
+        }
 
         if (fclose (SrcFile) != 0)
         {
@@ -132,6 +136,7 @@ read_fil (ZILCH)
 {
 
     precodeset ();
+    mod_pass ();
     HadError = d0025 = FALSE;
     _If_Dpth = FalseIf = d0027 = ListLin = ListPag = 0;
     list_lin = d00da = 0;
@@ -183,6 +188,7 @@ AsmblLin (ZILCH)
 {
     char _curch;
     MACDSCR *_macdsc;
+    int _modcmd;
 
     NumBytes = Is_W
              = AIMFlg
@@ -450,6 +456,16 @@ AsmblLin (ZILCH)
                             }
                         }
 
+                        /* Inside a module, emod, rmb and org come first */
+
+                        _modcmd = 0;
+
+                        if ((Cod_Ent == 0) && InModule &&
+                            (Cod_Ent = FindCmd (LabelName, S_Module, SModEnd)))
+                        {
+                            _modcmd = 1;
+                        }
+
                         /* If a Cod_Ent has not yet been found, try
                          * the default list
                          */
@@ -510,7 +526,8 @@ AsmblLin (ZILCH)
                              * more than 16 entries in one of the tables.
                              */
 
-                            if ( ! (*jmp_ptr[(jsrOfst & 0x1f)]) ())
+                            if ( ! (_modcmd ? (*ModTbl[(jsrOfst & 0x1f)]) ()
+                                            : (*jmp_ptr[(jsrOfst & 0x1f)]) ()))
                             {
                                 return 0;
                             }

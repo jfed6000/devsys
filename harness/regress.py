@@ -156,13 +156,7 @@ def lwdiff_inputs():
     gen = lwdiff.make_generated(workdir)
     jobs = []
     for job in lwdiff.collect(nitros9, "l2", "jr2", workdir):
-        args = []
-        if job["defines"]:
-            pre = os.path.join(workdir, job["id"] + ".defines.a")
-            with open(pre, "w") as f:
-                f.write("\n".join(lwdiff.define_lines(job["defines"])) + "\n")
-            args.append(pre)
-        args.append(job["source"])
+        args = [job["source"]] + [f"-D{d}" for d in job["defines"]]
         incs = [os.path.dirname(job["source"])] + job["includes"] + [gen]
         args += [f"-i={d}" for d in incs]
         jobs.append({"id": "lwdiff/" + job["id"], "cwd": job["cwd"], "args": args})
@@ -242,6 +236,9 @@ def main():
     ap.add_argument("--ref", default="HEAD", help="git revision to compare against (default HEAD)")
     ap.add_argument("--show", type=int, default=10, help="how many differences to print")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--skip", action="append", default=[], choices=["rma", "dcc", "lwdiff"],
+                    help="leave out an input group, e.g. --skip lwdiff when a change is meant "
+                         "to alter NitrOS9 results (compare those with lwdiff.py instead)")
     ap.add_argument("--current", help="test this las binary instead of building las/build/unix "
                     "(e.g. las/build/asan/las, with ASAN_OPTIONS=detect_leaks=0)")
     args = ap.parse_args()
@@ -254,9 +251,9 @@ def main():
     for w in warnings:
         print("build warning:", w, file=sys.stderr)
 
-    rma = rma_inputs()
-    dcc, csources = dcc_inputs()
-    lwd = lwdiff_inputs()
+    rma = [] if "rma" in args.skip else rma_inputs()
+    dcc, csources = ([], 0) if "dcc" in args.skip else dcc_inputs()
+    lwd = [] if "lwdiff" in args.skip else lwdiff_inputs()
     jobs = rma + dcc + lwd
 
     def one(job):

@@ -26,6 +26,9 @@ Out of scope for now: Level 1, other CoCo platforms, ANSI C.
 | D6 | Keep all three **source** styles | So the same files keep building with lwasm on Linux. |
 | D7 | Symbol table: **compact entries + banked blocks + precompiled defs**, behind one interface | See §6. Memory measurements show long names don't fit otherwise. |
 | D8 | The fork is named **`las`** and lives in `devsys/las`, inside the single `devsys` git repo. Clean break from upstream: forked from `gitlab.com/debmint/rma` commit `e82adeb`, no upstream history or remotes kept; we won't contribute back. The project will get its own remote later (owner to set up) | It will behave differently from RMA (lwasm syntax, module output, long names), and must coexist with Microware `rma`/`c.asm` on the F256. DCC calls the assembler by name: change `ASSEMBLER` in `CoCoC/Source/Compiler/DCC/dcc.h:24` to `"las"`. |
+| D9 | A module is assembled as a **psect at address 0**, in `las/module.c` | In a psect, RMA's code bytes hold offsets from the psect start, which for a module starting at 0 are the final addresses, so RMA's tested instruction code is reused and relocation records are simply not written. Module labels and `*` are plain numbers (no relocation flag), as in lwasm, so any expression lwasm accepts works. |
+| D10 | lwasm's location counters: outside a module one counter (`*` = `.`; `org` sets it, `rmb` advances it); inside `mod`…`emod` two (`*` code, `.` data, both from 0; `rmb`/`org` work on `.`). `rmb` never writes bytes. Output is every emitted byte in order. | Measured from lwasm 4.25's behaviour, not its source (the source suggested a quirk the binary doesn't have). |
+| D11 | `-D NAME[=value]` (upper-case D; `-d` stays RMA's page depth) defines a `set` symbol before assembly | The harness needed it: RMA assembles each input file as a separate unit, so a "defines" prelude file wrote its own (empty) ROF trailer into module output. |
 
 ## 3. Source styles the fork must accept
 
@@ -58,7 +61,7 @@ Measured against the 370 files in `level1/wildbits`, `level2/wildbits`,
 
 | Feature | Files using it | RMA today |
 |---|---|---|
-| `mod` / `emod` | most | ❌ bad mnemonic |
+| `mod` / `emod` | most | ✅ phase 3 (`las/module.c`) |
 | `foo@` local labels (scoped) | 127 | ❌ treated as global → "redefined name" |
 | `fill`, `ifndef` | 50 | ❌ |
 | `<<`, `>>` | ~40 uses | ❌ bad operator |
@@ -212,6 +215,18 @@ difference is a failure; use lwdiff for intended changes. Checked both ways:
 unchanged code passes, and a deliberate change (64 → 32 hash buckets) fails
 617 of 740.
 
+**An intended change to RMA behaviour (phase 3).** Giving the top level a
+location counter changed 58 of the 450 RMA/DCC regression inputs. All 58
+include CoCoC's `Defs/os9defs.a`-style defs, which (edited for lwasm) define a
+`csect` macro under `IFGE LWASM`. RMA defines the macro anyway (undefined
+symbol in a condition), and before phase 3 its `ORG` and the following
+top-level `rmb` lines failed silently in pass 1, so every system call name
+(`F$Sleep`…) stayed undefined and became an external reference. Now they get
+their real values. Checked file by file: no file gained a new kind of error,
+errors fell (15 C library files 273 → 14 each), `getc.a` now assembles
+cleanly. Use `regress.py --skip lwdiff` while a change is meant to alter
+NitrOS9 results.
+
 Both harnesses run every `las` call in its own empty directory, because las
 writes its macro work file under a fixed name (`rma.tmp`, `rma.h:204`) in the
 current directory.
@@ -223,8 +238,9 @@ current directory.
 | **0. Harness** | Linux build of fork; diff harness over Level 2 wildbits tree; baseline report | report lists every file and its status | **done** 2026-10-02. Baseline: 0 of 290 match (267 errors, 23 fatal) |
 | **1. Symbol interface** | Put RMA's symbol code behind `sym_find` / `sym_add` | output byte-identical to unmodified RMA | **done** 2026-10-02. `las/symtab.c`: `sym_find`, `sym_add`, `sym_walk`; tree code removed from `labels.c`/`file_io.c`. regress.py: 740 of 740 identical |
 | **2. Compact entries** | Variable-length names | identical output, memory use measured | **done** 2026-10-02. `symblnam[1]` as last member, allocated at the name's length. regress 740/740; AddressSanitizer build clean on all 740 (and catches a deliberate 4-byte under-allocation). Measured: see §6 |
-| **3. Module mode** | `mod`/`emod`, header, CRC | simple `.asm` commands match lwasm | not started |
-| **4. lwasm syntax** | `@` locals, `ifdef/ifndef`, `fill`, `fcn`, `<<`/`>>`, `;` comments, CR/LF/CRLF, `-D`, data outside sections, pragma behaviours (see §4) | most `.asm` files match | not started |
+| **3. Module mode** | `mod`/`emod`, header, CRC | simple `.asm` commands match lwasm | **done** 2026-10-02. 72 of 290 match lwasm byte for byte (verified independently: header parity and CRC recomputed). Also top-level `org`/`rmb`, `.` and `*` counters, `-D`. AddressSanitizer clean |
+| **3b. Operand sizing** | Choose the shortest form like lwasm: `,pcr` 8/16-bit offsets (and check extended vs direct, index offsets). Backward references are easy; forward references need extra sizing passes (lwasm builds with `noforwardrefmax` and iterates) | the 16 DIFF files that are 1–5 bytes longer match | not started |
+| **4. lwasm syntax** | `@` locals, `ifdef/ifndef`, `fill`, `fcn`, `<<`/`>>`, `;` comments, CR/LF/CRLF, code and data outside a module (`fcb` at top level, 28 files), case-insensitive symbols (`HW.PAGE` vs `HW.Page`), undefined symbols in conditions = 0 (15 `ifne H6309`), `ifp1` counters, pragma behaviours (see §4) | most `.asm` files match | not started |
 | **5. Object mode** | `section`/`export` → ROF; header defaults | `.as` files link with rlink and match | not started |
 | **6. Long names downstream** | rlink and DCC name limits; DCC `ASSEMBLER` → `"las"` | 24-char names survive compile → link | not started |
 | **7. Native build** | Compile fork + rlink + DCC with DCC; run on F256 | assembles `scfg.asm` on the F256 | not started |
@@ -246,6 +262,9 @@ catch DCC/K&R surprises.
 - [ ] How much RAM does the target F256 have free for symbol blocks?
 - [ ] DCC limits (no `void`, `enum`, `const`) when compiling the fork natively.
 - [ ] Does anything in the build depend on lwasm listing or map output?
+- [ ] `errexit()` exits with `errno`, which is 0 unless a system call just failed, so some fatal errors (e.g. "bad -D value", "symbol table overflow") report success to the shell. Fix: exit 1 when errno is 0. Changes exit codes, so do it as its own small step.
+- [ ] `ifp1` blocks are read only in pass 1 (lwasm reads them in every pass). The defs move the location counter (lwasm leaves `*` = 8 after the Level 2 wildbits defs), so a file with top-level code after the defs would phase-error. Fix in phase 4: save the counters at the end of an `ifp1` block in pass 1 and restore them when pass 2 skips it.
+- [ ] RMA assembles each input file as a separate unit (both passes, then that file's ROF trailer). Fine for ROF libraries; for modules, pass one source file.
 - [ ] las's macro work file has a fixed name (`rma.tmp` in the current directory), so two las runs in one directory collide, natively too. Use a unique name (process ID) or a temp directory.
 - [ ] Phase 8 (banked blocks): symbol fields (`smbltyp`, `locmsk`, `s_ofst`, `reftbl`) are still read directly through pointers in `labels.c`, `directives.c`, `registers.c`, `file_io.c`, and `ref_xtrnal.r_offset` stores symbol pointers cast to `int`. Phase 1 isolated *finding and storing*; banking also needs those pointers to stay valid, so decide in phase 8 whether entries stay in main memory and only names move to banks.
 - [ ] Variable-length symbols on the 6809: the Linux build pads `struct symblstr` to a multiple of 4, so AddressSanitizer can't see an under-allocation of 1–3 bytes there. The 6809 build has no padding, so such a bug would corrupt memory only natively. Keep `sizeof (struct symblstr) + strlen (name)` and don't trim it.

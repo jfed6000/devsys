@@ -213,6 +213,13 @@ GLOBAL char d0587[SYMLEN],
             _ttl[128];
 GLOBAL char CmdMnemonic[SYMLEN];
 GLOBAL long reptFpos;
+/* OS-9 module format (module.c) */
+GLOBAL int AbsCtr,      /* location counter outside any section/module */
+           DataCtr;     /* data counter (".") inside a module */
+GLOBAL char InModule,   /* between mod and emod */
+            UsedModule, /* this file has a module: raw output, no ROF */
+            SawPsect;   /* this file has a psect */
+
 GLOBAL struct ref_ent  d0791[SYMLEN],
                        *OptBPtr;
 

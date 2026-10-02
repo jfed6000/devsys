@@ -12,7 +12,10 @@ GLOBAL CODFORM S_Psec[]
     {"psect", 0x00, 0},
     {"csect", 0x00, 1},
     {"vsect", 0x00, 2},
-    {"end",   0x06, 3}
+    {"end",   0x06, 3},
+    {"mod",   0x00, 4},     /* module.c */
+    {"org",   0x00, 5},
+    {"rmb",   0x00, 6}
 }
 #endif
 ;
@@ -146,6 +149,16 @@ GLOBAL CODFORM S_realcmds[]
 #endif
 ;
 
+/* Checked first inside a module (module.c) */
+GLOBAL CODFORM S_Module[]
+#ifdef MAIN
+= {
+    {"emod", 0x00, 0},
+    {"rmb",  0x00, 1},
+    {"org",  0x00, 2}
+}
+#endif
+;
 GLOBAL CODFORM S_Rmb[]
 #ifdef MAIN
 = {
@@ -281,6 +294,11 @@ GLOBAL direct CODFORM *PSecEnd
 #ifdef MAIN
     = endof (S_branch)
 #endif
+    ,
+    *SModEnd
+#ifdef MAIN
+    = endof (S_Module)
+#endif
     ;
 
         /* The next section comes from part3.c */
@@ -306,7 +324,8 @@ GLOBAL JMPTBL j_secs[]
 #ifdef MAIN
     = {
     _psect, csectsetup,
-    vsectsetup, asm_dirct
+    vsectsetup, asm_dirct,
+    do_mod, mod_org, mod_rmb
 }
 #endif
 ;
@@ -332,6 +351,20 @@ int (*codtabl[]) ()
 #endif
 ;
 
+/* ModTbl: S_Module's handlers (module.c) */
+GLOBAL
+#ifdef COCO
+int (*ModTbl[]) ()
+#else
+    JMPTBL ModTbl[]
+#endif
+#ifdef MAIN
+    =
+{
+    mod_emod, mod_rmb, mod_org
+}
+#endif
+;
 /* CsecTbl is  a csect */
 
 GLOBAL

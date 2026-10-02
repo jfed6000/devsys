@@ -343,8 +343,15 @@ get_param (ZILCH)
             }
 
             break;
+        case '.':       /* data counter in a module, else same as '*' */
+            NmbrInt = mod_dot ();
+            break;
         case '*':
-            if (S_Addrs == 0)
+            if (InModule)
+            {
+                NmbrInt = CodeSize;     /* module addresses are plain numbers */
+            }
+            else if (S_Addrs == 0)
             {
                 if (CurntOrg == 0)
                 {

@@ -108,6 +108,86 @@ static void ck_xtrnl();
  *          inline options (read from source file)          *
  * ******************************************************** */
 
+/* -DNAME[=value] definitions from the command line (lwasm's -D) */
+
+static char *Defines[32];
+static int DefCount;
+
+/* ******************************************************** *
+ * do_defines() - Create a "set" symbol for each -D option, *
+ *          as if the source began with "NAME set value".   *
+ *          The value defaults to 1 and may be decimal,     *
+ *          $hex or 0x hex, like lwasm's.                   *
+ * ******************************************************** */
+
+void
+do_defines (ZILCH)
+{
+    int i;
+
+    for (i = 0; i < DefCount; ++i)
+    {
+        char name[SYMLEN];
+        register char *p = Defines[i];
+        register int n = 0;
+        long val = 1;
+        struct symblstr *sym;
+
+        while (*p && (*p != '=') && (n < SYMLEN - 1))
+        {
+            name[n++] = *p++;
+        }
+
+        name[n] = '\0';
+
+        if (*p == '=')
+        {
+            int base = 10;
+
+            ++p;
+
+            if (*p == '$')
+            {
+                base = 16;
+                ++p;
+            }
+            else if ((p[0] == '0') && ((p[1] == 'x') || (p[1] == 'X')))
+            {
+                base = 16;
+                p += 2;
+            }
+
+            for (val = 0; *p; ++p)
+            {
+                int d = ((*p >= '0') && (*p <= '9')) ? (*p - '0')
+                      : ((*p >= 'a') && (*p <= 'f')) ? (*p - 'a' + 10)
+                      : ((*p >= 'A') && (*p <= 'F')) ? (*p - 'A' + 10) : 99;
+
+                if (d >= base)
+                {
+                    errexit ("bad -D value");
+                }
+
+                val = val * base + d;
+            }
+        }
+
+        if (n == 0)
+        {
+            errexit ("bad -D option");
+        }
+
+        if ( ! (sym = sym_find (name)))
+        {
+            sym = sym_add (name);
+        }
+
+        sym->smbltyp = CODENT | INIENT;     /* a "set" symbol */
+        sym->locmsk = RELATIVE | DIRENT;    /* defined, a plain number */
+        sym->s_ofst = val;
+    }
+}
+
 void
 #ifdef __STDC__
 GetOpts (unsigned _argc, char **_argv)  /* parse parameter line */
@@ -125,7 +205,18 @@ GetOpts (_argc, _argv)
 
     while (--_argc)
     {
-        if (**_argv == '-')
+        if ((**_argv == '-') && ((*_argv)[1] == 'D'))
+        {
+            /* -D is case-sensitive: lower-case -d is the page depth */
+
+            if (DefCount >= 32)
+            {
+                errexit ("too many -D options");
+            }
+
+            Defines[DefCount++] = *_argv + 2;
+        }
+        else if (**_argv == '-')
         {
             SrcChar = *_argv + 1;
             set_opts ();        /* Check to see if SrcChar must be passed */
@@ -640,6 +731,12 @@ w_ocod (_codaddr, _codlen)
     if (S_Addrs && _codlen)
     {
         *S_Addrs += _codlen;
+
+        if (InModule)
+        {
+            mod_write (_codaddr, _codlen);
+            return;
+        }
 
         if ( (Pass2) && (DLocField & DIRENT) && (OutFile) && (OFlg > 0) )
         {
