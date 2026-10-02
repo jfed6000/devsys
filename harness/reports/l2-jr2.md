@@ -1,6 +1,6 @@
 # lwdiff report: l2 / jr2
 
-Run 2026-10-02 17:53. 290 assemblies from a dry run of `recipes/wildbits/l2` (PLATFORM=jr2).
+Run 2026-10-02 19:12. 290 assemblies from a dry run of `recipes/wildbits/l2` (PLATFORM=jr2).
 
 Corpus: `nitros9` 2bc03298, `nitros9-languages` c05f23c3.
 

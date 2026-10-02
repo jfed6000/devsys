@@ -34,6 +34,7 @@ case-insensitively, as RBF does.
 import argparse
 import datetime
 import os
+import time
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -280,7 +281,7 @@ class Process:
                 out.append(self.where(r))
             if len(out) == 40:
                 break
-        print(f"break {name}: S=${c.s:04X} " + " <- ".join(out), file=sys.stderr)
+        print(f"break {name}: D=${(c.a << 8) | c.b:04X} X=${c.x:04X} Y=${c.y:04X} S=${c.s:04X} " + " <- ".join(out), file=sys.stderr)
 
     # ----------------------------------------------------------- helpers
     def name_at(self, addr):
@@ -516,6 +517,16 @@ class Process:
             else:
                 n = f.f.tell()
             c.x, c.u = n >> 16, n & 0xFFFF
+        elif code == 0x0F:                                 # SS.FD
+            if f.scf:
+                raise OS9Error(E_UNKSVC)
+            f.f.flush()
+            st = os.fstat(f.f.fileno())
+            t = time.localtime(st.st_mtime)
+            fd = bytes([0x1B, 0, 0, t.tm_year - 1900, t.tm_mon, t.tm_mday, t.tm_hour,
+                        t.tm_min, 1]) + st.st_size.to_bytes(4, "big") + bytes(3)
+            n = min(c.y, len(fd))
+            m[c.x:c.x + n] = fd[:n]
         elif code == 0x06:                                 # SS.EOF
             if not f.scf:
                 f.f.flush()

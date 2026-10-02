@@ -29,6 +29,12 @@ Suites (default: all):
         libnet and libalib, and native rlink --lwlink links the build's 13
         programs. Objects must equal las/build/nosz's, programs the host
         rlink's from those objects. Not in the default set
+  img   phase 9: the 57 commands of level1/cmds (one directory, one
+        configuration, as the real build has them) assembled twice by
+        native las: without a defs image, then with --defsimg (the first
+        records it, the others load it). Every module both times must
+        equal las/build/nosz's; the emulated clock (date -t) is read
+        before and after each round. Not in the default set
 
   python3 harness/native.py                  # las, link, cc
   python3 harness/native.py lw --only scfg   # one NitrOS9 file
@@ -422,6 +428,94 @@ def suite_lw(dsk):
     return lines, check
 
 
+IMGDIR = "level1/cmds"
+
+
+def suite_img(dsk):
+    """Phase 9: one directory's commands, without and with a defs image."""
+    import json
+    staged = [(j, f) for j, f in stage_lw()
+              if os.path.dirname(j["source"]).endswith("/" + IMGDIR)]
+    # its commonest configuration: one image serves them all
+    import collections
+
+    def key(j):
+        return json.dumps([j["defines"], j["pragmas"], j["includes"]])
+    common = collections.Counter(key(j) for j, _ in staged).most_common(1)[0][0]
+    staged = [(j, f) for j, f in staged if key(j) == common]
+    placed = {}
+    for j, files in staged:
+        for path, place in files:
+            if placed.setdefault(place, path) != path:
+                sys.exit(f"img: {place} would be two files")
+    os9("makdir", f"{dsk},T", check=False)
+    for d in ("T/S", "T/G", "T/G/src", "T/G/P", "T/G/I"):
+        os9("makdir", f"{dsk},{d}", check=False)
+    for place, path in placed.items():
+        target = "T/G/" + place[2:] if place.startswith("J/") else "T/" + place
+        if os.path.dirname(target) not in ("T/S", "T/G", "T/G/src"):
+            os9("makdir", f"{dsk},{os.path.dirname(target)}", check=False)
+        put(path, f"{dsk},{target}", text=is_text(path))
+    argfile = os.path.join(WORK, "args.tmp")
+    rounds = ([], [])
+    for n, (j, _) in enumerate(staged):
+        src = os.path.basename(j["source"])
+        for r, (sub, extra) in enumerate((("P", []), ("I", ["--defsimg=/dd/T/G/IMG"]))):
+            with open(argfile, "w") as f:
+                f.write("\n".join(lw_args(j) + ["-i=/dd/T/S", f"-o=/dd/T/G/{sub}/M{n}"]
+                                  + extra) + "\n")
+            put(argfile, f"{dsk},T/G/src/{'AB'[r]}{n}", text=True)
+            # the shell won't redirect into an existing file (#218)
+            rounds[r].append(f"las {src} --args={'AB'[r]}{n} >/dd/T/G/L{sub}{n} >>/dd/T/G/E{sub}{n}")
+    lines = ["chd /dd/T/G/src", "date -t >/dd/T/T0"] + rounds[0] + \
+            ["date -t >/dd/T/T1"] + rounds[1] + ["date -t >/dd/T/T2"]
+
+    def check():
+        import datetime
+        hostroot = os.path.join(WORK, "imghost")
+        for place, path in placed.items():
+            t = os.path.join(hostroot, "G", place[2:]) if place.startswith("J/") \
+                else os.path.join(hostroot, place)
+            os.makedirs(os.path.dirname(t), exist_ok=True)
+            shutil.copyfile(path, t)
+        bad = skipped = 0
+        for n, (j, _) in enumerate(staged):
+            ref = os.path.join(hostroot, f"ref{n}")
+            subprocess.run([NOSZ, os.path.basename(j["source"])] + lw_args(j) +
+                           ["-i=" + os.path.join(hostroot, "S"), "-o=" + ref],
+                           cwd=os.path.join(hostroot, "G", "src"), env=lwdiff.clean_env(),
+                           capture_output=True)
+            want = open(ref, "rb").read() if os.path.exists(ref) else None
+            if want is None:
+                skipped += 1        # fails on Linux too (minted: struct)
+                continue
+            for sub in "PI":
+                out = os.path.join(WORK, "img", sub, j["id"])
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                ok = get(f"{dsk},T/G/{sub}/M{n}", out)
+                if not (ok and want is not None and open(out, "rb").read() == want):
+                    bad += 1
+                    err = (os9_text(f"{dsk},T/G/E{sub}{n}") or "").strip()
+                    print(f"  img {j['id']} ({'with' if sub == 'I' else 'without'} image): "
+                          f"{'differs' if ok else 'no output'} {err[:150]}")
+        if get(f"{dsk},T/G/IMG", os.path.join(WORK, "img", "IMG")):
+            print(f"  image: {os.path.getsize(os.path.join(WORK, 'img', 'IMG'))} bytes")
+        times = [(os9_text(f"{dsk},T/T{k}") or "").strip() for k in range(3)]
+        print(f"  clock: {times}")
+        try:
+            ts = [datetime.datetime.strptime(t, "%B %d, %Y  %H:%M:%S") for t in times]
+            a, b = (ts[1] - ts[0]).total_seconds(), (ts[2] - ts[1]).total_seconds()
+            print(f"  emulated time: {a:.0f} s without the image, {b:.0f} s with it "
+                  f"({len(staged)} files)")
+        except (ValueError, IndexError):
+            pass
+        total = 2 * (len(staged) - skipped)
+        print(f"img: {total - bad} of {total} modules identical to las/build/nosz"
+              + (f" ({skipped} sources that fail on Linux too left out)" if skipped else ""))
+        return bad == 0
+    return lines, check
+
+
 def link_cmds():
     """The build's lwar and lwlink commands (lwdiff re-reads the recipe's
     dry run), with each object named by its job id."""
@@ -577,7 +671,7 @@ def suite_obj(dsk):
 
 
 SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc, "lw": suite_lw,
-          "obj": suite_obj}
+          "obj": suite_obj, "img": suite_img}
 DEFAULT = ["las", "link", "cc"]
 
 
