@@ -216,6 +216,7 @@ html { scroll-behavior: smooth; }
     <li><a href="#memory">Level 2 memory</a></li>
     <li><a href="#symbols">Symbol tables</a></li>
     <li><a href="#testing">Testing against lwasm</a></li>
+    <li><a href="#native">Running on the F256</a></li>
     <li><a href="#project">Where this leads</a></li>
     <li><a href="#glossary">Glossary</a></li>
   </ol>
@@ -953,25 +954,98 @@ bucket (char *name)
 <p><strong>Make sure the test doesn't disturb itself.</strong> The first run failed with no code changes at all. The assembler writes macro expansions to a scratch file with a fixed name, <code>rma.tmp</code>, in the current directory. Running the old and new versions side by side in the same directory let them overwrite each other's scratch file. The fix was to give every run its own empty directory. It also revealed a real problem to fix later: two assemblies in one directory on the F256 would collide the same way.</p>
 
 <!-- 11 -->
-<section class="ch" id="project">
-<h2><span class="num">CHAPTER 11</span>Where this leads</h2>
-<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256.</p>
-<p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
+<section class="ch" id="native">
+<h2><span class="num">CHAPTER 11</span>Running on the F256</h2>
+<p>Everything so far ran on Linux. The goal is to run the tools on the F256 itself. This chapter covers how they got there (phase 7), what broke on the way, and how we test programs on a machine we can't easily watch.</p>
+
+<h3>Cross and native</h3>
+<p>A <strong>native</strong> compiler runs on the machine it makes code for. A <strong>cross compiler</strong> runs on one machine and makes code for another. Our Linux build of DCC is a cross compiler: it runs on a PC and writes 6809 assembly.</p>
+<p>That solves a chicken-and-egg problem. To compile <code>las</code> on the F256 you need a C compiler running on the F256, and DCC itself is a C program that needs compiling. Making a tool build itself is called <strong>bootstrapping</strong>, after pulling yourself up by your bootstraps. The usual way out, and ours, is to cross-compile the first native version on a machine that already has the tools.</p>
+<p><code>native/GNUmakefile</code> does that. Each C file goes through the same four passes the <code>dcc</code> driver runs on the F256: <code>dcpp</code> (preprocessor), <code>dcc68</code> (compiler), <code>dco68</code> (optimizer) and <code>las</code> (assembler). Then <code>rlink</code> joins the objects with CoCoC's <code>cstart.r</code> and C library. Only the machine running the passes differs. The six tools it builds:</p>
+<div class="scroll"><table>
+<thead><tr><th>Tool</th><th>Module bytes</th><th>CoCoC's native build</th></tr></thead>
+<tbody>
+<tr><td><code>las</code></td><td>34,149</td><td>20,143 (<code>rma</code>)</td></tr>
+<tr><td><code>rlink</code></td><td>18,654</td><td>14,660</td></tr>
+<tr><td><code>dcc</code></td><td>9,589</td><td>9,635</td></tr>
+<tr><td><code>dcpp</code></td><td>19,014</td><td>18,840</td></tr>
+<tr><td><code>dcc68</code></td><td>48,290</td><td>48,521</td></tr>
+<tr><td><code>dco68</code></td><td>11,558</td><td>11,187</td></tr>
+</tbody></table></div>
+<p><code>las</code> is the one that grew: it now speaks two dialects and builds modules and lwasm objects. That size matters below.</p>
+
+<h3>What fits in 64K, measured</h3>
+<p>Chapter 8 said a Level 2 process gets one 64K address space, split into eight 8K slots. A module is mapped in whole blocks at the top, and data grows up from <code>$0000</code>. Here is the real map of <code>las</code> on the F256:</p>
+<div class="memmap" role="img" aria-label="las on the F256: module in five blocks from $6000, data below">
+  <div class="addr">$E000</div><div class="blk code">las module (ends at $E565)</div>
+  <div class="addr">$C000</div><div class="blk code">las module</div>
+  <div class="addr">$A000</div><div class="blk code">las module</div>
+  <div class="addr">$8000</div><div class="blk code">las module</div>
+  <div class="addr">$6000</div><div class="blk code">las module (34,149 bytes from here)</div>
+  <div class="addr">$4000</div><div class="blk data">symbols, as sbrk asks for more</div>
+  <div class="addr">$2000</div><div class="blk data">symbols</div>
+  <div class="addr">$0000</div><div class="blk data">static data and stack: 7,872 bytes</div>
+</div>
+<p>That leaves about 16K for the symbol table. The C toolchain's own sources fit: the largest, <code>rma_main.a</code>, takes las to 24,064 bytes of data, 512 bytes short of the module. <code>scfg.asm</code> needs about 41K for its 1,933 symbols, and on the F256 it stops with <code>symbol table overflow</code>. Chapter 9 predicted this. It's why phase 8 maps extra blocks in and out.</p>
+<p><strong>Two rules we found by measuring.</strong> <code>dcc68</code> first ran out of memory on a one-line program. Given the 16K of data CoCoC's own <code>dcc68</code> asks for, it refused to start at all, with <code>ERROR #207</code> (memory full). So did CoCoC's <code>dcc68</code>. Tiny test modules of chosen sizes, each asking for memory, found the reasons:</p>
+<ul>
+<li>A module in 6 blocks may be at most 48,384 bytes: it must end by <code>$FD00</code>. On this NitrOS9 the top 768 bytes of every process are reserved. One byte more and the module takes a 7th block. On a CoCo 3 the reserved part is the top 512 bytes, which is presumably why CoCoC's 48,521-byte <code>dcc68</code> was fine there.</li>
+<li>F$Fork won't start a process whose module and <em>initial</em> data fill all 8 slots. A running process can still grow to all 8 with F$Mem, which is what las does above.</li>
+</ul>
+<p>So <code>dcc68</code> now starts with a small data area and grows it with <code>sbrk</code>. It is compiled without stack checks and without profiling support, and the optimizer's Level 2 patterns shrink it a little more. Those patterns use a Level 2 fact: a program's data starts at address 0, so the data pointer <code>Y</code> is always 0, and <code>leax &gt;1234,y</code> (4 bytes) can become <code>ldx #1234</code> (3 bytes). The result is 48,290 bytes, 94 under the line.</p>
+
+<h3>Old C, new surprises</h3>
+<p>DCC compiles <strong>K&amp;R C</strong>, the language before the 1989 standard. Code that gcc accepted without a murmur broke in ways only the 6809 build could show.</p>
+<p class="cap">One namespace for every structure member</p>
+<p>In K&amp;R C a structure member's name isn't tied to its structure. <code>x.name</code> means "the bytes at <code>name</code>'s offset from <code>x</code>", whatever <code>x</code> is. RMA's C source has a 6809-only line in <code>las/rma_main.c</code>:</p>
+<pre><code>MLCod.q_long = 0;    /* meant: MLCod.opers.q_long */</code></pre>
+<p><code>q_long</code> belongs to a union inside <code>MLCod</code>, at offset 2. Written this way it means offset 0 of <code>MLCod</code>, so it cleared the opcode that had just been stored there. Every <code>ends</code> directive became opcode 0, which is <code>rmb</code>, and <code>rmb</code> wants an operand:</p>
+<pre><code>*** error - bad operand ***
+00066 0081                     endsect</code></pre>
+<p>gcc never saw the line: it sits under <code>#ifdef COCO</code>. The same rule made DCC reject a structure in rlink's <code>lwsel.c</code>, whose member <code>refs</code> clashed with another structure's <code>refs</code> at a different offset.</p>
+<p class="cap">Arguments with no prototype</p>
+<p>A <strong>prototype</strong> declares a function's parameter types, so the compiler can convert each argument to the right type at the call. K&amp;R C has no prototypes. The caller pushes each argument as it is and the function reads what it expects. In <code>las/directives.c</code>:</p>
+<pre><code>savcurorg (CodeAddrs + NmbrInt);</code></pre>
+<p>On the 6809, <code>NmbrInt</code> is a <code>long</code> (4 bytes) and <code>savcurorg</code> takes an <code>int</code> (2 bytes). The caller pushes 4 bytes and the function reads the first 2. The 6809 stores the high half first, so for any small number the function reads 0. Every <code>rmb</code> in a <code>vsect</code> reserved nothing, and the data size in the ROF header came out 0. gcc can find this kind of bug: <code>-Wtraditional-conversion</code> warns wherever a prototype changes an argument's width. Run over a copy of the source where those values are <code>long</code> on Linux too, it found two places, both now fixed.</p>
+<p>The rest was ordinary porting: no <code>void</code> keyword, no <code>atexit()</code> or <code>ftruncate()</code> in CoCoC's library, and a header search order that found the system's <code>ctype.h</code> instead of the optimizer's own.</p>
+
+<h3>A small model of OS-9</h3>
+<p>MAME takes a couple of minutes per round trip and shows only the end result. So <code>harness/os9run.py</code> models one OS-9 process on Linux. A 6809 emulator (<code>cpu6809.py</code> from your Tempest port) runs the module. Whenever the program makes a system call, the script answers it with a Linux file: <code>I$Open</code>, <code>I$ReadLn</code>, <code>F$Mem</code> and the rest. It reproduced every MAME failure in about a second. Given rlink's link map, it also says who called what:</p>
+<pre><code>break e_report: get_param+278 &lt;- get_param+8 &lt;- do_math+13 …</code></pre>
+<p>That is, something was evaluating an expression for <code>endsect</code>. It led to the <code>q_long</code> bug in minutes. The model's limits are also a lesson. It answers system calls the way the script says, so it can't find a limit it doesn't model. It happily gave <code>dcc68</code> a second data block that the real kernel refuses. Use a model to find bugs quickly; take the verdict from the real thing.</p>
+
+<h3>Testing on the emulated F256</h3>
+<p><code>harness/native.py</code> is the real thing, short of hardware. It copies a Jr2 disk image, installs the tools, libraries and headers, puts the test inputs on it, and writes a <code>startup</code> file. MAME boots the image and the shell runs <code>startup</code>. When the last line writes a marker file, the script copies the results off the image and compares them with the host tools' output. Today:</p>
+<ul>
+<li>native <code>las</code> assembles all 56 assembly files of the toolchain's own C sources, byte for byte the same as Linux <code>las</code>;</li>
+<li>native <code>rlink</code> links rlink, dcc, dcpp and dco68, identical to the Linux links;</li>
+<li>native <code>dcc</code> compiles and links a C program through all five passes on the F256, and the program runs.</li>
+</ul>
+<p>One OS-9 detail cost a run: the shell's <code>&gt;</code> and <code>&gt;&gt;</code> <em>create</em> their file, and creating a file that already exists fails with <code>ERROR #218</code>. Two commands that both wrote their errors to <code>err</code> meant the second never ran.</p>
 </section>
 
 <!-- 12 -->
+<section class="ch" id="project">
+<h2><span class="num">CHAPTER 12</span>Where this leads</h2>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now for everything that fits in one 64K process (chapter 11). Phase 8 handles the rest in one go: las's symbol table and rlink's largest links both move into extra 8K blocks, of which the F256 has plenty.</p>
+<p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
+</section>
+
+<!-- 13 -->
 <section class="ch" id="glossary">
-<h2><span class="num">CHAPTER 12</span>Glossary</h2>
+<h2><span class="num">CHAPTER 13</span>Glossary</h2>
 <dl class="gloss">
   <dt>AddressSanitizer</dt><dd>A compiler option that makes a program stop as soon as it reads or writes outside memory it allocated.</dd>
   <dt>alias</dt><dd>A second name for the same address. rlink adds one when a long name like <code>localtime</code> is wanted and an old library only has its first 8 characters, <code>localtim</code>.</dd>
   <dt>assembler</dt><dd>Turns assembly language into machine-code bytes.</dd>
   <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
   <dt>binary search tree</dt><dd>A tree where each node has up to two branches: earlier-sorting names on the left, later on the right. Each comparison rules out a whole branch.</dd>
+  <dt>bootstrapping</dt><dd>Getting a tool to build itself. The first version has to come from somewhere else, here a cross compiler.</dd>
   <dt>check byte</dt><dd>Byte 8 of a module header: the first 8 bytes XORed together, with every bit flipped. Lets OS-9 recognise a real header.</dd>
   <dt>collision</dt><dd>Two different names that hash to the same bucket.</dd>
   <dt>CRC</dt><dd>Cyclic redundancy check: the 3-byte checksum at the end of every OS-9 module. Run over the whole module, CRC included, it always gives <code>80 0F E3</code>, which is how OS-9 checks a module.</dd>
   <dt>CRLF</dt><dd>Windows line endings: carriage return then line feed. Unix uses LF only; OS-9 uses CR only.</dd>
+  <dt>cross compiler</dt><dd>A compiler that runs on one machine and makes code for another. Our Linux DCC is one.</dd>
   <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
   <dt>dialect</dt><dd>One assembler's version of the shared assembly language. <code>las</code> supports RMA's (default) and lwasm's (<code>--lwasm</code>).</dd>
   <dt>differential testing</dt><dd>Testing a program by giving it and a trusted program the same input and comparing the outputs.</dd>
@@ -983,8 +1057,8 @@ bucket (char *name)
   <dt>hash function</dt><dd>A calculation that turns a name into a number, always the same number for the same name. Used to pick a bucket.</dd>
   <dt>include guard</dt><dd>A condition at the top of an include file that makes the file skip itself if it has already been read.</dd>
   <dt>interface</dt><dd>The set of operations a piece of code offers, with how it works kept private, so the inside can change without affecting callers.</dd>
-  <dt>K&amp;R C</dt><dd>The C language as it was before the 1989 ANSI standard.</dd>
   <dt>knock-on error</dt><dd>An error caused by an earlier error. Fixing the first one makes it disappear.</dd>
+  <dt>K&amp;R C</dt><dd>The C language as it was before the 1989 ANSI standard.</dd>
   <dt>library</dt><dd>A bundle of object files (members). The linker takes only the members it needs.</dd>
   <dt>linker</dt><dd>Joins object files and library members into one program and fills in cross-references.</dd>
   <dt>local label</dt><dd>A label that only exists within part of a file. In lwasm, a name containing <code>@</code>, valid until the next blank line.</dd>
@@ -994,12 +1068,14 @@ bucket (char *name)
   <dt>MMU</dt><dd>Hardware that maps 8K blocks of physical RAM into the 6809's 64K address space.</dd>
   <dt>mod</dt><dd>Starts a module-format source and supplies the header fields.</dd>
   <dt>module</dt><dd>OS-9's unit of executable code: header, body, name, CRC.</dd>
+  <dt>native</dt><dd>Running on the machine it makes code for. A native <code>las</code> runs on the F256.</dd>
   <dt>negative control</dt><dd>A deliberate fault fed to a test to show it can detect a problem.</dd>
   <dt>object file</dt><dd>Assembled code that isn't finished: it still has names to resolve and places to patch.</dd>
   <dt>operator precedence</dt><dd>Which operators are applied first in an expression, as multiplication before addition in arithmetic.</dd>
   <dt>padding</dt><dd>Unused bytes a compiler adds inside or after a structure so its fields line up on convenient addresses.</dd>
   <dt>phasing error</dt><dd>An address that came out different in pass 2 than in pass 1.</dd>
   <dt>position-independent</dt><dd>Code that works wherever it's loaded, because it uses addresses relative to the program counter (<code>,pcr</code>).</dd>
+  <dt>prototype</dt><dd>A function declaration that lists its parameter types, so the compiler converts each argument at the call. K&amp;R C has none.</dd>
   <dt>psect / vsect</dt><dd>RMA's code section and variable section.</dd>
   <dt>refactor</dt><dd>Restructuring code without changing what it does.</dd>
   <dt>reference</dt><dd>In testing, the trusted program whose output counts as correct. Here, lwasm.</dd>
@@ -1016,7 +1092,7 @@ bucket (char *name)
 </dl>
 </section>
 
-<footer>Examples come from real runs on 2026-10-02: lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
+<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
 </main>
 </div>
 

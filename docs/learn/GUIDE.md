@@ -38,8 +38,8 @@ Then add a line to the changelog at the bottom of this file.
    exists in plain words, then show it in the reader's own files.
 4. **Cite real paths** (`level2/wildbits/cmds/gfxstatus.as`,
    `rma/labels.c:621`) so the reader can go and look.
-5. **Every new term goes in the glossary** (chapter 11), alphabetically.
-6. **Keep "Where this leads" (chapter 10) in step with `DESIGN.md`.** It is a
+5. **Every new term goes in the glossary** (chapter 13), alphabetically.
+6. **Keep "Where this leads" (chapter 12) in step with `DESIGN.md`.** It is a
    one-paragraph summary, not a second roadmap.
 7. **Update the footer** with the date and tool versions of the latest runs.
 
@@ -86,7 +86,7 @@ Then add a line to the changelog at the bottom of this file.
 | 4. lwasm syntax | ✅ Ch 4 "Local labels", "Conditions across two passes", "Same symbols, different meaning", "Two dialects in one assembler" |
 | 5. Object mode | ✅ Ch 6 "Two linkers, two module layouts", "Choosing library members", "Values only the linker knows"; ch 9 uninitialised memory |
 | 6. Long names | ✅ Ch 7 "Long names, end to end" (each tool's limit, the collision example, ROF version and aliases for old libraries, testing for one kind of difference) |
-| 7. Native build | Bootstrapping: building tools with themselves; cross vs native compilers |
+| 7. Native build | ✅ Ch 11 "Running on the F256": cross vs native, bootstrapping, the measured 64K map and the F256's two module limits, K&R traps (member namespace, arguments without prototypes), the host model, testing in MAME |
 | 8. Banked blocks | `F$AllRAM`/`F$MapBlk` in detail; (block, offset) pointers; hashing to blocks |
 | 9. Precompiled defs | Saving and reloading a symbol table image; cache invalidation |
 | 10. Libraries | Library members, link order, how rlink searches `.l` files |
@@ -137,3 +137,9 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-02 — Ch 7 "How long can a name be, and why": every name limit in
   the chain and its reason, C89's 31/6 rule (and C99's 63/31), measurements
   from CoCoC and the defs, what a limit costs.
+- 2026-10-02 — Phase 7: new chapter 11 "Running on the F256" (cross and
+  native, bootstrapping, size table, measured las memory map, the $FD00 and
+  F$Fork limits, K&R member namespace and prototype-less arguments, the
+  os9run model, MAME results). Renumbered Where this leads → 12, Glossary →
+  13; ch 12 mentions phase 8's scope. Glossary: bootstrapping, cross
+  compiler, native, prototype.
