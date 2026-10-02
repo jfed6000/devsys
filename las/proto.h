@@ -82,6 +82,13 @@ int preload_find(char *name, int *value);
 void preload_load(void);
 int preload_resolve(struct ref_ent *from, long *value);
 int pl_fix(struct ref_ent *from);
+/* sizing.c */
+void sz_pass(void);
+void sz_label(struct symblstr *sym);
+int sz_pcr(int value, int len8);
+void sz_other(void);
+void sz_trial(void);
+void sz_finish(void);
 /* lwobj.c */
 void sec_pass(void);
 int do_section(void);
@@ -252,6 +259,13 @@ int preload_find();
 void preload_load();
 int preload_resolve();
 int pl_fix();
+/* sizing.c */
+void sz_pass();
+void sz_label();
+int sz_pcr();
+void sz_other();
+void sz_trial();
+void sz_finish();
 /* lwobj.c */
 void sec_pass();
 int do_section();

@@ -628,7 +628,7 @@ do_brnch (ZILCH)
     {
         if (Pass2)
         {
-            _jmpsize = (int)NmbrInt - (unsigned) CodeSize - 2;
+            _jmpsize = (int)NmbrInt - (unsigned) PC_BASE - 2;
             LOC1Msk |= RELATIVE | LOC1BYT;
             rmcoderefs ();
 
@@ -696,10 +696,11 @@ do_ifs (ZILCH)
         {
             _ok = 0;
         }
-        else if (LwasmMode && pl_fix (d0791))
-        {
-            ;                   /* condition on --defs constants */
-        }
+        /* No --defs values here: lwasm can't know link-time values
+         * while assembling, so an undefined symbol in a condition is 0
+         * (condundefzero). Using them skipped os9.d entirely: its guard
+         * "IFNE OS9.D-1" saw the defs library's OS9.D = 1. */
+
         else if (d0791 != OptBPtr)
         {
             /* condundefzero: symbols that are simply undefined count as

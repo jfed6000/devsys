@@ -19,6 +19,12 @@
  * Only a file with __start or __os9 gets a module type; library    *
  * members get 0, as in Microware's clib.l, so rlink sees one root. *
  *                                                                  *
+ * __lwsec, an exported constant, gives the rank of the file's first *
+ * code-like section in lwlink's os9 script (code 0, .text 1, data  *
+ * 2, .data 3, others 4): lwlink lays sections out by that order    *
+ * first and command-line order second, and rlink --lwlink does the *
+ * same with it.                                                    *
+ *                                                                  *
  * With the export pragma, every non-local label defined inside a   *
  * section is exported (do_label), as lwasm does. Symbols that are  *
  * never defined become external references, which RMA already      *
@@ -39,8 +45,11 @@
 #define LOWER(c) ((((c) >= 'A') && ((c) <= 'Z')) ? ((c) + ('a' - 'A')) : (c))
 
 static int SecKind;             /* the section we are in */
+static char SecNames[32][32];   /* section names seen, by CurSecId - 1 */
+static int NSecNames;
 static char SecOrgBad;          /* after an unresolvable org (sec_org) */
 static char SecOpen;            /* the file's psect has been opened */
+static char SecRanked;          /* __lwsec has been set this pass */
 
 /* ******************************************************************** *
  * sec_pass() - Reset at the start of each pass.                        *
@@ -53,6 +62,8 @@ sec_pass (ZILCH)
     SecOpen = 0;
     InSection = 0;
     SecOrgBad = 0;
+    CurSecId = 0;
+    SecRanked = 0;
 
     if ( ! Pass2)
     {
@@ -182,6 +193,40 @@ os9_marker (ZILCH)
 }
 
 /* ******************************************************************** *
+ * rank_marker() - At the file's first code-like section: export the    *
+ *          constant __lwsec, that section's place in lwlink's script.  *
+ * ******************************************************************** */
+
+static void
+#ifdef __STDC__
+rank_marker (char *name)
+#else
+rank_marker (name)
+     char *name;
+#endif
+{
+    static char mname[] = "__lwsec";
+    static char *order[] = {"code", ".text", "data", ".data", 0};
+    struct symblstr *sym = sym_find (mname);
+    int rank;
+
+    for (rank = 0; order[rank] && strcmp (order[rank], name); ++rank)
+    {
+    }
+
+    if ( ! sym)
+    {
+        sym = sym_add (mname);
+        ++GlobCnt;                      /* one more global in the ROF */
+    }
+
+    sym->smbltyp = CODENT | DIRENT;     /* a constant */
+    sym->locmsk = (sym->locmsk & LOC1BYT) | RELATIVE | CODENT | DIRENT;
+    sym->s_ofst = rank;
+    SecRanked = 1;
+}
+
+/* ******************************************************************** *
  * leave_section() - Back to the psect's code context.                  *
  * ******************************************************************** */
 
@@ -200,6 +245,7 @@ leave_section (ZILCH)
 
     SecKind = SEC_NONE;
     InSection = 0;
+    CurSecId = 0;
 }
 
 /* ******************************************************************** *
@@ -249,6 +295,20 @@ do_section (ZILCH)
     InSection = 1;
     SecOrgBad = 0;
 
+    /* A number for each section name, for sizing.c: lwasm can only
+     * work out a ",pcr" offset to a label in the same section */
+
+    for (n = 0; (n < NSecNames) && strcmp (SecNames[n], name); ++n)
+    {
+    }
+
+    if ((n == NSecNames) && (NSecNames < 32))
+    {
+        strcpy (SecNames[NSecNames++], name);
+    }
+
+    CurSecId = n + 1;
+
     if (strcmp (name, "__os9") == 0)
     {
         SecKind = SEC_OS9;
@@ -268,6 +328,11 @@ do_section (ZILCH)
     else
     {
         SecKind = SEC_CODE;
+
+        if ( ! SecRanked)
+        {
+            rank_marker (name);
+        }
     }
 
     if ((SecKind == SEC_OS9) || (SecKind == SEC_CONST))

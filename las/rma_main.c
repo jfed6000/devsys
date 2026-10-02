@@ -77,14 +77,30 @@ main (argc, argv)
                           = (struct ref_xtrnal *) 0;
         Pass2 = *_nam = _ttl[0] = '\0';
 
+        /* lwasm sizes ",pcr" offsets itself: a trial pass 1 in a child
+         * decides them first (sizing.c) */
+
+        if (LwasmMode)
+        {
+            sz_trial ();
+            rewind (SrcFile);   /* the trial moved the shared file offset */
+        }
+
         /* Do pass 1 */
 
+        sz_pass ();
         read_fil ();
+
+        if (SzTrial)
+        {
+            sz_finish ();       /* the trial ends here */
+        }
 
         /* Now pass 2 */
 
         rewind (SrcFile);
         Pass2 = TRUE;
+        sz_pass ();
         read_fil ();
 
         if ( ! UsedModule)      /* a module has no ROF header or refs */

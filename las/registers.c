@@ -83,12 +83,12 @@ brnch_size (ZILCH)
 #ifndef COCO
         short _jmpsiz;
 
-        _jmpsiz = NmbrInt - (int) CodeSize - NumBytes;
+        _jmpsiz = NmbrInt - (int) PC_BASE - NumBytes;
         storInt (opr_ptr, _jmpsiz);
 
         if (_jmpsiz > 127 || _jmpsiz < -128)
 #else
-        if (((opr_ptr->C_Int[0] = (int) NmbrInt - CodeSize - NumBytes) > 127)
+        if (((opr_ptr->C_Int[0] = (int) NmbrInt - PC_BASE - NumBytes) > 127)
             || opr_ptr->C_Int[0] < -128)
 #endif
         {
@@ -192,7 +192,10 @@ regofst (ZILCH)      /*              l10d1()                 */
         c = *(++SrcChar);
     }
 
-    if ((c = skparrow (c)) == ',')      /* ",R" */
+    c = skparrow (c);
+    ExplArrow = HadArrow;               /* "<" or ">" written (sizing.c) */
+
+    if (c == ',')                       /* ",R" */
     {
         AIM_INDXD;
         return l1215 ();
@@ -351,6 +354,11 @@ l11be (ZILCH)
     }
     else
     {
+        if (LwasmMode && ! ExplArrow)
+        {
+            sz_other ();        /* lwasm may leave it unsettled (sizing.c) */
+        }
+
         rmcoderefs ();
         genreflist ();
 #ifdef COCO
@@ -366,6 +374,11 @@ l11be (ZILCH)
 static int
 l11e8 ()
 {
+    if (LwasmMode && ! ExplArrow)
+    {
+        sz_other ();            /* lwasm may leave it unsettled (sizing.c) */
+    }
+
     ++NumBytes;
     LOC1Msk |= LOC1BYT;
     rmcoderefs ();
@@ -873,6 +886,11 @@ l156b ()                        /* THIS FUNCTION IS OK */
 static int
 l1584 ()
 {
+    if (LwasmMode && ! ExplArrow)
+    {
+        sz_other ();            /* lwasm may leave it unsettled (sizing.c) */
+    }
+
     if (  (HadArrow < 0)    ||
           ((HadArrow == 0) && ((IndxVal > 127) || (IndxVal < -128)))
 #ifndef COMPARE
@@ -960,10 +978,25 @@ pc_rel ()                       /* originally  l1602() */
 
     ++NumBytes;
     LOC1Msk |= RELATIVE;
-    IndxVal -= (CodeSize + NumBytes + 1);
+
+    /* lwasm chooses the offset size itself unless "<" or ">" is written:
+     * sizing.c decides, as lwasm would */
+
+    if (LwasmMode && ! ExplArrow)
+    {
+        HadArrow = sz_pcr ((int) IndxVal, NumBytes + 1) ? 1 : -1;
+    }
+
+    IndxVal -= (PC_BASE + NumBytes + 1);
 
     if (HadArrow > 0)
     {
+        if (LwasmMode && Pass2 && ! ExplArrow &&
+                ((IndxVal < -128) || (IndxVal > 127)))
+        {
+            e_report ("8-bit pcr offset out of range (sizing.c)");
+        }
+
         opr_ptr[1] = IndxVal;
         LOC1Msk |= LOC1BYT;
         INDX_BYT |= 0x8c;

@@ -85,6 +85,26 @@ readrofs ()
                     illmainline ();
                 }
             }
+            else if (LwLink)
+            {
+                /* lwlink's layout can put library code before the
+                 * mainline (lwsel.c), so it may be any module */
+
+                if (bh.h_tylan)
+                {
+                    if (TyLang)
+                    {
+                        twomains ();
+                    }
+
+                    TyLang = bh.h_tylan;
+
+                    if (edition == 0)
+                    {
+                        edition = bh.h_edit;
+                    }
+                }
+            }
             else if (rofcount)  /* L07af */
             {
                 if (bh.h_tylan)
@@ -127,6 +147,11 @@ readrofs ()
 
         ++rofcount;
     }                   /* L0878 - end process each file */
+
+    if (LwLink && ! TyLang)
+    {
+        fatal ("no mainline");
+    }
 
     /* All files processed - now set up data */
     /* Do Libraries */
@@ -438,6 +463,16 @@ adj_ofst()
     while (curObj)
     {
         curSym = curObj->symlist;
+
+        /* A module counts as used when something references one of its
+         * symbols; the mainline counted because the builtin symbols are
+         * attached to the first module. In --lwlink mode lw_select chose
+         * every module and the mainline needn't be first, so all count. */
+
+        if (LwLink && curSym)
+        {
+            curSym->Type |= 0x100;
+        }
 
         while (curSym)
         {

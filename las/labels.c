@@ -114,6 +114,11 @@ do_label (ZILCH)
                 _mysmbl->s_ofst = *S_Addrs;
             }
 
+            if (SzTrial && (S_Addrs == (InTop ? &AbsCtr : &CodeSize)))
+            {
+                sz_label (_mysmbl);     /* a code label (sizing.c) */
+            }
+
             /* Count a global for the ROF header once, when first defined.
              * RMA counted at every definition, so an exported "set" symbol
              * set again was counted twice and the header promised more

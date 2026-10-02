@@ -154,6 +154,7 @@ GLOBAL direct int      D0061;
 
 GLOBAL char **filenames;  /* D01f6 */
 GLOBAL char  *lfiles[16];
+GLOBAL int    lpos[16];     /* input files given before each -l (lwsel.c) */
 GLOBAL char   edition;
 GLOBAL char  *NameFile;
 GLOBAL char  *modname;

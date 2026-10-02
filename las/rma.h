@@ -221,6 +221,9 @@ GLOBAL int LocalCtx,        /* local label block number (symtab.c) */
 GLOBAL char InDataDir;      /* evaluating an fcb/fdb value (numeric.c) */
 GLOBAL char IdxLitZero;     /* indexed offset written as "0" (registers.c) */
 GLOBAL char PlUsed;         /* the value used --defs constants (preload.c) */
+GLOBAL char ExplArrow;      /* operand had "<" or ">" (registers.c) */
+GLOBAL char SzTrial;        /* this is the sizing trial (sizing.c) */
+GLOBAL int CurSecId;        /* which lwasm section we are in (lwobj.c) */
 
 /* lwasm pragmas set with --pragma= (file_io.c GetOpts) */
 GLOBAL char PragExport,     /* export: section labels are exported */
@@ -238,6 +241,12 @@ GLOBAL char InModule,   /* between mod and emod */
             TopPending, /* switch to InTop at the start of the next line */
             UsedModule, /* this file has a module: raw output, no ROF */
             SawPsect;   /* this file has a psect */
+
+/* The address of the line being assembled, which branch and ",pcr"
+ * offsets count from: code at the top level (lwasm mode, e.g. after
+ * emod) advances AbsCtr, not CodeSize */
+
+#define PC_BASE (InTop ? AbsCtr : CodeSize)
 
 GLOBAL struct ref_ent  d0791[SYMLEN],
                        *OptBPtr;

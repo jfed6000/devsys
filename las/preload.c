@@ -14,8 +14,9 @@
  * externals, and rlink fills them in. preload_resolve() is called  *
  * only where ROF can't express the reference or the value is       *
  * needed while assembling (operators other than + and -, equ/set,  *
- * org/rmb counts, conditions); it replaces those references with   *
- * their values.                                                    *
+ * org/rmb counts); it replaces those references with their values. *
+ * Never in conditions: lwasm can't see link-time values there, and *
+ * include guards like "IFNE OS9.D-1" would skip the defs.          *
  * **************************************************************** */
 
 #include "rma.h"

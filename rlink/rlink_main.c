@@ -74,6 +74,7 @@ main (argc, argv)
                     case 'l':       /* library           */
                         if (lfilenum < 16)
                         {
+                            lpos[lfilenum] = FileCount;  /* --lwlink order */
                             lfiles[lfilenum++] = curarg;
                         }
                         else
@@ -143,9 +144,9 @@ main (argc, argv)
 
 #endif
 
-    if (LwLink && lfilenum)
+    if (LwLink)
     {
-        lw_select();    /* lwlink's choice of library members (lwsel.c) */
+        lw_select();    /* lwlink's choice and order of modules (lwsel.c) */
     }
 
     readrofs();   /* 02f0 */

@@ -386,14 +386,18 @@ def run_links(jobs, results, args, refdir, lasdir):
             libs_ok[lib[:-2]] = [m for m in members if m not in ok]
             continue
         # lwlink
-        libs, inputs, name = [], [], None
+        # seq keeps libraries and objects in command-line order: lwlink
+        # lays out by it (a library before the program puts its code first)
+        libs, inputs, seq, name = [], [], [], None
         for a in argv[1:]:
             if a.startswith("-l"):
                 libs.append("lib" + a[2:])
+                seq.append(("lib", "lib" + a[2:]))
             elif a.startswith("-o"):
                 name = a[2:]
             elif not a.startswith("-") and a.endswith(".o"):
                 inputs.append(byobj.get(os.path.normpath(os.path.join(cwd, a))))
+                seq.append(("obj", inputs[-1]))
         r = {"id": name, "inputs": inputs, "libs": libs}
         missing = [i for i in inputs if i not in ok]
         refout = os.path.join(refdir, "_link", name)
@@ -402,8 +406,8 @@ def run_links(jobs, results, args, refdir, lasdir):
             if os.path.exists(f):
                 os.remove(f)
         p = subprocess.run([args.lwlink, "--format=os9", "-L", os.path.join(refdir, "_lib")]
-                           + ["-l" + l[3:] for l in libs]
-                           + [os.path.join(refdir, i) for i in inputs if i] + ["-o" + name],
+                           + [("-l" + v[3:]) if k == "lib" else os.path.join(refdir, v)
+                              for k, v in seq if v] + ["-o" + name],
                            cwd=os.path.join(refdir, "_link"), env=clean_env(),
                            capture_output=True, text=True)
         if not os.path.exists(refout):
@@ -415,8 +419,9 @@ def run_links(jobs, results, args, refdir, lasdir):
                 str(m) for m in missing)
             out.append(r)
             continue
-        p = subprocess.run([args.rlink, "--lwlink"] + [os.path.join(lasdir, i) for i in inputs]
-                           + ["-l=" + os.path.join(lasdir, "_lib", l + ".l") for l in libs]
+        p = subprocess.run([args.rlink, "--lwlink"]
+                           + [("-l=" + os.path.join(lasdir, "_lib", v + ".l")) if k == "lib"
+                              else os.path.join(lasdir, v) for k, v in seq]
                            + ["-o=" + name, "-n=" + name],
                            cwd=os.path.join(lasdir, "_link"), env=clean_env(),
                            capture_output=True, text=True)

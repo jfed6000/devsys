@@ -1,19 +1,30 @@
 /* **************************************************************** *
- * lwsel.c - choose library members the way lwlink does (--lwlink)  *
+ * lwsel.c - choose and order modules the way lwlink does (--lwlink)*
  *                                                                  *
- * rlink reads each library once, in order, and lays modules out in *
- * the order it takes them. lwlink instead keeps taking members     *
- * until nothing new is needed, each time the first member (by      *
- * library, then position in it) that defines a still-undefined     *
- * name, and lays out the members it took in library order.         *
+ * rlink reads each library once, in order, takes a member when it  *
+ * defines something still needed, and lays modules out in the      *
+ * order it read them, mainline first. lwlink differs twice:        *
  *                                                                  *
- * lw_select() does that choice up front: it indexes every module's *
- * exported and referenced names, works out the members lwlink      *
- * would take, copies those with code or data, in library order,    *
- * into one temporary ROF file, and makes that an ordinary input    *
- * after the given files. The libraries stay: rlink's own scan then *
- * only finds constants-only members (like the defs library), which *
- * it handles without including a module.                           *
+ *  - choosing: it keeps taking members until nothing new is        *
+ *    needed, each time the first member (by library, then position *
+ *    in it) that defines a still-undefined name;                   *
+ *  - ordering: its os9 script places sections by name first (code, *
+ *    .text, data, .data) and command-line order second, libraries  *
+ *    included at their place on the command line. NitrOS9 links    *
+ *    "-lwildbitsl2 -lnet -lalib prog.o", so a net member (section  *
+ *    code) lands before the program's own code, while an alib      *
+ *    member (.text) lands after it.                                *
+ *                                                                  *
+ * lw_select() does both up front. It indexes every module's        *
+ * exported and referenced names, and the rank las exports as       *
+ * __lwsec; works out the members lwlink would take; and copies     *
+ * every module of the program, in lwlink's order, into one         *
+ * temporary ROF file that becomes rlink's only input. The          *
+ * libraries stay: rlink's own scan then only finds constants-only  *
+ * members (like the defs library), which add no code or data.      *
+ *                                                                  *
+ * las merges a file's sections into one psect, so a file mixing    *
+ * code with .text or data is placed by its first one only.         *
  * **************************************************************** */
 
 #include "rlink.h"
@@ -29,6 +40,8 @@ struct lwmod
     char  *file;
     long   start, end;          /* byte range in the file */
     int    lib;                 /* library index, -1 for an input file */
+    int    ord;                 /* place on the command line */
+    int    rank;                /* section order, from __lwsec */
     int    taken;
     int    hassize;             /* has code or data (not constants-only) */
     int    ndefs, nrefs;
@@ -76,9 +89,10 @@ rdname (fp)
 /* Index every module in a file: what it exports, what it references */
 
 static void
-index_file (name, lib)
+index_file (name, lib, ord)
     char *name;
     int lib;
+    int ord;
 {
     FILE *fp = fopen(name, "r");
     unsigned char h[28];
@@ -89,7 +103,7 @@ index_file (name, lib)
     while (fread(h, 28, 1, fp) == 1)
     {
         struct lwmod *m;
-        int count, i, n;
+        int count, i, n, value;
         long skip;
 
         if (NMods >= MAXMODS)
@@ -99,6 +113,8 @@ index_file (name, lib)
         m->file = name;
         m->start = ftell(fp) - 28;
         m->lib = lib;
+        m->ord = ord;
+        m->rank = 0;
         m->taken = (lib < 0);
         m->hassize = (((h[14] << 8) | h[15]) + ((h[16] << 8) | h[17]) +
                       ((h[18] << 8) | h[19]) + ((h[20] << 8) | h[21]) +
@@ -113,7 +129,10 @@ index_file (name, lib)
         {
             m->defs[i] = rdname(fp);
             getc(fp);                           /* type */
-            rd(fp);                             /* value */
+            value = rd(fp);
+
+            if (!strcmp(m->defs[i], "__lwsec"))
+                m->rank = value;
         }
 
         skip = ((h[22] << 8) | h[23]) + ((h[18] << 8) | h[19]) +
@@ -190,6 +209,21 @@ first_definer (name)
     return 0;
 }
 
+/* lwlink's order: section rank, then command line, then file order */
+
+static int
+lw_order (a, b)
+    struct lwmod **a, **b;
+{
+    if ((*a)->rank != (*b)->rank)
+        return (*a)->rank - (*b)->rank;
+
+    if ((*a)->ord != (*b)->ord)
+        return (*a)->ord - (*b)->ord;
+
+    return (int)(*a - *b);
+}
+
 static void
 lw_cleanup ()
 {
@@ -199,15 +233,26 @@ lw_cleanup ()
 
 lw_select ()
 {
-    char **newnames;
+    struct lwmod **order;
     FILE *out;
-    int i, j, changed;
+    int i, j, n, changed;
+
+    /* Number the files in command-line order: input file i came after
+     * the libraries given before it (lpos, rlink_main.c) */
 
     for (i = 0; i < FileCount; ++i)
-        index_file(filenames[i], -1);
+    {
+        for (n = j = 0; j < lfilenum; ++j)
+        {
+            if (lpos[j] <= i)
+                ++n;
+        }
+
+        index_file(filenames[i], -1, i + n);
+    }
 
     for (i = 0; i < lfilenum; ++i)
-        index_file(lfiles[i], i);
+        index_file(lfiles[i], i, lpos[i] + i);
 
     /* Keep taking members until nothing new is needed */
 
@@ -236,19 +281,21 @@ lw_select ()
         }
     } while (changed);
 
-    /* The chosen members, in library order, as one extra input file */
+    /* Every module of the program in lwlink's order, as one input.
+     * Constants-only members stay in their libraries. */
 
-    for (i = 0; i < NMods; ++i)
+    order = (struct lwmod **)malloc((NMods + 1) * sizeof(*order));
+
+    if (!order)
+        fatal("out of memory in lw_select");
+
+    for (n = i = 0; i < NMods; ++i)
     {
-        if (Mods[i].lib >= 0 && Mods[i].taken && Mods[i].hassize)
-            break;
+        if (Mods[i].lib < 0 || (Mods[i].taken && Mods[i].hassize))
+            order[n++] = &Mods[i];
     }
 
-    if (i == NMods)     /* no code or data needed from the libraries */
-    {
-        return 0;
-    }
-
+    qsort(order, n, sizeof(*order), lw_order);
     sprintf(TmpName, "%.200s.lwsel.r", OutfName);
 
     if (!(out = fopen(TmpName, "w")))
@@ -256,33 +303,27 @@ lw_select ()
 
     atexit(lw_cleanup);
 
-    for (i = 0; i < NMods; ++i)
+    for (i = 0; i < n; ++i)
     {
         FILE *in;
-        long n;
+        long k;
 
-        if (Mods[i].lib < 0 || !Mods[i].taken || !Mods[i].hassize)
-            continue;
+        if (!(in = fopen(order[i]->file, "r")))
+            fatal("can't open '%s'", order[i]->file);
 
-        if (!(in = fopen(Mods[i].file, "r")))
-            fatal("can't open '%s'", Mods[i].file);
+        fseek(in, order[i]->start, 0);
 
-        fseek(in, Mods[i].start, 0);
-
-        for (n = Mods[i].end - Mods[i].start; n > 0; --n)
+        for (k = order[i]->end - order[i]->start; k > 0; --k)
             putc(getc(in), out);
 
         fclose(in);
     }
 
     fclose(out);
+    free(order);
 
-    newnames = (char **)malloc((FileCount + 2) * sizeof(char *));
-
-    for (i = 0; i < FileCount; ++i)
-        newnames[i] = filenames[i];
-
-    newnames[FileCount++] = TmpName;
-    filenames = newnames;
+    filenames = (char **)malloc(2 * sizeof(char *));
+    filenames[0] = TmpName;
+    FileCount = 1;
     return 0;
 }

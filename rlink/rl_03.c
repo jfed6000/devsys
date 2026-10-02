@@ -60,7 +60,14 @@ wrtlwmod()
     mod_hdr.m_tylan = ((int)TyLang) >> 8;
     mod_hdr.m_attrev = TyLang & 0xff;
     mod_hdr.m_parity = pty_gen((char *)(&mod_hdr.m_sync), 8);
-    mod_hdr.m_exec = o9_int(FirstMod->entry + 13);
+    /* lwlink's entry is __start ("entry __start" in its os9 script);
+     * by now its offset includes the module header */
+
+    {
+        SYMDAT *st = lookup ("__start");
+
+        mod_hdr.m_exec = o9_int(st ? st->Offset : FirstMod->entry + 13);
+    }
     mod_hdr.m_store = o9_int(t_idpd + t_udpd + t_idat + t_udat + extramem);
 
     if (!(OutFile = fopen(OutfName, WMODE)))

@@ -17,7 +17,8 @@ remote later; don't add one or push.
 | File | What it is |
 |---|---|
 | `las/` | The assembler: our fork of RMA (from upstream commit `e82adeb`, no upstream history kept). Build: `cd las/build/unix && make`. |
-| `rlink/` | Our fork of rlink (D13): long names, `--lwlink` mode (lwlink's module layout and library choice, `lwsel.c`). Build: `cd rlink && make -f GNUmakefile`. |
+| `rlink/` | Our fork of rlink (D13): long names, `--lwlink` mode (lwlink's module layout, library choice and module order, `lwsel.c`). Build: `cd rlink && make -f GNUmakefile`. |
+| `las/sizing.c` | lwasm's `,pcr` sizing (D16): a forked trial pass 1 decides sizes. If a lwasm-mode file grows by a byte or two, `python3 harness/sizediff.py [id]` lists the instructions whose length differs from lwasm's. |
 | `harness/lwdiff.py` | Compares `las` with lwasm over the real Level 2 build. Run `python3 harness/lwdiff.py` after every change to `las` or `rlink`; `--only NAME --verbose` for one file. Also replays the build's lwar/lwlink commands and compares linked programs (`--rlink`, `--lwlink` options). Object-format files get the constants library as `--defs`. Report in `harness/reports/`. `harness/rofdump.py file.r` prints a ROF file. |
 | `corpus/` | NitrOS9 source the harness assembles: clones of the user's forks (`jfed6000/nitros9`, `jfed6000/nitros9-languages`, branch `devsys`), pinned by `harness/corpus.lock`. Not version-controlled. Set up or restore with `harness/corpus.sh`; `harness/corpus.sh update` moves to the newest `devsys` commits. Don't edit files in it. |
 | `harness/regress.py` | Checks that a change to `las` did **not** change behaviour: compares the working tree with `HEAD` (or `--ref REV`) on ~740 inputs. Must pass for refactors (phases 1, 2, 8, 9). `--skip lwdiff` when a change is meant to alter NitrOS9 results (then check the RMA/DCC differences one by one, as DESIGN.md §8 describes for phase 3). |
