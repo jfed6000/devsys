@@ -166,8 +166,7 @@ GLOBAL
 GLOBAL direct CODFORM *Cod_Ent;
 GLOBAL direct CODFORM *CodTbBgn,
                       *CodTbEnd;
-GLOBAL direct struct symblstr **SblTrePtr,
-                               *CurntLabel,                      /* D007a */
+GLOBAL direct struct symblstr *CurntLabel,                      /* D007a */
                                *CurLclRef;
 GLOBAL struct symblstr          LRefs_Code,
                                 LRefs_DPD,
@@ -214,12 +213,8 @@ GLOBAL char d0587[SYMLEN],
             _ttl[128];
 GLOBAL char CmdMnemonic[SYMLEN];
 GLOBAL long reptFpos;
-/* Note: I believe that only 64 elements of SmblTreArr are used !!! */
-GLOBAL struct symblstr *SmblTreArr[128],
-                       *d078f;
 GLOBAL struct ref_ent  d0791[SYMLEN],
                        *OptBPtr;
-GLOBAL struct symblstr **CurSmblTree;
 
 /* File positions in ROF */
 

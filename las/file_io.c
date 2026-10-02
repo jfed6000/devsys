@@ -80,12 +80,6 @@ static void do_reflist (
 #endif
 );
 
-static void PrnTree (
-#ifdef __STDC__
-    void (function) (struct symblstr * xx)
-#endif
-);
-
 static int DecSFil ();
 
 static void PrtSmbl (
@@ -413,7 +407,7 @@ DoSymTbl (ZILCH)
 {
     printf ("\nSymbol Table\n");
     PgWidth -= 24;
-    PrnTree (PrtSmbl);
+    sym_walk (PrtSmbl);
 
     if (SColumn > 0)
     {
@@ -424,7 +418,7 @@ DoSymTbl (ZILCH)
 }
 
 /* ************************************************************ *
- * PrtSmbl() - Called by PrnTree() to format and print symbol   *
+ * PrtSmbl() - Called by sym_walk() to format and print symbol   *
  *             description to stdout for symbol defined in      *
  *             'struct symblstr *' passed in the parameter      *
  * ************************************************************ */
@@ -598,7 +592,7 @@ do_psect (ZILCH)
 
         if (GlobCnt)
         {
-            PrnTree (wrt_global);
+            sym_walk (wrt_global);
         }
 
         O_idatBegin = (O_idpdBegin = (OCodeBegin = CurFPos = ftell (OutFile)) +
@@ -676,38 +670,6 @@ w_ocod (_codaddr, _codlen)
     }
 }
 
-static void
-#ifdef __STDC__
-PrnTree (void (function) (struct symblstr * xx))
-#else
-PrnTree (function)
-     int (*function) ();
-#endif
-{
-    register struct symblstr *refrnc;
-    int count;
-
-    count = 0;
-
-    while (count < 64)
-    {
-        if ( (refrnc = SmblTreArr[count]) )
-        {
-            while (refrnc->left)    /* Go to leftmost entry in list */
-            {
-                refrnc = refrnc->left;
-            }
-
-            do
-            {
-                (*function) (refrnc);
-            } while ( (refrnc = WlkTreLft (refrnc)) );
-        }
-
-        ++count;
-    }
-}
-
 /* **************************************************************** *
  * wrt_refs() - Write all external, local, dp, non-dp refs          *
  *              and common symbols if applicable                    *
@@ -726,7 +688,7 @@ wrt_refs (ZILCH)
 
         if (ref_cnt)
         {
-            PrnTree (wrtxtrn);
+            sym_walk (wrtxtrn);
         }
 
         /* Write local count */
@@ -760,14 +722,14 @@ wrt_refs (ZILCH)
 
             if (comn_cnt)
             {
-                PrnTree (wrtCmmns);
+                sym_walk (wrtCmmns);
             }
         }
     }
 }
 
 /* ************************************************************ *
- * wrt_global() - PrnTree function.                             *
+ * wrt_global() - sym_walk function.                             *
  *                Writes an entry contained in the symblstr     *
  *                passed as a parameter, into the ROF file      *
  * ************************************************************ */

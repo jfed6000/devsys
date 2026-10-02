@@ -6,10 +6,10 @@ PROG = las
 ODIR = . 
 RDIR = build/os9
 OBJS = rma_main.r findcmd.r part3.r registers.r directives.r labels.r \
-   numeric.r file_io.r macros.r
+   numeric.r file_io.r macros.r symtab.r
 
 PROTOS = rma_main.c findcmd.c part3.c registers.c directives.c labels.c \
-   numeric.c file_io.c macros.c
+   numeric.c file_io.c macros.c symtab.c
 
 CFLAGS = -dCOCO
 LFLAGS = -l=/dd/lib/clib.l -o=las
@@ -20,7 +20,7 @@ CC = cc
 $(PROG): $(OBJS) rma.h
     chd $(RDIR);rlink /dd/lib/cstart.r $(OBJS) $(LFLAGS) -o=./$(PROG) -m -s >-symbols;chd ...
 
-rma_main.r findcmd.r part3.r registers.r directives.r labels.r file_io.r macros.r:
+rma_main.r findcmd.r part3.r registers.r directives.r labels.r file_io.r macros.r symtab.r:
     $(CC) $(CFLAGS) $*.c -r=$(RDIR) -s
 
 numeric.r:

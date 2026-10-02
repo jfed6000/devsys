@@ -244,8 +244,15 @@ def run_las(job, las, lasdir, gen):
     argv = [las] + sources + [f"-i={d}" for d in incs] + [f"-o={out}"]
     if os.path.exists(out):
         os.remove(out)
+    # Run in an empty directory of its own: las writes its macro work file
+    # (rma.tmp) to the current directory, so parallel runs sharing one would
+    # collide, and it shouldn't write into the corpus. lwasm never searches
+    # the current directory for use files anyway (it searches the including
+    # file's directory, then -I paths), so this is closer to lwasm too.
+    rundir = os.path.join(lasdir, "run", job["id"])
+    os.makedirs(rundir, exist_ok=True)
     try:
-        p = subprocess.run(argv, cwd=job["cwd"], env=clean_env(),
+        p = subprocess.run(argv, cwd=rundir, env=clean_env(),
                            capture_output=True, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         return {"rc": None, "stdout": "", "stderr": "timeout", "out": out, "argv": argv}

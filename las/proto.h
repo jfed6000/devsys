@@ -67,8 +67,11 @@ void l2069(int newmode);
 void l20a4(int address);
 void RefCreat(struct symblstr *mylabel, int rtyp, int adrs);
 char SkipSpac(void);
-struct symblstr *WlkTreLft(struct symblstr *thistree);
 void *getmem(int memreq);
+/* symtab.c */
+struct symblstr *sym_find(char *name);
+struct symblstr *sym_add(char *name);
+void sym_walk(void (*fn)(struct symblstr *));
 /* macros.c */
 int createMac(void);
 int mcWrtLin(void);
@@ -199,8 +202,11 @@ void l2069();
 void l20a4();
 void RefCreat();
 char SkipSpac();
-struct symblstr *WlkTreLft();
 void *getmem();
+/* symtab.c */
+struct symblstr *sym_find();
+struct symblstr *sym_add();
+void sym_walk();
 /* macros.c */
 int createMac();
 int mcWrtLin();

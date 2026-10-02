@@ -15,18 +15,6 @@ void * getmem ();
 
 #define _ischar(c) (_chcodes[(int)c]&(_DIGIT|_LOWER|_UPPER|_CONTROL))
 
-static int FndTreeSlot (
-#ifdef __STDC__
-    char *, struct symblstr **
-#endif
-);
-
-static struct  symblstr * NewLabel (
-#ifdef __STDC__
-    char *, struct symblstr **, int
-#endif
-);
-
 static void SetArow (                  /* L204a() */
 #ifdef __STDC__
 struct symblstr *parm
@@ -84,7 +72,6 @@ int
 do_label (ZILCH)
 {
     register struct symblstr *_mysmbl;
-    int _cmpretrn;
 
     CurntLabel = 0;
 
@@ -99,17 +86,13 @@ do_label (ZILCH)
         LblTyp |= CODENT;
     }
 
-    _cmpretrn = FndTreeSlot (AltLbl, &CurntLabel);
-
-    /* FndTreeSlot has set CurntLabel to point to last element in the tree */
-
-    _mysmbl = CurntLabel;
+    _mysmbl = CurntLabel = sym_find (AltLbl);
 
     if (PASS1)
     {
-        if (_cmpretrn)      /* If not an existing label */
+        if ( ! _mysmbl)      /* If not an existing label */
         {
-            CurntLabel = _mysmbl = NewLabel (AltLbl, &CurntLabel, _cmpretrn);
+            CurntLabel = _mysmbl = sym_add (AltLbl);
         }
 
         if ( ! (_mysmbl->locmsk & RELATIVE))
@@ -144,7 +127,7 @@ do_label (ZILCH)
 
     /* Pass 2 from here on out */
 
-    if (_cmpretrn || ! (_mysmbl->locmsk & RELATIVE))
+    if ( ! _mysmbl || ! (_mysmbl->locmsk & RELATIVE))
     {
         errexit ("symbol lost!?");
     }
@@ -181,19 +164,17 @@ lblnumeric (ZILCH)
 {
     register struct symblstr *entry;
     struct ref_xtrnal *_refptr;
-    int cmp_case,
-        s_type;
+    int s_type;
 
-    cmp_case = FndTreeSlot (d0587, &CurntLabel);
-    entry = CurntLabel;
+    entry = CurntLabel = sym_find (d0587);
 
     /* If name not found, create a new entry if pass 1, else error */
 
-    if (cmp_case)
+    if ( ! entry)
     {
         if (PASS1)
         {
-            entry = CurntLabel = NewLabel (d0587, &CurntLabel, cmp_case);
+            entry = CurntLabel = sym_add (d0587);
         }
         else
         {
@@ -486,187 +467,6 @@ SkipSpac (ZILCH)
     }
 
     return *(SrcChar = pt);   /* Reset SrcChar to this char */
-}
-
-/* ******************************************************************** *
- * WlkTreLft() - For symblstr passed as a parameter, goes to the right  *
- *              leg and then proceeds to the leftmost end of that leg   *
- * ******************************************************************** */
-
-struct symblstr *
-#ifdef __STDC__
-WlkTreLft (struct symblstr *thistree)
-#else
-WlkTreLft (thistree)
-     struct symblstr *thistree;
-#endif
-{
-    register struct symblstr *ntree = thistree->right;
-
-    if (thistree->locmsk & LOC1BYT)
-    {
-        while (ntree->left)
-        {
-            ntree = ntree->left;
-        }
-    }
-
-    return ntree;
-}
-
-/* ******************************************************************** *
- * NewLabel() - Create a new label structure.                           *
- *      A label tree is set up such that for any left-member, if it has *
- *      no right-member, its right points upward to the label which     *
- *      will give the next right branch for a parse of the whole tree   *
- * ******************************************************************** */
-
-static struct symblstr *
-#ifdef __STDC__
-NewLabel (char *newnam,                 /* string name for label            */
-          struct symblstr **smbl_up,    /* previous member in tree          */
-          int cmp_cas)                  /* whether new mbr is left or right */
-#else
-NewLabel (newnam, smbl_up, cmp_cas)
-     char *newnam;
-     struct symblstr **smbl_up;
-     int cmp_cas;
-#endif
-{
-    register struct symblstr *nwtree;
-    struct symblstr *_prevtree;
-
-    /* I don't believe that d078f will ever be nonzero, as
-     * there are no other refs to d078f anywhere else besides here
-     * It seems that d078f is a list of freed symblstr's
-     */
-
-    if (d078f)
-    {
-        nwtree = d078f;
-        d078f = d078f->left;
-#ifdef COCO
-        nwtree->left = nwtree->reftbl = nwtree->smbltyp =
-            nwtree->locmsk = nwtree->s_ofst = 0;
-#else
-        memset (nwtree, 0, sizeof (struct symblstr));   /* easier */
-#endif
-    }
-    else
-    {
-        /* It seems that it would be advisable to null out the structure,
-         * but it wasn't in original code.  I suppose all members are assigned
-         * to in all cases.  In non-coco versions, calloc() is used.
-         */
-
-        nwtree = (struct symblstr *) getmem (sizeof (struct symblstr));
-    }
-
-    /* If we are not just starting the member's tree */
-
-    if ( (_prevtree = *smbl_up) )
-    {
-        if (cmp_cas < 0)
-        {
-            nwtree->right = _prevtree;
-            _prevtree->left = nwtree;
-        }
-        else
-        {
-            /* Insert new tree to right of _prevtree and before
-             * the old _prevtree->right if one exists
-             */
-
-            nwtree->right = _prevtree->right;
-            _prevtree->right = nwtree;
-            _prevtree->locmsk |= LOC1BYT;
-        }
-    }
-    else
-    {
-        *CurSmblTree = nwtree;
-        nwtree->right = 0;
-    }
-
-    strcpy (nwtree->symblnam, newnam);
-    return nwtree;
-}
-
-/* ************************************************************************ *
- * FndTreeSlot() -Trace Tree down to find an empty space at the right       *
- *              place.                                                      *
- * Returns: strcmp() result, it will be 0 if a match                        *
- *          A summation of the chars in new_nam is performed to determine   *
- *            which tree the label belongs to.                              *
- *          If this particular tree is still empty, cmp_case = 1 is         *
- *            returned.                                                     *
- *          If name is not found, dst_smbl (parm2) will point to the label  *
- *            which is just above the location where this entry belongs.    *
- *          If name is found, *dst_smbl will be that smblstr                *
- *          The return will determine whether new member will be placed     *
- *            on left or right.                                             *
- * ************************************************************************ */
-
-static int
-#ifdef __STDC__
-FndTreeSlot (char *new_nam, struct symblstr **dst_smbl)
-#else
-FndTreeSlot (new_nam, dst_smbl)
-     char *new_nam;
-     struct symblstr **dst_smbl;
-#endif
-{
-    int cmp_case = 1;
-    register struct symblstr *_nowentry;
-
-    {
-        register char *__chr = new_nam;
-        int __sum = 0;
-
-        /* Get the sum of the chars in new_nam
-         * This determines the tree in SmblTreArr that is used.
-         * There are 64 trees.
-         * This might be needed for speed on the COCO, but for
-         * the faster cross compiler machines, a single tree
-         * would no doubt be quite satisfactory.
-         */
-
-        do
-        {
-            __sum += *__chr;
-        } while (*(++__chr) != '\0');
-
-        CurSmblTree = &SblTrePtr[__sum & 0x3f];
-    }
-
-    /* Do only if this tree already has an entry */
-
-    if ( (_nowentry = *dst_smbl = *CurSmblTree) )
-    {
-        do
-        {
-            cmp_case = strcmp (new_nam, ((*dst_smbl = _nowentry)->symblnam));
-
-            if ((cmp_case < 0))
-            {
-                _nowentry = _nowentry->left;
-            }
-            else
-            {
-                /* the following test for cmp_case works, but,
-                 * since "<" was tested above, it is simply "==" */
-
-                if ((cmp_case <= 0) || ! ((_nowentry->locmsk) & LOC1BYT))
-                {
-                    break;
-                }
-
-                _nowentry = _nowentry->right;
-            }
-        } while (_nowentry);
-    }
-
-    return cmp_case;
 }
 
 void *

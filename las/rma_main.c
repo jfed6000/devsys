@@ -125,7 +125,6 @@ read_fil (ZILCH)
 
     precodeset ();
     HadError = d0025 = FALSE;
-    SblTrePtr = SmblTreArr;
     _If_Dpth = FalseIf = d0027 = ListLin = ListPag = 0;
     list_lin = d00da = 0;
 

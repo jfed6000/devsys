@@ -84,7 +84,8 @@ The harness (§8) found these in the first errors of the Level 2 jr2 build
 | `^` operator (`1024^2`) | 1 | ❌ bad operator. Check what lwasm means by `^` before copying it |
 | `setdp` with no label | 1 | ❌ "label missing" |
 | `-D` command-line defines | all | ❌ no option. Harness uses a prelude file for now |
-| `use` file searched next to the including file | many | ❌ RMA searches the current directory, then `-i` paths. Harness passes the source's directory first |
+| `use` file searched next to the including file | many | ❌ RMA searches the current directory, then `-i` paths. lwasm searches the *including file's* directory, then `-I` paths, never the current directory. Harness runs las in an empty directory with the source's directory as the first `-i`, which matches for the top-level file but not for nested `use` |
+| Trailing spaces after a `use` file name (`use   os9.d   `) | 2 | ❌ spaces kept in the name → fatal (found 2026-10-02 once las read the same `basic09/defsfile` lwasm does) |
 
 ## 5. Long symbol names
 
@@ -184,12 +185,27 @@ the project's progress record. Takes about 2 seconds.
 Not yet exercised: the MATCH path, since no module-format file can assemble
 until phase 3. Its first real match should be checked by hand.
 
+`harness/regress.py` (phase 1) checks that a change did **not** alter
+behaviour. It builds a reference `las` from a git revision (default `HEAD`)
+and compares it with the working tree on about 740 inputs: 252 hand-written
+RMA sources (232 assemble cleanly), 198 C files compiled by the host DCC (all
+assemble), and the 290 NitrOS9 build commands. It compares object files
+(timestamp masked), listings with symbol tables (`-l -s`, date masked),
+stderr and exit codes. Use it for refactors (phases 1, 2, 8, 9), where any
+difference is a failure; use lwdiff for intended changes. Checked both ways:
+unchanged code passes, and a deliberate change (64 → 32 hash buckets) fails
+617 of 740.
+
+Both harnesses run every `las` call in its own empty directory, because las
+writes its macro work file under a fixed name (`rma.tmp`, `rma.h:204`) in the
+current directory.
+
 ## 9. Roadmap
 
 | Phase | Work | Done when | Status |
 |---|---|---|---|
 | **0. Harness** | Linux build of fork; diff harness over Level 2 wildbits tree; baseline report | report lists every file and its status | **done** 2026-10-02. Baseline: 0 of 290 match (267 errors, 23 fatal) |
-| **1. Symbol interface** | Put RMA's symbol code behind `sym_find` / `sym_add` | output byte-identical to unmodified RMA | not started |
+| **1. Symbol interface** | Put RMA's symbol code behind `sym_find` / `sym_add` | output byte-identical to unmodified RMA | **done** 2026-10-02. `las/symtab.c`: `sym_find`, `sym_add`, `sym_walk`; tree code removed from `labels.c`/`file_io.c`. regress.py: 740 of 740 identical |
 | **2. Compact entries** | Variable-length names | identical output, memory use measured | not started |
 | **3. Module mode** | `mod`/`emod`, header, CRC | simple `.asm` commands match lwasm | not started |
 | **4. lwasm syntax** | `@` locals, `ifdef/ifndef`, `fill`, `fcn`, `<<`/`>>`, `;` comments, CR/LF/CRLF, `-D`, data outside sections, pragma behaviours (see §4) | most `.asm` files match | not started |
@@ -214,3 +230,6 @@ catch DCC/K&R surprises.
 - [ ] How much RAM does the target F256 have free for symbol blocks?
 - [ ] DCC limits (no `void`, `enum`, `const`) when compiling the fork natively.
 - [ ] Does anything in the build depend on lwasm listing or map output?
+- [ ] las's macro work file has a fixed name (`rma.tmp` in the current directory), so two las runs in one directory collide, natively too. Use a unique name (process ID) or a temp directory.
+- [ ] Phase 8 (banked blocks): symbol fields (`smbltyp`, `locmsk`, `s_ofst`, `reftbl`) are still read directly through pointers in `labels.c`, `directives.c`, `registers.c`, `file_io.c`, and `ref_xtrnal.r_offset` stores symbol pointers cast to `int`. Phase 1 isolated *finding and storing*; banking also needs those pointers to stay valid, so decide in phase 8 whether entries stay in main memory and only names move to banks.
+- [ ] Phase 2/8: `LOC1BYT` in `locmsk` doubles as the tree's "real right child" flag and is printed in the listing's symbol table. A different storage layout will change that column; it isn't in lwasm's output, so harmless for lwdiff, but regress.py will flag it and the reference must be moved deliberately.

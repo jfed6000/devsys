@@ -15,3 +15,6 @@ harness/out/
 
 # NitrOS9 source for the harness (pinned by harness/corpus.lock; set up with harness/corpus.sh)
 corpus/
+
+# Python
+__pycache__/
