@@ -17,4 +17,12 @@ Changes (phase 6, docs/DESIGN.md D18):
   COpt  labels up to 32 characters (LABELSIZE, was 11); fixed: "puls u"
         read two bytes before its operand
   DCC   runs las instead of rma
+
+Changes (phase 7, native build; docs/DESIGN.md D20, D25):
+  CC09  on OS-9, allocates with sbrk instead of ibrk (cj.h ALLOCATE), so
+        dcc68 can start with a small data area and grow: the F256 won't
+        fork a 6-block module with more than 8K of initial data
+  COpt  "#define void int" on OS-9 (op.h): DCC itself has no void
+The 6809 build (../native/GNUmakefile) compiles dcc68 with -s and
+without -DPROF so it stays at most 48,384 bytes (6 blocks ending by $FD00).
 Design and roadmap: ../docs/DESIGN.md

@@ -2,4 +2,22 @@ rlink - forked into devsys on 2026-10-02 from ~/projects/dcc/mw-rlink:
 upstream https://gitlab.com/debmint/mw-rlink commit 0c6de25 (the CoCo-native
 source) plus the owner's uncommitted Linux port in that working tree
 (GNUmakefile, rof.h, types.h, misc.c, util.c, ...). No upstream history kept.
+Build: make -f GNUmakefile (the 6809 build: ../native/GNUmakefile).
+
+Changes:
+  phase 5  names up to 63 characters (SYMLEN, was 9 and silently cut);
+           --lwlink: lwlink's module layout (rl_03.c, D14); grab() zeroes
+           memory; fixed a format-string fprintf, a 16-character psect name
+           read into 10 bytes, a null dereference in the unresolved list
+  phase 3b --lwlink chooses library members and orders modules as lwlink
+           does (lwsel.c, D17)
+  phase 6  names from ROF version 0 objects match on 8 characters, with
+           aliases (localtim -> localtime, D19)
+  phase 7  K&R declarations (proto.h) so DCC compiles it; lwsel members
+           renamed (one namespace for struct members in K&R C); no atexit
+           or ftruncate on OS-9 (lw_cleanup called explicitly, _ss_size);
+           names stored at their own length (setname, D23), ext_ref entries
+           at least dref_node size (they are reused as dref_nodes)
+  phase 8  lwsel's 14K module table allocated only for --lwlink (D29)
+
 Design and roadmap: ../docs/DESIGN.md
