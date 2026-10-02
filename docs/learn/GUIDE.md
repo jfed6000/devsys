@@ -82,7 +82,7 @@ Then add a line to the changelog at the bottom of this file.
 | 1. Symbol interface | ✅ Ch 9 "Hiding the table behind an interface"; ch 10 "Testing a change that shouldn't change anything" |
 | 2. Compact entries | ✅ Ch 9 "Making the record fit the name", "Checking for memory mistakes" |
 | 3. Module mode | ✅ Ch 2 "Two location counters", "The header check byte", "The CRC"; ch 4 "Choosing instruction sizes" |
-| 3b. Operand sizing | Iterating to stable sizes: why extra passes converge (or don't); size choices only shrink |
+| 3b. Operand sizing | ✅ "Choosing instruction sizes" (lwasm's settle / worst case / force rule, gfxstatus example, the trial run, fork's shared file offset); ch 6 section-name layout order |
 | 4. lwasm syntax | ✅ Ch 4 "Local labels", "Conditions across two passes", "Same symbols, different meaning", "Two dialects in one assembler" |
 | 5. Object mode | ✅ Ch 6 "Two linkers, two module layouts", "Choosing library members", "Values only the linker knows"; ch 9 uninitialised memory |
 | 6. Long names | Why name limits existed; how ROF stores names |
@@ -128,3 +128,7 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-02 — Ch 6 "Values only the linker knows": worked examples (F$Exit,
   '0*256+C$SPAC, (Prgrm+Objct)*256 in lwobjdump vs rofdump form), the __os9
   header case (inetd), and play's 8-bit truncation.
+- 2026-10-02 — Phase 3b: "Choosing instruction sizes" rewritten with lwasm's
+  actual rule and a real example; how las's trial run works; fork() shares file
+  offsets. Ch 6: lwlink orders by section name before command line. Glossary:
+  trial run, unsettled.

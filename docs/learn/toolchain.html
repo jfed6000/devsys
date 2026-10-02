@@ -409,7 +409,23 @@ printit  lda   ,x+</code></pre>
 <h3>Choosing instruction sizes</h3>
 <p>Some instructions come in several sizes. <code>leax msg,pcr</code> loads the address of <code>msg</code> as a distance from the current instruction. If the distance fits in 8 bits (−128 to +127), the instruction is 3 bytes: <code>30 8C FA</code>. Otherwise it needs 16 bits and is 4 bytes: <code>30 8D FF F9</code>.</p>
 <p>For a label defined <em>earlier</em>, the assembler knows the distance and can pick the short form. For a label defined <em>later</em>, a forward reference, it doesn't know the distance yet in pass 1. A two-pass assembler has to guess, and the safe guess is the long form, because whatever it picks in pass 1 it must keep in pass 2, or every address after it would move. That would be a phasing error.</p>
-<p>lwasm avoids the guess by not limiting itself to two passes. It assembles, works out the sizes, and repeats until nothing changes. RMA always uses the long form for <code>,pcr</code> unless the source asks for the short one with <code>&lt;</code>, even for backward references. That's why <code>las</code> makes some modules a few bytes longer than lwasm does, and why matching lwasm exactly needs extra sizing passes. That's roadmap phase 3b.</p>
+<p>RMA always uses the long form for <code>,pcr</code> unless the source asks for the short one with <code>&lt;</code>, even for backward references. lwasm doesn't guess. It keeps a line whose size it can't decide yet <strong>unsettled</strong>, and comes back to it. Its rule, read from its source (<code>pass3.c</code>, <code>pass4.c</code>, <code>insn_indexed.c</code>), has three parts:</p>
+<ol>
+<li><strong>Known distance.</strong> If every line between the instruction and its target is settled, the distance is known exactly. The short form is used if it fits in −128 to +127.</li>
+<li><strong>Worst case.</strong> Otherwise lwasm counts every unsettled line at its <em>longest</em> size. If the distance still comes out within ±100, the short form is safe whatever happens, so it is chosen now. The margin of 27 is deliberate caution. One quirk: lwasm only records a longest size for ordinary instructions, not for <code>leax</code>/<code>leay</code>/<code>leau</code>/<code>leas</code>, so an unsettled <code>lea</code> in between rules this step out.</li>
+<li><strong>Stuck.</strong> Some lines can never be settled while assembling: <code>jsr extfunc</code>, or <code>leax buffer,u</code> where <code>buffer</code> is in a relocatable section, because the value only exists after linking. When nothing more can be settled, lwasm forces the first unsettled line, in source order, to its long form, and tries the rest again.</li>
+</ol>
+<p>Sizes only ever shrink as lines settle, so a worst case only gets better. That's why this always finishes, and why the order lwasm looks at lines doesn't change the answer, except in the forced step.</p>
+<p>A real case from <code>gfxstatus</code>, where the target is 77 bytes ahead:</p>
+<pre><code>     leay  cluttxt,pcr     ← 77 bytes to cluttxt: fits, but…
+     lbsr  tobuf
+     leax  clutdata,u      ← clutdata is in bss: never settled, and a lea
+     …
+cluttxt fcs "CLUT0 FIRST AND LAST 20 VALUES: "</code></pre>
+<p>The distance isn't known, because <code>leax clutdata,u</code> is unsettled, and the worst case is ruled out because that line is a <code>lea</code>. So lwasm ends up forcing <code>leay</code> to 16 bits, though 8 would have fitted. To produce the same bytes, <code>las</code> has to copy the rule, quirks included. "Shortest that fits" would get this line wrong.</p>
+<p class="cap">How las does it</p>
+<p><code>las</code> is a two-pass assembler, and changing that would be a big rewrite. Instead it makes a <strong>trial run</strong> first. Before pass 1 it splits into two processes (on Linux, <code>fork()</code>). The copy runs pass 1 with every <code>,pcr</code> long, writing down each one and each line lwasm would leave unsettled. At the end it replays lwasm's rule on those notes, sends back one answer per <code>,pcr</code> (short or long), and exits. The original, which has done nothing meanwhile, then assembles for real with those answers. Its pass 1 and pass 2 agree on every size, so the phasing check still guards the result. With it, every module file matches lwasm's byte for byte, except one that uses a directive <code>las</code> doesn't have yet (<code>struct</code>).</p>
+<p>One bug on the way is worth knowing about. After a <code>fork()</code>, both processes share an open file's <em>position</em>. The trial read the source to the end, so the real pass 1 started at end-of-file and saw nothing. It needed a <code>rewind()</code>. Separate copies of memory don't mean separate copies of everything.</p>
 
 <h3>Local labels</h3>
 <p>Every routine needs a loop label, and naming them all differently gets tedious. lwasm lets a name containing <code>@</code> be <strong>local</strong>: <code>loop@</code> in one routine and <code>loop@</code> in the next are different symbols. The interesting part is where one scope ends and the next begins. For lwasm the answer is surprising: a blank line ends it. A new ordinary label does not.</p>
@@ -528,6 +544,7 @@ OS9.D    SET   1
 program needs PUTS  →  take puts
 puts needs FPUTS    →  but fputs was already passed</code></pre>
 <p>lwlink keeps going round until a full pass adds nothing new, so it finds <code>fputs</code> on the second pass. And it lays the members out in the order they sit in the library, not the order it found them. The order matters: it decides where every routine ends up, and so every address in the module. <code>las</code>'s rlink does the same in <code>--lwlink</code> mode: it decides the members up front, exactly as lwlink would, and then links them in library order.</p>
+<p>The order between files has a twist too. lwlink places sections by <em>name</em> first, in the order its script lists them (<code>code</code>, <code>.text</code>, <code>data</code>, <code>.data</code>), and by command-line position second. NitrOS9 links with the libraries first: <code>lwlink -lwildbitsl2 -lnet -lalib dw.o</code>. The <code>net</code> library uses <code>section code</code>, like the programs, so a <code>net</code> routine lands <em>before</em> the program's own code. The <code>alib</code> library uses <code>.text</code>, so its routines land after. Same command line, opposite results, purely because of a section's name. <code>las</code> records each file's section in its object (as the constant <code>__lwsec</code>), and rlink sorts by the same rule.</p>
 
 <h3>Values only the linker knows</h3>
 <p>Many NitrOS9 object-format files never include the defs. Names like <code>F$Exit</code> or <code>Prgrm</code> are simply undefined while assembling, so they become external references, and the linker fills in the numbers from a library that exports the defs (<code>wildbitsl2</code>).</p>
@@ -945,7 +962,9 @@ bucket (char *name)
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
   <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
   <dt>threaded tree</dt><dd>A tree whose unused right pointers point to the next node in order, so it can be walked without a stack.</dd>
+  <dt>trial run</dt><dd>A throwaway pass 1 that <code>las</code> runs in a separate process to decide instruction sizes before assembling for real.</dd>
   <dt>uninitialised memory</dt><dd>Memory a program uses before ever setting it. It holds whatever was there before, which may happen to be zero.</dd>
+  <dt>unsettled</dt><dd>lwasm's state for a line whose size it can't decide yet. It comes back to the line once more is known, or forces the long form when stuck.</dd>
   <dt>XOR</dt><dd>Exclusive or: compares two bits and gives 1 where they differ. Used in check bytes and CRCs.</dd>
 </dl>
 </section>
