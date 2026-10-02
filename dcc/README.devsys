@@ -1,0 +1,20 @@
+DCC - forked into devsys on 2026-10-02 from ~/projects/dcc/CoCoC
+(Source/Compiler/{CPP,CC09,COpt,DCC}): commit 68fdbf9 plus the owner's
+uncommitted changes in that working tree, saved as uncommitted-at-fork.patch
+(CPP dues.c/lex.c/parse.c, COpt inst.c/labels.c/optim.c, CC09/GNUmakefile,
+DCC/dcc.c). Left out: object files, built binaries, and the *-orig.c /
+*-old.c backup copies. No upstream history kept.
+
+Build each part with "make -f GNUmakefile" in CPP, CC09, COpt and DCC.
+harness/dccdiff.py compares this build with CoCoC's on every C source.
+
+Changes (phase 6, docs/DESIGN.md D18):
+  CC09  identifiers significant to 31 characters (NAMESIZE, was 8); symbol
+        entries keep room for 8 and grow only for longer names; full names
+        in the assembly; fixed: getword's buffer overflow, settype leaving
+        the dimension list unset and an unterminated dimension chain
+        (crash on XLisp/xlkmap.c)
+  COpt  labels up to 32 characters (LABELSIZE, was 11); fixed: "puls u"
+        read two bytes before its operand
+  DCC   runs las instead of rma
+Design and roadmap: ../docs/DESIGN.md

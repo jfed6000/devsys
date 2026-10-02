@@ -1,0 +1,539 @@
+diff --git a/Source/Compiler/CC09/GNUmakefile b/Source/Compiler/CC09/GNUmakefile
+index 35b38fe..125df1a 100644
+--- a/Source/Compiler/CC09/GNUmakefile
++++ b/Source/Compiler/CC09/GNUmakefile
+@@ -6,7 +6,7 @@ ARCH	?= -m32
+ CFLAGS	= -g $(ARCH) -fsigned-char -DFUNCNAME -DUNIX -DPTREE -DPROF -DREGCONTS \
+ 	-Wall -Wno-incompatible-pointer-types -Wno-implicit-int \
+ 	-Wno-implicit-function-declaration -Wno-parentheses \
+-	-Wno-return-type -Wno-char-subscripts \
++	-Wno-return-type -Wno-char-subscripts -std=gnu89 \
+ 	-DCKEYSFILE=\"$(DCCDIR)/ckeys\"
+ 
+ LDFLAGS = $(ARCH) -g -lm
+diff --git a/Source/Compiler/COpt/inst.c b/Source/Compiler/COpt/inst.c
+index 8454587..de07451 100644
+--- a/Source/Compiler/COpt/inst.c
++++ b/Source/Compiler/COpt/inst.c
+@@ -69,10 +69,10 @@ label       **l;
+         while (*++argp);
+     argl = argp - args;
+ 
+-    i->succ = ins;
++    i->succ = (chain*)ins;
+     i->pred = ins->pred;
+-    ins->pred->succ = i;
+-    ins->pred = i;
++    ins->pred->succ = (chain*)i;
++    ins->pred = (chain*)i;
+     ++inscount;
+ 
+     switch (*(mnemp = i->mnem)) {
+@@ -89,8 +89,8 @@ label       **l;
+                 if (lp && lp->dest)
+                     movlab(i, lp->dest);
+                 if (i->llist == NULL
+-                    && i->pred != &ilist
+-                    && (i->pred->itype & CODEBRK))
++                    && (instruction*)i->pred != (instruction*)&ilist
++                    && (((instruction*)i->pred)->itype & CODEBRK))
+                 {
+                     remins(i);
+                     ++opsdone;
+@@ -135,7 +135,7 @@ newins()
+             error("run out of instructions");
+         i = (instruction *)grab(sizeof(*i));
+     } else {
+-        freeins = i->succ;
++        freeins = (instruction*)i->succ;
+         i->itype = 0;
+         i->args = 0;
+     }
+@@ -150,7 +150,7 @@ label *lp;
+     register chain *rlp;
+ 
+     rlp = newchain();
+-    rlp->pred = ip;
++    rlp->pred = (chain*)ip;
+     rlp->succ = lp->rlist;
+     lp->rlist = rlp;
+ }
+@@ -178,7 +178,7 @@ delete()
+     register instruction *i;
+     label *l;
+ 
+-    if ((i = ilist.succ) == &ilist)
++    if ((i = (instruction*)ilist.succ) == (instruction*)&ilist)
+         error("deleting too many instructions");
+ 
+     if ((i->itype & LONGBRA) == LONGBRA)
+@@ -207,6 +207,8 @@ delete()
+ }
+ 
+ 
++/* Fix: Added return type void */
++void
+ fix(i, direction)
+ instruction *i;
+ {
+@@ -218,7 +220,7 @@ instruction *i;
+     if (direction == FORWARD) {
+         lp = (ip->itype & DESTPTR ? ip->lab : findlabel(ip->args));
+         if (lp && (dp = lp->dest)) {
+-            for (c = BRALIM; c && (ip = (ip->succ)) != &ilist; --c) {
++            for (c = BRALIM; c && (ip = (instruction*)(ip->succ)) != (instruction*)&ilist; --c) {
+                 if (dp == ip) {
+ #ifdef DEBUG
+                     debug("fix: ");
+@@ -232,7 +234,7 @@ instruction *i;
+             }
+         }
+     } else {
+-        for (c = BRALIM; c && ((ip = ip->succ)) != &ilist; --c) {
++        for (c = BRALIM; c && ((ip = (instruction*)ip->succ)) != (instruction*)&ilist; --c) {
+             if ((ip->itype & LONGBRA) == LONGBRA) {
+                 lp = (ip->itype & DESTPTR) ? ip->lab : findlabel(ip->args);
+                 if (lp && i == lp->dest) {
+@@ -262,7 +264,7 @@ register instruction *i;
+     if (i->itype & BRANCH) {
+         remref(i, i->lab);
+     } else
+-        freearg(i->args);
++        freearg((chain*)i->args);
+     for (l = i->llist; l; l = l->nextl) {   /* return labels */
+         l->dest = NULL;
+         freelabel(l);
+@@ -271,7 +273,7 @@ register instruction *i;
+     ((instruction *) (i->pred))->succ = i->succ;
+     ((instruction *) (i->succ))->pred = i->pred;
+ 
+-    i->succ = freeins;
++    i->succ = (chain*)freeins;
+     freeins = i;
+ 
+     --inscount;
+@@ -286,7 +288,7 @@ label *lp;
+     if (lp) {
+         lastrlp = (chain *) & lp->rlist;
+         for (; (rlp = lastrlp->succ) != NULL; lastrlp = rlp)
+-            if (rlp->pred == ip) {
++            if ((instruction*)rlp->pred == ip) {
+                 lastrlp->succ = rlp->succ;
+                 freelabel(lp);
+                 freechain(rlp);
+@@ -358,4 +360,4 @@ chain *p;
+             lafree = p;
+         }
+     }
+-}
++}
+\ No newline at end of file
+diff --git a/Source/Compiler/COpt/labels.c b/Source/Compiler/COpt/labels.c
+index 303d528..ce7d41e 100644
+--- a/Source/Compiler/COpt/labels.c
++++ b/Source/Compiler/COpt/labels.c
+@@ -42,11 +42,10 @@ char *s;
+ 
+     l = &ltable[hash(s)];
+ 
+-
+-    for(p = l->succ; p != l;) {
++    /* Fix: Cast l to label* for comparison */
++    for(p = (label*)l->succ; p != (label*)l; p = (label*)p->succ) {
+         if(strcmp(s,p->lname) == 0)
+             return p;
+-        p = p->succ;
+     }
+     return NULL;
+ }
+@@ -68,8 +67,12 @@ newlabel()
+     register label *p;
+ 
+     if(p = lfree) {
+-        lfree = p->succ;
+-        p->dest = p->rlist = p->nextl = p->lflags = NULL;
++        lfree = (label*)p->succ;
++        /* Fix: Handle lflags separately since it's likely an int */
++        p->dest = NULL;
++        p->rlist = NULL; 
++        p->nextl = NULL;
++        p->lflags = 0;  /* Assuming lflags is an int - use 0 instead of NULL */
+     } else p = grab(sizeof(*p));
+ 
+     return p;
+@@ -83,7 +86,7 @@ register label *p;
+         p->pred->succ = p->succ;
+         p->succ->pred = p->pred;
+         /* add to free list */
+-        p->succ = lfree;
++        p->succ = (chain*)lfree;
+         lfree = p;
+     }
+ }
+@@ -95,5 +98,4 @@ char *lblp;
+ 
+     sprintf(lblp,"_$%d",++labnum);
+     return lblp;
+-}
+-
++}
+\ No newline at end of file
+diff --git a/Source/Compiler/COpt/optim.c b/Source/Compiler/COpt/optim.c
+index 89d2707..2f0303e 100644
+--- a/Source/Compiler/COpt/optim.c
++++ b/Source/Compiler/COpt/optim.c
+@@ -211,6 +211,9 @@ optinit()
+ 
+ 
+ #define isconbra(a) (((a) & BRAMASK) > (BRANCH|SUBR))
++
++/* Fix: Added return type void */
++void
+ optim(i)
+ register instruction *i;
+ {
+@@ -219,9 +222,9 @@ register instruction *i;
+     instr *ap, *mp;
+     char labc, c, found, fallback = FALSE;
+ 
+-    i = i->pred;
++    i = (instruction*)i->pred;
+     for (;;) {
+-loop:   if (i == &ilist || (i2 = i->succ) == &ilist)
++loop:   if ((instruction*)i == (instruction*)&ilist || (i2 = (instruction*)i->succ) == (instruction*)&ilist)
+             return;
+         if (i2->llist) {    /* look for jump to next instruction */
+             if ((i->itype & BRANCH)
+@@ -231,12 +234,12 @@ loop:   if (i == &ilist || (i2 = i->succ) == &ilist)
+                     /* transfer i's labels to i2 */
+                     movlab(i,i2);
+                     remins(i);
+-                    i = i2->pred;
++                    i = (instruction*)i2->pred;
+                     ++opsdone;
+                     goto loop; /* TODO: use continue? */
+                 } else if ((i->itype & CODEBRK)
+                             && i->llist == NULL
+-                            && (i = i->pred) != &ilist
++                            && (i = (instruction*)i->pred) != (instruction*)&ilist
+                             && isconbra(i->itype)
+                             && i->lab->dest == i2) {
+                     fixcond(i);
+@@ -259,8 +262,8 @@ restart:
+ #endif
+             i = i2;
+             labc = c = 0;
+-            for (ap = a->actp; ap; i = i->pred, ap = ap->nxtins, ++c) {
+-                if (i == &ilist) break;
++            for (ap = a->actp; ap; i = (instruction*)i->pred, ap = ap->nxtins, ++c) {
++                if ((instruction*)i == (instruction*)&ilist) break;
+                 if (!labc && i->llist) labc = c; /* has label(s) at pos c */
+                 if (labc && labc < c) {
+ #ifdef DEBUG
+@@ -271,8 +274,8 @@ restart:
+                 if (ap->mnp && match(i->mnem,ap->mnp) == 0) break;
+                 if (ap->opp) {
+                     if ((int)ap->opp == 1) {
+-                        if (i->pred == &ilist) break;
+-                        if (match(i->args,i->pred->args) == 0) break;
++                        if ((instruction*)i->pred == (instruction*)&ilist) break;
++                        if (match(i->args,((instruction*)i->pred)->args) == 0) break;
+                     } else if (match(i->args,ap->opp) == 0) break;
+                 }
+ #ifdef DEBUG
+@@ -304,12 +307,12 @@ restart:
+ 			char *ts;
+ 			if (ap->mnp) {
+ 				if ((int)ap->mnp == 1) /* do nothing, same as NULL */;
+-				else if ((int)ap->mnp == 2) strcpy(i->mnem,i->pred->mnem);
++				else if ((int)ap->mnp == 2) strcpy(i->mnem,((instruction*)i->pred)->mnem);
+ 				else if (ts = index(ap->mnp, '\\')) {	// mnp has \#
+ 					if (*(ts+1) > '0' && *(ts+1) < '3')
+ 						matchcpy (ap->mnp,
+ 						          i->mnem, mp->mnp,
+-						          (i->pred) ? i->pred->mnem : 0,
++						          (i->pred) ? ((instruction*)i->pred)->mnem : 0,
+ 						          (mp->nxtins) ? mp->nxtins->mnp : 0);
+ 					else error("bad opcode reference");
+ 				} else {
+@@ -318,19 +321,19 @@ restart:
+             }
+             if (ap->opp) {
+ 				if ((int)ap->opp == 1) /* do nothing, same as NULL */;
+-				else if ((int)ap->opp == 2) strcpy(i->args,i->pred->args);
++				else if ((int)ap->opp == 2) strcpy(i->args,((instruction*)i->pred)->args);
+ 				else if (ts = index(ap->opp, '\\')) {	// opp has \#
+ 					if (*(ts+1) > '0' && *(ts+1) < '3')
+ 						matchcpy (ap->opp,
+ 						          i->args, mp->opp,
+-						          (i->pred) ? i->pred->args : 0,
++						          (i->pred) ? ((instruction*)i->pred)->args : 0,
+ 						          (mp->nxtins) ? mp->nxtins->opp : 0);
+ 					else error("bad operand reference");
+ 				} else {
+ 					strcpy(i->args,ap->opp);
+ 				}
+             }
+-            i = i->pred;
++            i = (instruction*)i->pred;
+             --c;
+         }
+ 
+@@ -338,10 +341,10 @@ restart:
+          * delete the instructions we don't need any more, moving any labels
+          * we find to the new first instruction
+          */
+-        for (i2 = i, i = i->succ; c; --c) {
++        for (i2 = i, i = (instruction*)i->succ; c; --c) {
+             if (i2->llist) movlab(i2,i);
+-            i2 = i2->pred;
+-            remins(i2->succ);
++            i2 = (instruction*)i2->pred;
++            remins((instruction*)i2->succ);
+             ++opsdone;
+         }
+         return;
+@@ -353,15 +356,17 @@ fixcond(i)
+ register instruction *i;
+ {
+     i->itype = ((i->itype & BRAMASK) ^ 1)
+-                    | (i->succ->itype & ~(CODEBRK|BRAMASK));
++                    | (((instruction*)i->succ)->itype & ~(CODEBRK|BRAMASK));
+     strcpy(i->mnem,bratab[i->itype & BRATYPE]);
+     remref(i,i->lab);
+-    insref(i,i->lab = i->succ->lab);
+-    remins(i->succ);
++    insref(i,i->lab = ((instruction*)i->succ)->lab);
++    remins((instruction*)i->succ);
+     ++opsdone;
+ }
+ 
+ 
++/* Fix: Added return type void */
++void
+ finddupl(i)
+ register instruction *i;
+ {
+@@ -369,14 +374,14 @@ register instruction *i;
+     label *lbp;
+     chain *rlp1,*rlp2,*lmovp;
+ 
+-    if (i->pred == &ilist) return;
++    if ((instruction*)i->pred == (instruction*)&ilist) return;
+     /* move labels on "bra"s to here */
+     lmovp = NULL;
+     /* travel down label list */
+     for (lbp = i->llist; lbp; lbp = lbp->nextl)
+         /* travel down reference list */
+         for (rlp1 = lbp->rlist; rlp1; rlp1 = rlp1->succ) {
+-            ip1 = rlp1->pred;
++            ip1 = (instruction*)rlp1->pred;
+             /* is reference labeled code-break, not blocked ? */
+             if (ip1->llist
+                     && (ip1->itype & CODEBRK)
+@@ -388,31 +393,31 @@ register instruction *i;
+                 rlp2 = newchain();
+                 rlp2->succ = lmovp;
+                 lmovp = rlp2;
+-                lmovp->pred = ip1;
++                lmovp->pred = (chain*)ip1;
+             }
+         }
+     while (lmovp) {
+-        movlab(ip1 = lmovp->pred,i);
+-        if ((ip1 = ip1->pred) != &ilist && (ip1->itype & BRANCH)) {
++        movlab(ip1 = (instruction*)lmovp->pred,i);
++        if ((ip1 = (instruction*)ip1->pred) != (instruction*)&ilist && (ip1->itype & BRANCH)) {
+             if (ip1->itype & CODEBRK)
+-                remins(ip1->succ);
++                remins((instruction*)ip1->succ);
+             else if (isconbra(ip1->itype)
+-                        && ip1->lab->dest == ip1->succ->succ)
++                        && ip1->lab->dest == (instruction*)ip1->succ->succ)
+                 fixcond(ip1);
+         }
+         rlp2 = lmovp->succ;
+         freechain(lmovp);
+         lmovp = rlp2;
+     }
+-    if (!(i->pred->itype & CODEBRK)) {
++    if (!(((instruction*)i->pred)->itype & CODEBRK)) {
+         /* travel down label list */
+         for (lbp = i->llist; lbp; lbp = lbp->nextl)
+             /* travel down reference list */
+             for (rlp1 = lbp->rlist; rlp1; rlp1 = rlp1->succ)
+-                if ((ip1 = rlp1->pred)->itype & CODEBRK)
++                if (((instruction*)rlp1->pred)->itype & CODEBRK)
+                     /* match code before branches to another label */
+                     /* of instruction with code before this branch */
+-                    duplrefs(lbp->nextl,ip1);
++                    duplrefs(lbp->nextl,(instruction*)rlp1->pred);
+         /* match code before label with code before branches */
+         duplrefs(i->llist,i);
+     }
+@@ -421,7 +426,7 @@ register instruction *i;
+             /* does branch label know its destination ? */
+             if (ip1 = i->lab->dest) {
+                 /* code before branch match code before label ? */
+-                if (!duplsrch(i->pred,ip1->pred))
++                if (!duplsrch((instruction*)i->pred,(instruction*)ip1->pred))
+                     /* match code before other branches with */
+                     /* code before this branch */
+                     duplrefs(ip1->llist,i);
+@@ -431,13 +436,13 @@ register instruction *i;
+                 duplrefs(i->lab,i);
+         } else {
+             /* travel down instruction list */
+-            for (ip1 = i->pred; ip1 != &ilist; ip1 = ip1->pred) {
++            for (ip1 = (instruction*)i->pred; (instruction*)ip1 != (instruction*)&ilist; ip1 = (instruction*)ip1->pred) {
+                 if (!(ip1->itype & CODEBRK)
+                         || (ip1->itype & (BLOCKDUP|BRANCH)))
+                     continue;
+                 if (strcmp(i->mnem,ip1->mnem) == 0
+                         && strcmp(i->args,ip1->args) == 0
+-                        && duplsrch(ip1->pred,i->pred))
++                        && duplsrch((instruction*)ip1->pred,(instruction*)i->pred))
+                     break;
+             }
+         }
+@@ -454,7 +459,7 @@ register instruction *ip1,*ip2;
+ 
+     count = 0;
+     if ((ip1b = ip1) == (ip2b = ip2)) return 0;
+-    while (ip1 != &ilist  &&  ip2 != &ilist
++    while ((instruction*)ip1 != (instruction*)&ilist  &&  (instruction*)ip2 != (instruction*)&ilist
+             &&  ip1 != ip2b  &&  ip2 != ip1b
+             && (ip1->itype & BRAMASK) == (ip2->itype & BRAMASK)
+             && !(ip1->itype & BLOCKDUP)
+@@ -464,8 +469,8 @@ register instruction *ip1,*ip2;
+                             : ip1->lab == ip2->lab)
+                     : strcmp(ip1->mnem,ip2->mnem) == 0
+                             && strcmp(ip1->args,ip2->args) == 0)) {
+-        ip1 = ip1->pred;
+-        ip2 = ip2->pred;
++        ip1 = (instruction*)ip1->pred;
++        ip2 = (instruction*)ip2->pred;
+         ++count;
+     }
+ #ifdef DEBUG
+@@ -473,9 +478,9 @@ register instruction *ip1,*ip2;
+     debug("    %04x ",ip1->itype); prtins(ip1);
+     debug("    %04x ",ip2->itype); prtins(ip2);
+ #endif
+-    ip1 = ip1->succ;
++    ip1 = (instruction*)ip1->succ;
+     if (count) {
+-        ip2b = ip2 = ip2->succ;
++        ip2b = ip2 = (instruction*)ip2->succ;
+         /* save first instruction's label list */
+         if ((lbp = ip1->llist) == NULL)
+             if ((lbp = ip2->llist) == NULL) {
+@@ -485,12 +490,12 @@ register instruction *ip1,*ip2;
+             }
+         while (count-- >= 0) {
+             movlab(ip1,ip2);
+-            ip1 = ip1->succ;
+-            remins(ip1->pred);
++            ip1 = (instruction*)ip1->succ;
++            remins((instruction*)ip1->pred);
+             ++opsdone;
+-            ip2 = ip2->succ;
++            ip2 = (instruction*)ip2->succ;
+         }
+-        insins(ip1,"lbra",lbp->lname,NULL);
++        insins((instruction*)ip1,"lbra",lbp->lname,NULL);
+         optim(ip1);
+         /* travel down first instruction's label list */
+         duplrefs(ip2b->llist,ip2b);
+@@ -510,8 +515,8 @@ instruction *ip;
+     for ( ; lbp; lbp = lbp->nextl)
+         /* travel down reference list */
+         for (rlp = lbp->rlist; rlp; rlp = rlp->succ)
+-            if (((ip1 = rlp->pred)->itype & CODEBRK)
++            if (((ip1 = (instruction*)rlp->pred)->itype & CODEBRK)
+                    && (ip1->itype & BLOCKDUP) == 0
+-                   && duplsrch(ip1->pred,ip->pred))
++                   && duplsrch((instruction*)ip1->pred,(instruction*)ip->pred))
+                 break;
+-}
++}
+\ No newline at end of file
+diff --git a/Source/Compiler/CPP/dues.c b/Source/Compiler/CPP/dues.c
+index a03c1fa..5f562ed 100644
+--- a/Source/Compiler/CPP/dues.c
++++ b/Source/Compiler/CPP/dues.c
+@@ -76,7 +76,7 @@ doinclude()
+ 					putesc(NEWLINO, 0);
+ 					setline(lineno = 0);
+ 					in = fp;
+-					return;
++					return 0;
+ 				} else lasterr = errno;
+ 			}
+ 			sprintf (fname, "can't open %s (err=%d)", last, lasterr);
+diff --git a/Source/Compiler/CPP/lex.c b/Source/Compiler/CPP/lex.c
+index 9910752..c8b46b4 100644
+--- a/Source/Compiler/CPP/lex.c
++++ b/Source/Compiler/CPP/lex.c
+@@ -103,7 +103,7 @@ getsym()
+ 
+ 	nxtch();
+ 	if (cch == 0) {
+-		sym = 0; return;
++		sym = 0; return 0;
+ 	}
+ 
+ 	symptr = lptr - 1;
+@@ -269,7 +269,7 @@ donum:	switch(numtype) {
+ 			break;
+ 		}
+ 	}
+-	return;
++	return 0;
+ }
+ 
+ 
+diff --git a/Source/Compiler/CPP/parse.c b/Source/Compiler/CPP/parse.c
+index f401430..09ff8e0 100644
+--- a/Source/Compiler/CPP/parse.c
++++ b/Source/Compiler/CPP/parse.c
+@@ -187,7 +187,7 @@ gch(skflag)
+ register int	skflag;
+ {
+ 	if((cch = *lptr) == 0)
+-		return;
++		return 0;
+ 	else if(skflag && skipsp(0))
+ 		cch = ' ';
+ 	else ++lptr;
+diff --git a/Source/Compiler/DCC/dcc.c b/Source/Compiler/DCC/dcc.c
+index ce62079..34b2b20 100644
+--- a/Source/Compiler/DCC/dcc.c
++++ b/Source/Compiler/DCC/dcc.c
+@@ -514,7 +514,7 @@ int code;
+ {
+ 	fprintf (stderr, "%6s:%s", cmd, parmbuf);
+ 	if (zflag)
+-		return;
++		return 0;
+ #ifdef MWOS
+ 	if ((childid = os9fork (cmd, frkprmsiz, parmbuf, 1, 1, 0)) < 0)
+ 		error ("can't run '%s'", cmd);
+@@ -525,7 +525,7 @@ int code;
+ 		exit(system (foo)); /* don't clean up */
+ 	} else if (childid < 0) { /* fork failed */
+ 		error ("can't run '%s' -- fork() failed, reason: %s", cmd, strerror(errno));
+-		return;
++		return 0;
+ 	}
+ #endif
+ 	wait (&childstat);
+@@ -586,7 +586,7 @@ char  *s, c;
+ 		;
+ 	}
+ 	if (*(p - 3) != '.')
+-		return;
++		return 0;
+ 	if (c == '\0') {
+ 		*(p - 3) = 0;
+ 	} else {

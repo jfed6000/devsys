@@ -152,7 +152,9 @@ index_file (name, lib, ord)
 
         fseek(fp, 3L * rd(fp), 1);              /* local refs */
 
-        for (count = rd(fp), i = 0; i < count; ++i)   /* commons */
+        /* commons: only in ROF version 1 (las); Microware's are 0 */
+
+        for (count = h[13] ? rd(fp) : 0, i = 0; i < count; ++i)
         {
             free(rdname(fp));
             rd(fp);

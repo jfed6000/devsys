@@ -13,7 +13,7 @@ Inputs:
   rma    hand-written RMA-syntax sources (.a files containing psect) from
          corpus/ and ~/projects/dcc/CoCoC
   dcc    C sources from ~/projects/dcc/CoCoC/Source compiled to RMA assembly
-         by the host DCC (dcpp, dcc68, dco68); files that don't compile are
+         by devsys's DCC (dcc/: dcpp, dcc68, dco68); files that don't compile are
          skipped
   lwdiff the NitrOS9 Level 2 build commands from lwdiff.py (mostly errors
          today, but error output is behaviour too)
@@ -47,7 +47,7 @@ sys.path.insert(0, HERE)
 import lwdiff  # noqa: E402
 
 COCOC = os.path.join(HOME, "projects/dcc/CoCoC")
-DCC = os.path.join(COCOC, "Source/Compiler")
+DCC = os.path.join(os.path.dirname(HERE), "dcc")    # devsys's fork (phase 6)
 WORK = os.path.join(HERE, "out", "regress")
 TIMEOUT = 30
 
@@ -109,7 +109,7 @@ def rma_inputs():
 
 def dcc_inputs():
     """C sources compiled to RMA assembly with the host DCC."""
-    outdir = os.path.join(WORK, "dcc")
+    outdir = os.path.join(WORK, "dcc-devsys")   # not "dcc": CoCoC DCC's cache
     os.makedirs(outdir, exist_ok=True)
     defs = os.path.join(COCOC, "Defs")
     sources = sorted(glob.glob(os.path.join(COCOC, "Source", "**", "*.c"), recursive=True))

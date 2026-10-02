@@ -231,7 +231,9 @@ preload_load (ZILCH)
 
             fseek (f, 3L * rword (f), 1);               /* local refs */
 
-            for (count = rword (f), i = 0; i < count; ++i)
+            /* commons: only in ROF version 1 (las); Microware's are 0 */
+
+            for (count = hdr[13] ? rword (f) : 0, i = 0; i < count; ++i)
             {
                 rname (f, name, sizeof (name));
                 rword (f);                              /* size */

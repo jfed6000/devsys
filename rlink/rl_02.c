@@ -293,6 +293,15 @@ L0937 (bp, do_vars)
         my_sym->Type = getc(InFile);
         my_sym->Offset = getwrd(InFile);
 
+        if (bp->h_vers == 0)
+        {
+            /* Microware's tools kept 8 characters: "localtim" in clib.l
+             * answers a long name's reference (v0alias, misc.c) */
+
+            my_sym->Type |= V0NAME;
+            v0alias (newobj, my_sym, nosize);
+        }
+
         /* nosize true only if do_vars is true and no data or code */
         if (nosize && !findext(my_sym->sname, 1))      /* L09e9 */
         {
@@ -383,8 +392,8 @@ L0937 (bp, do_vars)
     {
         getname(tmpnam, SYMLEN);
         
-        if ((my_sym = lookup (tmpnam)))  /* L0b32 - else L0b49 */
-        {
+        if ((my_sym = lookup (tmpnam)) || (my_sym = v0match (tmpnam)))
+        {                                /* L0b32 - else L0b49 */
             my_sym->Type |= 0x100;
         }
         else
@@ -740,4 +749,129 @@ lastobfile(curob)
     }
 
     return tmp_ob;
+}
+
+
+/* ******************************************************************** *
+ * Long names and Microware's 8-character objects.                      *
+ *                                                                      *
+ * Objects from Microware's tools (ROF version 0, e.g. CoCoC's clib.l)  *
+ * keep 8 characters of a name: localtime() is "localtim" there. A      *
+ * long-name compiler references "localtime". As the old toolchain      *
+ * did, a name from a version 0 module matches on 8 characters: the     *
+ * module gets an alias under the long name, in its own symbol list so  *
+ * its address is adjusted with the module's.                           *
+ * ******************************************************************** */
+
+static SYMDAT *
+#ifdef __STDC__
+newalias (SYMDAT *def, char *name)
+#else
+newalias (def, name)
+    SYMDAT *def;
+    char *name;
+#endif
+{
+    SYMDAT *al = newsym ();
+
+    strncpy (al->sname, name, SYMLEN);
+    al->sname[SYMLEN] = '\0';
+    al->Type = def->Type;
+    al->Offset = def->Offset;
+    return al;
+}
+
+/* A version 0 global just read (L0937): an alias for every outstanding
+ * reference to a longer name that starts with its 8 characters */
+
+void
+#ifdef __STDC__
+v0alias (OBFILES *ob, SYMDAT *def, int nosize)
+#else
+v0alias (ob, def, nosize)
+    OBFILES *ob;
+    SYMDAT *def;
+    int nosize;
+#endif
+{
+    struct ext_ref *er;
+
+    if (strlen (def->sname) != 8)
+    {
+        return;
+    }
+
+    for (er = curExtRef.next; er != &curExtRef; er = er->next)
+    {
+        SYMDAT *sd;
+
+        if ((strlen (er->name) <= 8) || strncmp (er->name, def->sname, 8) ||
+                lookup (er->name))
+        {
+            continue;
+        }
+
+        /* one alias per name: each referencing module has its own entry */
+
+        for (sd = ob->symlist; sd && strcmp (sd->sname, er->name);
+                sd = sd->sprev)
+        {
+        }
+
+        if ( ! sd)
+        {
+            SYMDAT *al = newalias (def, er->name);
+
+            al->sprev = ob->symlist;
+            ob->symlist = al;
+        }
+    }
+}
+
+/* A reference to a long name nothing defines (L0937): a version 0
+ * definition of its first 8 characters, given an alias, or NULL */
+
+SYMDAT *
+#ifdef __STDC__
+v0match (char *name)
+#else
+v0match (name)
+    char *name;
+#endif
+{
+    char short8[9];
+    SYMDAT *def, *sd;
+    OBFILES *ob;
+
+    if (strlen (name) <= 8)
+    {
+        return NULL;
+    }
+
+    strncpy (short8, name, 8);
+    short8[8] = '\0';
+
+    if ( ! (def = lookup (short8)) || ! (def->Type & V0NAME))
+    {
+        return NULL;
+    }
+
+    for (ob = FirstMod; ob; ob = ob->obn)
+    {
+        for (sd = ob->symlist; sd; sd = sd->sprev)
+        {
+            if (sd == def)
+            {
+                SYMDAT *al = newalias (def, name);
+
+                al->sprev = ob->symlist;
+                ob->symlist = al;
+                L1bcf (al);
+                def->Type |= 0x100;
+                return al;
+            }
+        }
+    }
+
+    return NULL;
 }

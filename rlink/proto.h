@@ -102,3 +102,6 @@ extern in_rderr();
 unsigned o9_int (UINT val);
 /* lwsel.c */
 extern lw_select();
+/* rl_02.c: 8-character names in ROF version 0 */
+extern void v0alias();
+extern SYMDAT *v0match();

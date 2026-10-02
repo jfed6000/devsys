@@ -43,6 +43,11 @@ typedef int16_t INTTYPE;
 #   define EOF -1
 #endif
 
+/* SYMDAT Type flag: defined in a ROF version 0 module (Microware's
+ * tools), where only 8 characters of a name were kept (misc.c v0alias) */
+
+#define V0NAME 0x200
+
 typedef struct sym_dat
 {
     char            sname[SYMLEN + 1];

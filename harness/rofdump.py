@@ -93,7 +93,8 @@ def dump(path, show_code=False):
             f = d[i]
             off, i = word(d, i + 1)
             print(f"    at ${off:04X}  {flags_ref(f)} -> {flags_def(f)}")
-        count, i = word(d, i)   # common blocks
+        # common blocks: only in ROF version 1 (las); Microware's are 0
+        count, i = word(d, i) if ver > 0 else (0, i)
         for _ in range(count):
             s, i = name(d, i)
             size, i = word(d, i)

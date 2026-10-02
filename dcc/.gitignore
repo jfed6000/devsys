@@ -1,0 +1,5 @@
+*.o
+CPP/dcpp
+CC09/dcc68
+COpt/dco68
+DCC/dcc
