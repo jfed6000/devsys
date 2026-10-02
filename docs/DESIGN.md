@@ -68,6 +68,24 @@ Measured against the 370 files in `level1/wildbits`, `level2/wildbits`,
 | undefined symbol in condition = 0 (`condundefzero`) | ~400 `ifne H6309` etc. | ? — check |
 | `pcaspcr`, `dollarnotlocal` | all | ? — check |
 
+### Found by the harness (phase 0 baseline, 2026-10-02)
+
+The harness (§8) found these in the first errors of the Level 2 jr2 build
+(290 assemblies). Counts are files whose *first* error is this one.
+
+| Feature | Files | RMA today |
+|---|---|---|
+| `;` comments, including `;;; NAME` at column 1 | 74 | ❌ only `*` starts a comment line → "bad label" |
+| `; comment` after an operand (`use defsfile  ; ...`) | 5 | ❌ comment read as part of the file name → fatal |
+| CRLF line endings | 18 | ❌ `\r` kept in names (`"defsfile\r"`) → fatal. Natively, files may have CR, LF or CRLF; accept all three |
+| `fcb`/`fcc`/`rmb`/`org` with no section (data files, hand-built modules) | 35 | ❌ RMA only allows them inside `psect`/`vsect` |
+| `ifne H6309` etc. with `H6309` undefined (`condundefzero`) | 2+ | ❌ "illegal external reference" |
+| `equ`/`set` using a not-yet-defined symbol | 5 | ❌ "illegal external reference" |
+| `^` operator (`1024^2`) | 1 | ❌ bad operator. Check what lwasm means by `^` before copying it |
+| `setdp` with no label | 1 | ❌ "label missing" |
+| `-D` command-line defines | all | ❌ no option. Harness uses a prelude file for now |
+| `use` file searched next to the including file | many | ❌ RMA searches the current directory, then `-i` paths. Harness passes the source's directory first |
+
 ## 5. Long symbol names
 
 The defs use names up to 24 characters; 167 names collide at 8 characters
@@ -143,24 +161,32 @@ so rlink pulls in only what's referenced. Needs `section` support first.
 
 ## 8. Verification
 
-The fork builds on Linux. For every source file in the Level 2 wildbits build:
+`harness/lwdiff.py` (phase 0, done). It dry-runs a NitrOS9 recipe
+(`make -n -B`, default `recipes/wildbits/l2`, `PLATFORM=jr2`) to get every
+lwasm command the real build runs, then for each one:
 
-1. assemble with lwasm (reference)
-2. assemble with the fork
-3. compare output bytes
+1. assembles with lwasm exactly as the build would (the reference)
+2. assembles the same source with `las`, same include paths and defines
+3. compares the output bytes (module format) or records whether it
+   assembled (object format; compared after linking in phase 5)
 
-Report per file: identical / differs / fails. This is the progress meter for
-the whole project. Run it after every change.
+It writes `harness/reports/<recipe>-<platform>.md` (summary, blockers ranked
+by first error, per-file status) and appends a line to
+`harness/reports/history.csv`. Run it after every change; the history file is
+the project's progress record. Takes about 2 seconds.
+
+Not yet exercised: the MATCH path, since no module-format file can assemble
+until phase 3. Its first real match should be checked by hand.
 
 ## 9. Roadmap
 
 | Phase | Work | Done when | Status |
 |---|---|---|---|
-| **0. Harness** | Linux build of fork; diff harness over Level 2 wildbits tree; baseline report | report lists every file and its status | in progress: `las` builds on Linux (0 warnings), output identical to original RMA |
+| **0. Harness** | Linux build of fork; diff harness over Level 2 wildbits tree; baseline report | report lists every file and its status | **done** 2026-10-02. Baseline: 0 of 290 match (267 errors, 23 fatal) |
 | **1. Symbol interface** | Put RMA's symbol code behind `sym_find` / `sym_add` | output byte-identical to unmodified RMA | not started |
 | **2. Compact entries** | Variable-length names | identical output, memory use measured | not started |
 | **3. Module mode** | `mod`/`emod`, header, CRC | simple `.asm` commands match lwasm | not started |
-| **4. lwasm syntax** | `@` locals, `ifdef/ifndef`, `fill`, `fcn`, `<<`/`>>`, pragma behaviours | most `.asm` files match | not started |
+| **4. lwasm syntax** | `@` locals, `ifdef/ifndef`, `fill`, `fcn`, `<<`/`>>`, `;` comments, CR/LF/CRLF, `-D`, data outside sections, pragma behaviours (see §4) | most `.asm` files match | not started |
 | **5. Object mode** | `section`/`export` → ROF; header defaults | `.as` files link with rlink and match | not started |
 | **6. Long names downstream** | rlink and DCC name limits; DCC `ASSEMBLER` → `"las"` | 24-char names survive compile → link | not started |
 | **7. Native build** | Compile fork + rlink + DCC with DCC; run on F256 | assembles `scfg.asm` on the F256 | not started |

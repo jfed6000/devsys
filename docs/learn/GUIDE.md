@@ -75,7 +75,7 @@ Then add a line to the changelog at the bottom of this file.
 
 | Roadmap phase | Topic for the page |
 |---|---|
-| 0. Harness | Differential testing: why comparing against lwasm proves compatibility |
+| 0. Harness | ✅ Chapter 10: differential testing, dry runs, first vs knock-on errors |
 | 1. Symbol interface | Interfaces/abstraction: changing a data structure without touching its callers |
 | 2. Compact entries | Variable-length records, `sbrk`-style allocation, the free-list problem |
 | 3. Module mode | How the module header parity byte and the 24-bit CRC are computed |
@@ -92,3 +92,6 @@ Then add a line to the changelog at the bottom of this file.
 
 - 2026-10-02 — Created: chapters 1–11, module and ROF hex dumps, build and
   check tools.
+- 2026-10-02 — Added chapter 10, Testing against lwasm (phase 0). Renumbered
+  Where this leads → 11, Glossary → 12. Glossary: CRLF, differential testing,
+  dry run, knock-on error, reference.

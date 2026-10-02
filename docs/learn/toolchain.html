@@ -174,6 +174,7 @@ html { scroll-behavior: smooth; }
     <li><a href="#c">The C compiler</a></li>
     <li><a href="#memory">Level 2 memory</a></li>
     <li><a href="#symbols">Symbol tables</a></li>
+    <li><a href="#testing">Testing against lwasm</a></li>
     <li><a href="#project">Where this leads</a></li>
     <li><a href="#glossary">Glossary</a></li>
   </ol>
@@ -508,25 +509,67 @@ _3 fcc "%d"
 </section>
 
 <!-- 10 -->
-<section class="ch" id="project">
-<h2><span class="num">CHAPTER 10</span>Where this leads</h2>
-<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256.</p>
-<p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>, next to this page.</p>
+<section class="ch" id="testing">
+<h2><span class="num">CHAPTER 10</span>Testing against lwasm</h2>
+<p>How do you prove a new assembler is compatible with an old one? Not by reading a list of features. You give both the same input and compare the output, byte for byte, over as much real code as you can find. This is called <strong>differential testing</strong>. The trusted tool, here lwasm, is the <strong>reference</strong>: whatever it produces is correct by definition.</p>
+<p>The harness, <code>harness/lwdiff.py</code>, does this for the whole Level 2 F256 build.</p>
+
+<h3>Getting the real commands</h3>
+<p>The harness doesn't guess which files to assemble or which options to use. It asks <code>make</code>. Running <code>make -n -B</code> in the recipe directory is a <strong>dry run</strong>: make prints every command it would run, for every target, without running any of them. The harness reads that output and picks out the 290 lwasm commands, along with the directory each one runs in.</p>
+<p>Then, for each command, it assembles the file twice: once with lwasm exactly as the build would, and once with <code>las</code> using the same source, include paths and <code>-D</code> definitions. It compares the results and sorts each file into a status:</p>
+<div class="scroll"><table>
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>MATCH</td><td>Same bytes as lwasm. The goal.</td></tr>
+<tr><td>DIFF</td><td>Assembled cleanly, but the bytes differ.</td></tr>
+<tr><td>ERRORS</td><td><code>las</code> reported assembly errors.</td></tr>
+<tr><td>FATAL</td><td><code>las</code> stopped early, for example because it couldn't open a file.</td></tr>
+<tr><td>ASSEMBLED</td><td>An object-format file assembled. Its bytes can't be compared directly (LWOBJ versus ROF), so it gets compared after linking, in phase 5.</td></tr>
+</tbody></table></div>
+
+<h3>First errors and knock-on errors</h3>
+<p>The first run, before any changes to <code>las</code>, matched 0 files out of 290. That was expected. More useful is <em>why</em> each file failed.</p>
+<p><code>scfg.asm</code> produced 1,868 errors, but only the first one matters. Its first error is <code>mod</code>, which RMA doesn't know. Because <code>mod</code> failed, RMA thinks it's outside any code section, so it rejects <code>rmb</code>, <code>lda</code>, <code>rts</code> and everything after as “bad mnemonic”. Those 1,867 later errors are <strong>knock-on errors</strong>: symptoms of the first one, not separate problems. Fix the first error and they disappear.</p>
+<p>So the report ranks problems by <strong>first error</strong>. These were the top results in the baseline:</p>
+<div class="scroll"><table>
+<thead><tr><th>First error</th><th>Files</th><th>Cause</th></tr></thead>
+<tbody>
+<tr><td class="num-col">bad mnemonic: mod</td><td class="num-col">126</td><td>Module format isn't supported yet. Phase 3.</td></tr>
+<tr><td class="num-col">bad label</td><td class="num-col">74</td><td>Lines like <code>;;; ASC_BIN</code>. lwasm treats <code>;</code> as a comment; RMA only accepts <code>*</code> at the start of a line.</td></tr>
+<tr><td class="num-col">bad mnemonic: fcb</td><td class="num-col">21</td><td>Data files with no section around them. RMA only allows data inside <code>psect</code>/<code>vsect</code>.</td></tr>
+<tr><td class="num-col">bad mnemonic: section</td><td class="num-col">21</td><td>lwasm object format. Phase 5.</td></tr>
+<tr><td class="num-col">can't open "defsfile\r"</td><td class="num-col">18</td><td>These files have Windows line endings. lwasm drops the carriage return; RMA keeps it as part of the file name.</td></tr>
+</tbody></table></div>
+
+<h3>Why this finds things you wouldn't think of</h3>
+<p>Before the harness ran, the compatibility list in the design doc had local labels, <code>fill</code>, <code>ifndef</code> and the shift operators. Nobody listed <code>;</code> comments or Windows line endings, yet together they stop 97 files. Differences like these are invisible until real code hits them, which is why the test runs over the whole build and not a hand-picked sample.</p>
+<p>Each run also adds a line to <code>harness/reports/history.csv</code>, so the project's progress is a count you can watch: 0 of 290 today.</p>
 </section>
 
 <!-- 11 -->
+<section class="ch" id="project">
+<h2><span class="num">CHAPTER 11</span>Where this leads</h2>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256.</p>
+<p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
+</section>
+
+<!-- 12 -->
 <section class="ch" id="glossary">
-<h2><span class="num">CHAPTER 11</span>Glossary</h2>
+<h2><span class="num">CHAPTER 12</span>Glossary</h2>
 <dl class="gloss">
   <dt>assembler</dt><dd>Turns assembly language into machine-code bytes.</dd>
   <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
   <dt>CRC</dt><dd>The 3-byte checksum at the end of every OS-9 module. OS-9 checks it before running the module.</dd>
+  <dt>CRLF</dt><dd>Windows line endings: carriage return then line feed. Unix uses LF only; OS-9 uses CR only.</dd>
   <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
+  <dt>differential testing</dt><dd>Testing a program by giving it and a trusted program the same input and comparing the outputs.</dd>
+  <dt>dry run</dt><dd><code>make -n</code>: print the commands a build would run without running them.</dd>
   <dt>emod</dt><dd>Ends a module-format source; the assembler appends the CRC here.</dd>
   <dt>external reference</dt><dd>A name used in one file and defined in another. Resolved by the linker.</dd>
   <dt>fixup / relocation</dt><dd>A place in the code the linker must patch once final positions are known.</dd>
   <dt>forward reference</dt><dd>Using a label before it's defined. The reason assemblers make two passes.</dd>
   <dt>K&amp;R C</dt><dd>The C language as it was before the 1989 ANSI standard.</dd>
+  <dt>knock-on error</dt><dd>An error caused by an earlier error. Fixing the first one makes it disappear.</dd>
   <dt>library</dt><dd>A bundle of object files (members). The linker takes only the members it needs.</dd>
   <dt>linker</dt><dd>Joins object files and library members into one program and fills in cross-references.</dd>
   <dt>LWOBJ</dt><dd>lwasm's object file format, read by lwlink.</dd>
@@ -537,13 +580,14 @@ _3 fcc "%d"
   <dt>phasing error</dt><dd>An address that came out different in pass 2 than in pass 1.</dd>
   <dt>position-independent</dt><dd>Code that works wherever it's loaded, because it uses addresses relative to the program counter (<code>,pcr</code>).</dd>
   <dt>psect / vsect</dt><dd>RMA's code section and variable section.</dd>
+  <dt>reference</dt><dd>In testing, the trusted program whose output counts as correct. Here, lwasm.</dd>
   <dt>ROF</dt><dd>Relocatable Object Format: Microware's object file format, made by RMA and read by rlink.</dd>
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
   <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
 </dl>
 </section>
 
-<footer>Examples come from real runs on 2026-10-02: lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, and DCC from <code>~/projects/dcc/CoCoC</code>.</footer>
+<footer>Examples come from real runs on 2026-10-02: lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
 </main>
 </div>
 

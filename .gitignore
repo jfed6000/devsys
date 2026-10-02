@@ -9,3 +9,6 @@ docs/learn/examples/out/
 \#*\#
 .#*
 *~
+
+# lwdiff work files (rebuild with harness/lwdiff.py)
+harness/out/

@@ -17,6 +17,7 @@ remote later; don't add one or push.
 | File | What it is |
 |---|---|
 | `las/` | The assembler: our fork of RMA (from upstream commit `e82adeb`, no upstream history kept). Build: `cd las/build/unix && make`. |
+| `harness/lwdiff.py` | Compares `las` with lwasm over the real Level 2 build. Run `python3 harness/lwdiff.py` after every change to `las`; `--only NAME --verbose` for one file. Report in `harness/reports/`. |
 | `docs/DESIGN.md` | Decisions, measurements, roadmap (§9), open questions (§10). The project's record. |
 | `docs/learn/toolchain.html` | Teaching primer for the project owner. |
 | `docs/learn/GUIDE.md` | Rules for maintaining the primer, and its topic backlog. |
