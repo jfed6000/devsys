@@ -9,7 +9,8 @@ version of RMA as the single assembler (named `las`, in `las/`), use DCC as the 
 
 `devsys` is one git repo (branch `main`, no remote) holding `las/`, `docs/`,
 and later our forks of rlink and DCC. No upstream remotes: this is a clean
-break, nothing is contributed back.
+break, nothing is contributed back. The user will set up the project's own
+remote later; don't add one or push.
 
 ## Key files
 
