@@ -155,7 +155,22 @@ GLOBAL CODFORM S_Module[]
 = {
     {"emod", 0x00, 0},
     {"rmb",  0x00, 1},
-    {"org",  0x00, 2}
+    {"org",  0x00, 2},
+    {"fcn",  0x00, 3},
+    {"fill", 0x00, 4}
+}
+#endif
+;
+/* Checked first at the top level in lwasm mode (module.c top_setup) */
+GLOBAL CODFORM S_TopLw[]
+#ifdef MAIN
+= {
+    {"mod",  0x00, 0},
+    {"org",  0x00, 1},
+    {"rmb",  0x00, 2},
+    {"end",  0x06, 3},
+    {"fcn",  0x00, 4},
+    {"fill", 0x00, 5}
 }
 #endif
 ;
@@ -220,16 +235,22 @@ GLOBAL CODFORM S_Nam[]
     {"ifge",  0x04, 1},
     {"ifgt",  0x05, 1},
     {"ifp1",  0x06, 1},
+    {"ifdef", 0x07, 1},     /* lwasm: true if the symbol is defined */
+    {"ifndef",0x08, 1},
 
     {"endc",  0x00, 2},
     {"else",  0x01, 2},
+    {"endif", 0x00, 2},     /* lwasm: same as endc */
 
     {"equ",   0x05, 3},
     {"set",   0x08, 3},
 
     {"macro", 0x00, 4},
 
-    {"endm",  0x00, 5}
+    {"endm",  0x00, 5},
+    {"if",    0x01, 1}      /* lwasm: same as ifne. Must stay after every
+                             * other "if..." entry: FindCmd matches entries
+                             * as prefixes of the mnemonic. */
 }
 #endif
 ;
@@ -299,6 +320,11 @@ GLOBAL direct CODFORM *PSecEnd
 #ifdef MAIN
     = endof (S_Module)
 #endif
+    ,
+    *STopLwEnd
+#ifdef MAIN
+    = endof (S_TopLw)
+#endif
     ;
 
         /* The next section comes from part3.c */
@@ -361,7 +387,23 @@ int (*ModTbl[]) ()
 #ifdef MAIN
     =
 {
-    mod_emod, mod_rmb, mod_org
+    mod_emod, mod_rmb, mod_org,
+    set_fcn, set_fill
+}
+#endif
+;
+/* TopLwTbl: S_TopLw's handlers */
+GLOBAL
+#ifdef COCO
+int (*TopLwTbl[]) ()
+#else
+    JMPTBL TopLwTbl[]
+#endif
+#ifdef MAIN
+    =
+{
+    do_mod, mod_org, mod_rmb, asm_dirct,
+    set_fcn, set_fill
 }
 #endif
 ;
@@ -462,7 +504,8 @@ int (*_if_tbl[]) ()
 {
     _isnul,  not_nul, is_neg,
     le_zero, ge_zero,
-    is_pos,  is_pass1
+    is_pos,  is_pass1,
+    is_def,  is_ndef
 }
 #endif
 ;

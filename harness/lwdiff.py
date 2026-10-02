@@ -232,7 +232,8 @@ def run_las(job, las, lasdir, gen):
     """
     out = os.path.join(lasdir, job["id"])
     incs = [os.path.dirname(job["source"])] + job["includes"] + [gen]
-    argv = ([las, job["source"]] + [f"-D{d}" for d in job["defines"]]
+    argv = ([las, job["source"], "--lwasm"] + [f"-D{d}" for d in job["defines"]]
+            + ([f"--pragma={','.join(job['pragmas'])}"] if job["pragmas"] else [])
             + [f"-i={d}" for d in incs] + [f"-o={out}"])
     if os.path.exists(out):
         os.remove(out)

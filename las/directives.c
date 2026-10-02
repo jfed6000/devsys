@@ -333,6 +333,55 @@ set_fcc (ZILCH)
     return (_getstring (1));         /* return may not be needed */
 }
 
+/* lwasm: "fcn" is fcc followed by a 0 byte */
+
+int
+set_fcn (ZILCH)
+{
+    NumBytes = 0;       /* called directly, not through equset */
+
+    if ( ! _getstring (1))
+    {
+        return 0;
+    }
+
+    addbyte (0);
+    return 1;
+}
+
+/* lwasm: "fill value,count" writes count copies of a byte */
+
+int
+set_fill (ZILCH)
+{
+    static char fillbuf[4];
+    int value;
+    long count;
+
+    if ( ! getNmbr ())
+    {
+        return 0;
+    }
+
+    value = NmbrInt;
+
+    if ( ! iscomma () || ! getNmbr ())
+    {
+        return 0;
+    }
+
+    count = NmbrInt;
+    CmdCod = fillbuf;
+    NumBytes = 0;
+
+    while (count-- > 0)
+    {
+        addbyte (value);
+    }
+
+    return 1;
+}
+
 int
 set_fcs (ZILCH)
 {
@@ -367,7 +416,9 @@ getfc_data (adr, cnt)
     for (;;)
     {
         NumBytes = cnt;
+        InDataDir = 1;
         (*adr) ();      /* Function to retrieve data into NmbrInt */
+        InDataDir = 0;
 
         /* For non-coco systems, move value to nmbr_str, LITTLEENDIAN */
 
@@ -700,20 +751,57 @@ do_use (ZILCH)
 {
     char _chr;
 
-    *(ThisFile++) = SrcFile;
-    SrcFile = u_opn (SrcChar, "r");
+    register char *_end = SrcChar;
 
-    /* "/dev/null" rest of line */
+    /* The file name ends at the first blank: anything after it is a
+     * comment (lwasm allows "use defsfile  ; comment"). */
 
-    while ( (_chr = *(++SrcChar)) )
+    while (*_end && ! isblank (*_end))
     {
-        if (isblank (_chr))
-        {
-            break;
-        }
+        ++_end;
     }
 
+    _chr = *_end;
+    *_end = '\0';
+    *(ThisFile++) = SrcFile;
+    SrcFile = u_opn (SrcChar, "r");
+    *_end = _chr;
+    SrcChar = _end;
+
     return 1;
+}
+
+/* ******************************************************************** *
+ * is_def(), is_ndef() - lwasm's "ifdef"/"ifndef": is the symbol named  *
+ *          in the operand defined (so far in this pass)?               *
+ * ******************************************************************** */
+
+static int
+symdefined (ZILCH)
+{
+    char name[SYMLEN];
+    struct symblstr *sym;
+
+    if ( ! MovLbl (name))
+    {
+        e_report ("symbol name expected");
+        return 0;
+    }
+
+    sym = sym_find (name);
+    return (sym && (sym->locmsk & RELATIVE));
+}
+
+int
+is_def (ZILCH)
+{
+    return symdefined ();
+}
+
+int
+is_ndef (ZILCH)
+{
+    return ! symdefined ();
 }
 
 int
@@ -755,7 +843,10 @@ is_pos (ZILCH)
 int
 is_pass1 (ZILCH)
 {
-    return (PASS1);
+    /* lwasm doesn't support ifp1 and treats it as always true, so
+     * both passes read the same lines (e.g. the defs) */
+
+    return (LwasmMode ? 1 : PASS1);
 }
 
 /* ******************************************************** *

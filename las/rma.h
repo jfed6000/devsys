@@ -213,10 +213,24 @@ GLOBAL char d0587[SYMLEN],
             _ttl[128];
 GLOBAL char CmdMnemonic[SYMLEN];
 GLOBAL long reptFpos;
+/* lwasm mode (--lwasm): ifp1 is true in both passes, as in lwasm, and
+ * names containing '@' or '?' are local to a block between blank lines */
+GLOBAL char LwasmMode;
+GLOBAL int LocalCtx,        /* local label block number (symtab.c) */
+           NextCtx;         /* last block number handed out */
+GLOBAL char InDataDir;      /* evaluating an fcb/fdb value (numeric.c) */
+GLOBAL char IdxLitZero;     /* indexed offset written as "0" (registers.c) */
+
+/* lwasm pragmas set with --pragma= (file_io.c GetOpts) */
+GLOBAL char PragNoCase,     /* nosymbolcase: symbol names ignore case */
+            PragUndefZero;  /* condundefzero: undefined symbol in an if = 0 */
+
 /* OS-9 module format (module.c) */
 GLOBAL int AbsCtr,      /* location counter outside any section/module */
            DataCtr;     /* data counter (".") inside a module */
 GLOBAL char InModule,   /* between mod and emod */
+            InTop,      /* lwasm mode, outside a module: code allowed */
+            TopPending, /* switch to InTop at the start of the next line */
             UsedModule, /* this file has a module: raw output, no ROF */
             SawPsect;   /* this file has a psect */
 

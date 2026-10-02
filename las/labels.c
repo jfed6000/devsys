@@ -133,7 +133,13 @@ do_label (ZILCH)
 
     if ( ! _mysmbl || ! (_mysmbl->locmsk & RELATIVE))
     {
-        errexit ("symbol lost!?");
+        /* A label pass 1 never defined: the two passes read different
+         * lines. Name it, to make the cause findable. */
+
+        static char msg[SYMLEN + 40];
+
+        sprintf (msg, "symbol lost in pass 2: %s", AltLbl);
+        errexit (msg);
     }
 
     _mysmbl->locmsk &= (~DIRLOC);

@@ -35,6 +35,7 @@ struct macro_ptr
     long PrevMpos;
     int lblno;
     char *params;
+    int oldctx;         /* caller's local label block, restored after */
 };
 
 #define MAX_MAC 8
@@ -287,6 +288,13 @@ pushMac (newmac)
     MacLblNbr = d00da;
     d00e2 = MovMacArg ();   /* Read macro parameter defs return string */
     DoingMacro = 1;
+
+    /* lwasm: an expansion is its own local label block; afterwards the
+     * caller's block comes back (a label on the macro call line stays
+     * visible after it) */
+
+    _nxtmac->oldctx = LocalCtx;
+    LocalCtx = ++NextCtx;
 }
 
 /* **************************************************************** *
@@ -310,6 +318,7 @@ pullMac (ZILCH)
     MacLblNbr = _upmac->lblno;
     clrargptr ((char **)d00e2); /* Cast to avoid warning */
     d00e2 = _upmac->params;
+    LocalCtx = _upmac->oldctx;
 }
 
 /* ******************************************************************** *

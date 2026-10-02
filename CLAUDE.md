@@ -62,6 +62,11 @@ using examples from their own trees.
 - NitrOS9 lwasm flags are in `corpus/nitros9/rules.mak` (`AS` and `ASM`). The
   Level 2 F256 defs come from `-I nitros9/defs -I nitros9/level2/wildbits -Dwildbits=1`.
 - After a fresh checkout of `devsys`, run `harness/corpus.sh` before the harness.
+- `las` has two modes. Default: RMA behaviour. `--lwasm`: lwasm behaviour
+  (DESIGN.md D12, §4). NitrOS9 sources need `--lwasm` plus the build's
+  `--pragma=` list, which the harnesses pass. A change for lwasm compatibility
+  normally goes behind `LwasmMode`, so `regress.py --skip lwdiff` (RMA/DCC
+  inputs) must stay 450/450.
 - Host builds: `las` at `las/build/unix/las`; the unmodified RMA at
   `~/projects/dcc/rma/build/unix/rma` is the reference for "no behaviour change" checks; DCC passes at
   `~/projects/dcc/CoCoC/Source/Compiler/{CPP/dcpp,CC09/dcc68,COpt/dco68}`.

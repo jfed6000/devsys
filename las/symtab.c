@@ -28,6 +28,68 @@
 
 #define NBUCKETS 64
 
+/* With PragNoCase (lwasm's nosymbolcase) names are hashed and compared
+ * ignoring case; the table keeps the spelling first seen. */
+
+#define FOLD(c) (PragNoCase ? _tolower (c) : (c))
+
+/* ******************************************************************** *
+ * symkey() - In lwasm mode a name containing '@' or '?' is local to    *
+ *            its block (LocalCtx), so the table stores it as           *
+ *            "name~block": l@ in block 3 and l@ in block 7 are two     *
+ *            different symbols. Other names are used as they are.      *
+ * ******************************************************************** */
+
+static char *
+#ifdef __STDC__
+symkey (char *name)
+#else
+symkey (name)
+     char *name;
+#endif
+{
+    static char key[SYMLEN + 8];
+    register char *p;
+
+    if ( ! LwasmMode)
+    {
+        return name;
+    }
+
+    for (p = name; *p; ++p)
+    {
+        if ((*p == '@') || (*p == '?'))
+        {
+            sprintf (key, "%.*s~%d", SYMLEN - 1, name, LocalCtx);
+            return key;
+        }
+    }
+
+    return name;
+}
+
+static int
+#ifdef __STDC__
+namecmp (char *a, char *b)
+#else
+namecmp (a, b)
+     register char *a, *b;
+#endif
+{
+    if ( ! PragNoCase)
+    {
+        return strcmp (a, b);
+    }
+
+    while (*a && (_tolower (*a) == _tolower (*b)))
+    {
+        ++a;
+        ++b;
+    }
+
+    return _tolower (*a) - _tolower (*b);
+}
+
 static struct symblstr *Buckets[NBUCKETS];
 
 #ifdef SYMSTATS
@@ -48,7 +110,7 @@ bucket (name)
 
     do
     {
-        sum += *p;
+        sum += FOLD (*p);
     } while (*(++p) != '\0');
 
     return &Buckets[sum & (NBUCKETS - 1)];
@@ -77,7 +139,7 @@ search (name, node)
     {
         do
         {
-            cmp = strcmp (name, ((*node = n)->symblnam));
+            cmp = namecmp (name, ((*node = n)->symblnam));
 
             if (cmp < 0)
             {
@@ -108,6 +170,7 @@ sym_find (name)
 {
     struct symblstr *node;
 
+    name = symkey (name);
     return search (name, &node) ? 0 : node;
 }
 
@@ -128,6 +191,7 @@ sym_add (name)
     struct symblstr *parent;
     int cmp;
 
+    name = symkey (name);
     cmp = search (name, &parent);
 
     /* sizeof already includes symblnam[1], room for the terminating 0 */

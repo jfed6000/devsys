@@ -190,6 +190,14 @@ AsmblLin (ZILCH)
     MACDSCR *_macdsc;
     int _modcmd;
 
+    if (TopPending)         /* after emod in lwasm mode (module.c) */
+    {
+        TopPending = 0;
+        top_setup ();
+    }
+
+    IdxLitZero = 0;
+
     NumBytes = Is_W
              = AIMFlg
              = IndxVal
@@ -233,11 +241,33 @@ AsmblLin (ZILCH)
         doList = OFF;
     }
 
-    /* Empty line or comment */
+    /* Empty line or comment. Like lwasm, a line whose first non-blank
+     * character is '*' or ';' is a comment, wherever it starts. */
 
-    if (((_curch = *SrcChar) == '\0') || (_curch == '*'))
+    if ((_curch = *SrcChar) == '\0')
+    {
+        LocalCtx = ++NextCtx;         /* blank line: ends a local label block */
+        return 1;
+    }
+
+    if ((_curch == '*') || (_curch == ';'))
     {
         return 1;
+    }
+
+    if (isblank (_curch))
+    {
+        register char *_p = SrcChar;
+
+        while (isblank (*_p))
+        {
+            ++_p;
+        }
+
+        if ((*_p == '*') || (*_p == ';'))
+        {
+            return 1;
+        }
     }
 
     if (notblank(_curch))
@@ -248,6 +278,11 @@ AsmblLin (ZILCH)
 
         if ( ! (MacDefining) && ! (FalseIf) && ! (InRept))
         {
+            if (InTop && mod_peek ())
+            {
+                AbsCtr = 0;     /* lwasm: the mod line is at address 0 */
+            }
+
             if (do_label () == 0)
             {
                 return (e_report ("bad label"));
@@ -276,7 +311,17 @@ AsmblLin (ZILCH)
 
     if ((_curch = SkipSpac ()) == '\0')
     {
+        if ( ! Label)
+        {
+            LocalCtx = ++NextCtx;     /* blank line: ends a local label block */
+        }
+
         return 1;
+    }
+
+    if (LwasmMode && (_curch == ';'))
+    {
+        return 1;           /* lwasm: "label   ; comment" */
     }
 
     /* Move operator to LabelName */
@@ -305,7 +350,17 @@ AsmblLin (ZILCH)
         {
                     /* Parse for assembler directives */
 
-            if ((Cod_Ent = FindCmd (LabelName, S_Nam, SNamEnd)))
+            /* FindCmd matches table entries as prefixes, so "set" also
+             * matched "setdp" (RMA never assembled setdp correctly).
+             * lwasm mode requires the whole directive name. */
+
+            if ((Cod_Ent = FindCmd (LabelName, S_Nam, SNamEnd)) &&
+                LwasmMode && (strlen (Cod_Ent->ccmd) != strlen (CmdMnemonic)))
+            {
+                Cod_Ent = 0;
+            }
+
+            if (Cod_Ent)
             {
                 jsrOfst = (Cod_Ent->tofst & 0x0f);
 
@@ -334,6 +389,7 @@ AsmblLin (ZILCH)
                         {
                             add_nul ();
                             MacDefining = 0;
+                            LocalCtx = ++NextCtx;   /* lwasm: endm breaks */
                             return 1;
                         }
                         else
@@ -466,6 +522,12 @@ AsmblLin (ZILCH)
                             _modcmd = 1;
                         }
 
+                        if ((Cod_Ent == 0) && InTop &&
+                            (Cod_Ent = FindCmd (LabelName, S_TopLw, STopLwEnd)))
+                        {
+                            _modcmd = 2;
+                        }
+
                         /* If a Cod_Ent has not yet been found, try
                          * the default list
                          */
@@ -526,8 +588,9 @@ AsmblLin (ZILCH)
                              * more than 16 entries in one of the tables.
                              */
 
-                            if ( ! (_modcmd ? (*ModTbl[(jsrOfst & 0x1f)]) ()
-                                            : (*jmp_ptr[(jsrOfst & 0x1f)]) ()))
+                            if ( ! ((_modcmd == 1) ? (*ModTbl[(jsrOfst & 0x1f)]) ()
+                                  : (_modcmd == 2) ? (*TopLwTbl[(jsrOfst & 0x1f)]) ()
+                                  : (*jmp_ptr[(jsrOfst & 0x1f)]) ()))
                             {
                                 return 0;
                             }

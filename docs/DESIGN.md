@@ -29,6 +29,7 @@ Out of scope for now: Level 1, other CoCo platforms, ANSI C.
 | D9 | A module is assembled as a **psect at address 0**, in `las/module.c` | In a psect, RMA's code bytes hold offsets from the psect start, which for a module starting at 0 are the final addresses, so RMA's tested instruction code is reused and relocation records are simply not written. Module labels and `*` are plain numbers (no relocation flag), as in lwasm, so any expression lwasm accepts works. |
 | D10 | lwasm's location counters: outside a module one counter (`*` = `.`; `org` sets it, `rmb` advances it); inside `mod`…`emod` two (`*` code, `.` data, both from 0; `rmb`/`org` work on `.`). `rmb` never writes bytes. Output is every emitted byte in order. | Measured from lwasm 4.25's behaviour, not its source (the source suggested a quirk the binary doesn't have). |
 | D11 | `-D NAME[=value]` (upper-case D; `-d` stays RMA's page depth) defines a `set` symbol before assembly | The harness needed it: RMA assembles each input file as a separate unit, so a "defines" prelude file wrote its own (empty) ROF trailer into module output. |
+| D12 | **lwasm mode** (`--lwasm`) holds every lwasm-specific behaviour; default las stays RMA | NitrOS9 needs lwasm's semantics, but RMA's own sources (and the regression guard) depend on RMA's. Key choice inside it: `ifp1` is true in both passes (as lwasm, which doesn't support it), and **conditionals are decided in pass 1 and replayed in pass 2** (`cond_log`, 1 bit each). lwasm decides conditionals once, when it first reads a line, but resolves values later: an include guard (`ifne OS9.D-1 / OS9.D set 1`) must stay true in pass 2, yet a forward reference to a `set` symbol gets its final value. Resetting `set` symbols before pass 2 got the first right and the second wrong; replay gets both. |
 
 ## 3. Source styles the fork must accept
 
@@ -56,39 +57,42 @@ NitrOS9 assembles with:
 lwasm --6309 --format=os9 --pragma=pcaspcr,nosymbolcase,condundefzero,undefextern,dollarnotlocal,noforwardrefmax
 ```
 
-Measured against the 370 files in `level1/wildbits`, `level2/wildbits`,
-`level1/modules`, `level1/cmds` and `defs`:
+### lwasm mode
 
-| Feature | Files using it | RMA today |
+`las --lwasm` switches on lwasm's behaviour where it differs from RMA's
+(decision D12). The harness passes it, with the build's `--pragma=` list, for
+every NitrOS9 assembly. Without it `las` behaves like RMA, so the RMA/DCC
+regression inputs keep guarding RMA behaviour (450 of 450 identical after
+phase 4). A few fixes apply in both modes because they are plain bugs or
+harmless there: line endings, `;`/indented comments, `use` file names ending
+at a blank, over-long lines, a last line without a newline.
+
+### Status after phase 4 (2026-10-02)
+
+| Feature | Files | Status |
 |---|---|---|
-| `mod` / `emod` | most | ✅ phase 3 (`las/module.c`) |
-| `foo@` local labels (scoped) | 127 | ❌ treated as global → "redefined name" |
-| `fill`, `ifndef` | 50 | ❌ |
-| `<<`, `>>` | ~40 uses | ❌ bad operator |
-| `section` / `endsect` | wildbits boot/feu, 28 `.as` files | ❌ |
-| `fcn`, `ifdef` | several | ❌ |
-| case-insensitive symbols (`nosymbolcase`) | all | ? — check |
-| undefined symbol in condition = 0 (`condundefzero`) | ~400 `ifne H6309` etc. | ? — check |
-| `pcaspcr`, `dollarnotlocal` | all | ? — check |
-
-### Found by the harness (phase 0 baseline, 2026-10-02)
-
-The harness (§8) found these in the first errors of the Level 2 jr2 build
-(290 assemblies). Counts are files whose *first* error is this one.
-
-| Feature | Files | RMA today |
-|---|---|---|
-| `;` comments, including `;;; NAME` at column 1 | 74 | ❌ only `*` starts a comment line → "bad label" |
-| `; comment` after an operand (`use defsfile  ; ...`) | 5 | ❌ comment read as part of the file name → fatal |
-| CRLF line endings | 18 | ❌ `\r` kept in names (`"defsfile\r"`) → fatal. Natively, files may have CR, LF or CRLF; accept all three |
-| `fcb`/`fcc`/`rmb`/`org` with no section (data files, hand-built modules) | 35 | ❌ RMA only allows them inside `psect`/`vsect` |
-| `ifne H6309` etc. with `H6309` undefined (`condundefzero`) | 2+ | ❌ "illegal external reference" |
-| `equ`/`set` using a not-yet-defined symbol | 5 | ❌ "illegal external reference" |
-| `^` operator (`1024^2`) | 1 | ❌ bad operator. Check what lwasm means by `^` before copying it |
-| `setdp` with no label | 1 | ❌ "label missing" |
-| `-D` command-line defines | all | ❌ no option. Harness uses a prelude file for now |
-| `use` file searched next to the including file | many | ❌ RMA searches the current directory, then `-i` paths. lwasm searches the *including file's* directory, then `-I` paths, never the current directory. Harness runs las in an empty directory with the source's directory as the first `-i`, which matches for the top-level file but not for nested `use` |
-| Trailing spaces after a `use` file name (`use   os9.d   `) | 2 | ❌ spaces kept in the name → fatal (found 2026-10-02 once las read the same `basic09/defsfile` lwasm does) |
+| `mod` / `emod`, module output | most | ✅ phase 3 |
+| `-D NAME[=value]`, `--pragma=` | all | ✅ (`nosymbolcase`, `condundefzero` implemented; others accepted) |
+| `;` comments (column 1, indented, after a label), `* ` indented | ~80 | ✅ both modes |
+| CR, LF and CR LF line endings; last line without newline | 18 | ✅ both modes |
+| `use name  ; comment`, trailing spaces after a `use` name | 7 | ✅ both modes |
+| `ifp1` true in both passes; conditionals decided in pass 1 and replayed in pass 2 | all | ✅ lwasm mode (see D12) |
+| case-insensitive symbols (`nosymbolcase`) | all | ✅ `HW.PAGE` = `HW.Page` |
+| undefined symbol in a condition = 0 (`condundefzero`) | ~20 | ✅ |
+| `ifdef`, `ifndef`, `if`, `endif` | 5 | ✅ lwasm mode |
+| `foo@` / `foo?` local labels: scope ends at a blank line, a macro definition's end; an expansion gets its own scope and restores the caller's | 14+ | ✅ lwasm mode |
+| operators `\|` `^`(xor) `%` `<<` `>>`, unary `~`, lwasm precedence | ~50 uses | ✅ lwasm mode. RMA binds `&`/`!` tighter than `*`/`+`; lwasm the reverse |
+| `'A'` (closing quote), `"AB` two-character values, `0x` hex | several | ✅ lwasm mode |
+| `fcb`/`fdb` values out of range keep the low bits (8-bit instruction operands still an error) | few | ✅ lwasm mode |
+| code and data outside a module (`fcb`, instructions at top level), `org`/`rmb` at top level | 28 | ✅ |
+| label on the `mod` line is address 0 | 1 | ✅ |
+| `fcn`, `fill` | 2 | ✅ |
+| `setdp` (RMA matched it as `set`) | 1 | ✅ lwasm mode: directive names must match exactly |
+| `0,u` keeps a 5-bit zero offset; `<d,s` with symbol `d` is not D-register indexing | 3 | ✅ lwasm mode |
+| `struct` / `endstruct` | 1 (`minted`) | ❌ not yet |
+| `section` / `endsect` (lwasm object format) | 88 + `opts.o` | phase 5 |
+| shortest instruction forms (`,pcr` 8/16-bit, …) | 39 DIFF files | phase 3b |
+| `use` searched next to the *including* file for nested `use` | — | ❌ harness passes the source's directory first; nested `use` not exact |
 
 ## 5. Long symbol names
 
@@ -240,7 +244,7 @@ current directory.
 | **2. Compact entries** | Variable-length names | identical output, memory use measured | **done** 2026-10-02. `symblnam[1]` as last member, allocated at the name's length. regress 740/740; AddressSanitizer build clean on all 740 (and catches a deliberate 4-byte under-allocation). Measured: see §6 |
 | **3. Module mode** | `mod`/`emod`, header, CRC | simple `.asm` commands match lwasm | **done** 2026-10-02. 72 of 290 match lwasm byte for byte (verified independently: header parity and CRC recomputed). Also top-level `org`/`rmb`, `.` and `*` counters, `-D`. AddressSanitizer clean |
 | **3b. Operand sizing** | Choose the shortest form like lwasm: `,pcr` 8/16-bit offsets (and check extended vs direct, index offsets). Backward references are easy; forward references need extra sizing passes (lwasm builds with `noforwardrefmax` and iterates) | the 16 DIFF files that are 1–5 bytes longer match | not started |
-| **4. lwasm syntax** | `@` locals, `ifdef/ifndef`, `fill`, `fcn`, `<<`/`>>`, `;` comments, CR/LF/CRLF, code and data outside a module (`fcb` at top level, 28 files), case-insensitive symbols (`HW.PAGE` vs `HW.Page`), undefined symbols in conditions = 0 (15 `ifne H6309`), `ifp1` counters, pragma behaviours (see §4) | most `.asm` files match | not started |
+| **4. lwasm syntax** | lwasm syntax and semantics in lwasm mode; see §4 status table | most `.asm` files match | **done** 2026-10-02 (except `struct`, 1 file). 160 of 290 match (was 72). Every remaining DIFF is phase 3b sizing; remaining errors are phase 5 `section` files. RMA/DCC regression 450/450; AddressSanitizer clean |
 | **5. Object mode** | `section`/`export` → ROF; header defaults | `.as` files link with rlink and match | not started |
 | **6. Long names downstream** | rlink and DCC name limits; DCC `ASSEMBLER` → `"las"` | 24-char names survive compile → link | not started |
 | **7. Native build** | Compile fork + rlink + DCC with DCC; run on F256 | assembles `scfg.asm` on the F256 | not started |
@@ -263,7 +267,9 @@ catch DCC/K&R surprises.
 - [ ] DCC limits (no `void`, `enum`, `const`) when compiling the fork natively.
 - [ ] Does anything in the build depend on lwasm listing or map output?
 - [ ] `errexit()` exits with `errno`, which is 0 unless a system call just failed, so some fatal errors (e.g. "bad -D value", "symbol table overflow") report success to the shell. Fix: exit 1 when errno is 0. Changes exit codes, so do it as its own small step.
-- [ ] `ifp1` blocks are read only in pass 1 (lwasm reads them in every pass). The defs move the location counter (lwasm leaves `*` = 8 after the Level 2 wildbits defs), so a file with top-level code after the defs would phase-error. Fix in phase 4: save the counters at the end of an `ifp1` block in pass 1 and restore them when pass 2 skips it.
+- [x] `ifp1` blocks were read only in pass 1, so the defs' effect on the location counter (lwasm leaves `*` = 8 after the Level 2 wildbits defs) differed between passes. Solved in phase 4: lwasm mode makes `ifp1` true in both passes and replays conditionals (D12).
+- [ ] RMA mode still matches directive names as prefixes, so `setdp` is taken as `set` there (lwasm mode requires exact names). Fixing it in RMA mode would change RMA behaviour; decide if RMA-mode sources ever need `setdp`.
+- [ ] `struct`/`endstruct` (lwasm) not implemented; 1 file (`minted`).
 - [ ] RMA assembles each input file as a separate unit (both passes, then that file's ROF trailer). Fine for ROF libraries; for modules, pass one source file.
 - [ ] las's macro work file has a fixed name (`rma.tmp` in the current directory), so two las runs in one directory collide, natively too. Use a unique name (process ID) or a temp directory.
 - [ ] Phase 8 (banked blocks): symbol fields (`smbltyp`, `locmsk`, `s_ofst`, `reftbl`) are still read directly through pointers in `labels.c`, `directives.c`, `registers.c`, `file_io.c`, and `ref_xtrnal.r_offset` stores symbol pointers cast to `int`. Phase 1 isolated *finding and storing*; banking also needs those pointers to stay valid, so decide in phase 8 whether entries stay in main memory and only names move to banks.

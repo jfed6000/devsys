@@ -57,7 +57,9 @@ proc_int (ZILCH)
     }
     else
     {
-        if ((NmbrInt >= 65536) || (NmbrInt < -65536))
+        /* lwasm keeps the low 16 bits of a too-large 16-bit value */
+
+        if ( ! LwasmMode && ((NmbrInt >= 65536) || (NmbrInt < -65536)))
         {
             return e_report ("value out of range");
         }
@@ -85,7 +87,11 @@ proc_byte (ZILCH)
     }
     else
     {
-        if ((NmbrInt >= 256) || (NmbrInt < -256))
+        /* lwasm keeps the low 8 bits of a too-large fcb value, but an
+         * 8-bit instruction operand is still an error */
+
+        if ( ! (LwasmMode && InDataDir) &&
+             ((NmbrInt >= 256) || (NmbrInt < -256)))
         {
             return e_report ("value out of range");
         }
@@ -165,6 +171,11 @@ do_math (precedence)
     while ((_oplevel = mathtyp (*SrcChar)) >= precedence)
     {
         _opratr = (*(SrcChar++));
+
+        if ((_opratr == '<') || (_opratr == '>'))
+        {
+            ++SrcChar;          /* the second character of << or >> */
+        }
         frstnum = NmbrInt;
         var1 = OptBPtr;
         _oldxtrn = IsExtrn;
@@ -229,6 +240,7 @@ do_math (precedence)
 
                 break;
             case '!':
+            case '|':           /* lwasm mode only (see mathtyp) */
                 if (IsExtrn)
                 {
                     e_ilxtRf ();
@@ -236,6 +248,40 @@ do_math (precedence)
                 else
                 {
                     NmbrInt |= frstnum;
+                }
+
+                break;
+
+            /* lwasm mode only (see mathtyp) */
+
+            case '^':           /* binary ^ is exclusive or */
+            case '%':           /* remainder */
+            case '<':           /* << */
+            case '>':           /* >> */
+                if (IsExtrn)
+                {
+                    e_ilxtRf ();
+                }
+                else if (_opratr == '^')
+                {
+                    NmbrInt ^= frstnum;
+                }
+                else if (_opratr == '%')
+                {
+                    if (NmbrInt == 0)
+                    {
+                        return e_report ("zero division");
+                    }
+
+                    NmbrInt = frstnum % NmbrInt;
+                }
+                else if (_opratr == '<')
+                {
+                    NmbrInt = frstnum << NmbrInt;
+                }
+                else
+                {
+                    NmbrInt = frstnum >> NmbrInt;
                 }
 
                 break;
@@ -253,6 +299,39 @@ mathtyp (tst_char)
      char tst_char;
 #endif
 {
+    /* lwasm mode: lwasm's operators and precedence, lowest first:
+     *     | ! ^      or, or, exclusive or
+     *     &          and
+     *     + -
+     *     * / % << >>
+     * RMA's own order is different: & and ! bind tighter than * and +,
+     * so "A+B&C" is A+(B&C) in RMA but (A+B)&C in lwasm. */
+
+    if (LwasmMode)
+    {
+        switch (tst_char)
+        {
+            case '|':
+            case '!':
+            case '^':
+                return 1;
+            case '&':
+                return 2;
+            case '+':
+            case '-':
+                return 3;
+            case '*':
+            case '/':
+            case '%':
+                return 4;
+            case '<':
+            case '>':
+                return (SrcChar[1] == tst_char) ? 4 : 0;
+        }
+
+        return 0;
+    }
+
     switch (tst_char)
     {
         case '+':
@@ -343,13 +422,56 @@ get_param (ZILCH)
             }
 
             break;
+        case '"':       /* lwasm: "xy is a two-character 16-bit value */
+            if ( ! LwasmMode)
+            {
+                --SrcChar;
+                return (NmbrInt = e_report ("bad operand"));
+            }
+
+            if ((SrcChar[0] == '\0') || (SrcChar[1] == '\0'))
+            {
+                return (NmbrInt = e_report ("bad operand"));
+            }
+
+            NmbrInt = ((SrcChar[0] & 0xff) << 8) | (SrcChar[1] & 0xff);
+            SrcChar += 2;
+
+            if (*SrcChar == '"')
+            {
+                ++SrcChar;      /* optional closing quote */
+            }
+
+            break;
+        case '~':       /* lwasm: complement (RMA spells it ^) */
+            if ( ! LwasmMode)
+            {
+                --SrcChar;
+                return (NmbrInt = e_report ("bad operand"));
+            }
+
+            if ( ! get_param ())
+            {
+                return 0;
+            }
+
+            if (IsExtrn)
+            {
+                e_ilxtRf ();
+            }
+            else
+            {
+                NmbrInt = ~NmbrInt;
+            }
+
+            break;
         case '.':       /* data counter in a module, else same as '*' */
             NmbrInt = mod_dot ();
             break;
         case '*':
-            if (InModule)
+            if (InModule || InTop)
             {
-                NmbrInt = CodeSize;     /* module addresses are plain numbers */
+                NmbrInt = *S_Addrs;     /* plain numbers, no relocation */
             }
             else if (S_Addrs == 0)
             {
@@ -381,6 +503,11 @@ get_param (ZILCH)
             {
                 --SrcChar;
                 return 0;
+            }
+
+            if (LwasmMode && (*SrcChar == '\''))
+            {
+                ++SrcChar;      /* lwasm allows a closing quote: 'A' */
             }
 
             break;
@@ -436,7 +563,16 @@ _getnum (ZILCH)
             CTyp = 0x20;
             break;
         default:
-            if (isdigit (_digit))
+            if (LwasmMode && (_digit == '0') &&
+                ((SrcChar[1] == 'x') || (SrcChar[1] == 'X')) &&
+                (_chcodes[(int) SrcChar[2]] & 0x20))
+            {
+                SrcChar += 2;           /* lwasm: 0x hex */
+                _digit = *SrcChar;
+                base = 16;
+                CTyp = 0x20;
+            }
+            else if (isdigit (_digit))
             {
                 base = 10;
             }

@@ -11,6 +11,10 @@
 /* directives.c */
 int do_rzb(void);
 int do_rmb(void);
+int is_def(void);
+int set_fcn(void);
+int set_fill(void);
+int is_ndef(void);
 int l1723(void);
 int do_equ(void);
 int do_set(void);
@@ -71,6 +75,9 @@ char SkipSpac(void);
 void *getmem(int memreq);
 void do_defines(void);
 /* module.c */
+int cond_log(int result);
+int mod_peek(void);
+void top_setup(void);
 void mod_pass(void);
 void mod_write(char *bytes, int len);
 int do_mod(void);
@@ -159,6 +166,10 @@ void errexit(char *report);
 /* directives.c */
 int do_rzb();
 int do_rmb();
+int is_def();
+int set_fcn();
+int set_fill();
+int is_ndef();
 int l1723();
 int do_equ();
 int do_set();
@@ -219,6 +230,9 @@ char SkipSpac();
 void *getmem();
 void do_defines();
 /* module.c */
+int cond_log();
+int mod_peek();
+void top_setup();
 void mod_pass();
 void mod_write();
 int do_mod();

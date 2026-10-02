@@ -108,6 +108,49 @@ static void ck_xtrnl();
  *          inline options (read from source file)          *
  * ******************************************************** */
 
+/* ******************************************************** *
+ * set_pragmas() - lwasm's --pragma=a,b,c. The ones las     *
+ *          implements change its behaviour; the rest are   *
+ *          accepted and ignored, so lwasm command lines    *
+ *          work unchanged.                                 *
+ * ******************************************************** */
+
+static void
+#ifdef __STDC__
+set_pragmas (char *list)
+#else
+set_pragmas (list)
+     char *list;
+#endif
+{
+    char name[32];
+    register int n;
+
+    while (*list)
+    {
+        for (n = 0; *list && (*list != ',') && (n < 31); ++list)
+        {
+            name[n++] = _tolower (*list);
+        }
+
+        name[n] = '\0';
+
+        if (*list == ',')
+        {
+            ++list;
+        }
+
+        if (strcmp (name, "nosymbolcase") == 0)
+        {
+            PragNoCase = 1;
+        }
+        else if (strcmp (name, "condundefzero") == 0)
+        {
+            PragUndefZero = 1;
+        }
+    }
+}
+
 /* -DNAME[=value] definitions from the command line (lwasm's -D) */
 
 static char *Defines[32];
@@ -183,7 +226,11 @@ do_defines (ZILCH)
         }
 
         sym->smbltyp = CODENT | INIENT;     /* a "set" symbol */
-        sym->locmsk = RELATIVE | DIRENT;    /* defined, a plain number */
+        /* defined, a plain number. Keep LOC1BYT: it is the symbol
+         * table tree's "real right child" flag (symtab.c), and this runs
+         * again before pass 2 when the symbol may have children. */
+
+        sym->locmsk = (sym->locmsk & LOC1BYT) | RELATIVE | DIRENT;
         sym->s_ofst = val;
     }
 }
@@ -205,7 +252,15 @@ GetOpts (_argc, _argv)
 
     while (--_argc)
     {
-        if ((**_argv == '-') && ((*_argv)[1] == 'D'))
+        if (strncmp (*_argv, "--pragma=", 9) == 0)
+        {
+            set_pragmas (*_argv + 9);
+        }
+        else if (strcmp (*_argv, "--lwasm") == 0)
+        {
+            LwasmMode = 1;
+        }
+        else if ((**_argv == '-') && ((*_argv)[1] == 'D'))
         {
             /* -D is case-sensitive: lower-case -d is the page depth */
 
@@ -442,18 +497,43 @@ getsrcline (ZILCH)
 
             _dest = SrcChar = InpBuf;
 
-            /* Read up to newline, EOF, or read error */
+            /* Read up to end of line, EOF, or read error. A line may end
+             * with LF (Unix), CR (OS-9) or CR LF (DOS/Windows); the codes
+             * are written as numbers because '\n' is CR on OS-9. A line
+             * longer than InpBuf is cut short rather than overrunning it,
+             * and a last line with no line ending still counts.
+             */
 
             while ((_curchr = getc (SrcFile)) != -1)
             {
-                if (_curchr == '\n')
+                if ((_curchr == 0x0a) || (_curchr == 0x0d))
                 {
+                    if (_curchr == 0x0d)
+                    {
+                        int _next = getc (SrcFile);
+
+                        if ((_next != 0x0a) && (_next != -1))
+                        {
+                            ungetc (_next, SrcFile);
+                        }
+                    }
+
                     *_dest = '\0';
                     ++ListLin;
                     return 1;
                 }
 
-                *(_dest++) = _curchr;
+                if (_dest < &InpBuf[sizeof (InpBuf) - 1])
+                {
+                    *(_dest++) = _curchr;
+                }
+            }
+
+            if (_dest != InpBuf)    /* last line had no line ending */
+            {
+                *_dest = '\0';
+                ++ListLin;
+                return 1;
             }
         } while (DecSFil ());
 
@@ -732,7 +812,7 @@ w_ocod (_codaddr, _codlen)
     {
         *S_Addrs += _codlen;
 
-        if (InModule)
+        if (InModule || InTop)
         {
             mod_write (_codaddr, _codlen);
             return;

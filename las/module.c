@@ -20,6 +20,7 @@
  * no relocation is needed. Output is the raw bytes, in order.      *
  * **************************************************************** */
 
+#define NEED_CTYPE
 #include "rma.h"
 
 static unsigned char ModCrc[3];
@@ -60,8 +61,79 @@ crc_byte (c)
 }
 
 /* ******************************************************************** *
+ * cond_log() - lwasm mode: pass 1 records each conditional's result,   *
+ *              pass 2 returns the recorded results in the same order.  *
+ *              Both passes read the same lines, so the order matches.  *
+ *              One bit per conditional.                                *
+ * ******************************************************************** */
+
+#define CONDMAX 16384           /* conditionals per source file */
+
+static unsigned char CondBits[CONDMAX / 8];
+static int CondCount, CondNext;
+
+int
+#ifdef __STDC__
+cond_log (int result)
+#else
+cond_log (result)
+     int result;
+#endif
+{
+    int i;
+
+    if ( ! Pass2)
+    {
+        if (CondCount >= CONDMAX)
+        {
+            errexit ("too many conditionals");
+        }
+
+        i = CondCount++;
+
+        if (result)
+        {
+            CondBits[i >> 3] |= (1 << (i & 7));
+        }
+        else
+        {
+            CondBits[i >> 3] &= ~(1 << (i & 7));
+        }
+
+        return result;
+    }
+
+    if (CondNext >= CondCount)
+    {
+        errexit ("conditionals out of step between passes");
+    }
+
+    i = CondNext++;
+    return (CondBits[i >> 3] >> (i & 7)) & 1;
+}
+
+/* ******************************************************************** *
  * mod_pass() - Reset module state at the start of each pass.           *
  * ******************************************************************** */
+
+/* ******************************************************************** *
+ * top_setup() - lwasm mode, outside a module: like lwasm, code and     *
+ *               data may appear anywhere and are written as raw bytes  *
+ *               at the one location counter. Uses the instruction      *
+ *               tables like a module does, with mod/org/rmb/end found  *
+ *               through S_TopLw (see AsmblLin).                        *
+ * ******************************************************************** */
+
+void
+top_setup (ZILCH)
+{
+    codsetup ();
+    DLocField = RELATIVE | DIRENT;  /* labels are plain numbers */
+    TmpLocMsk = 0;
+    S_Addrs = &AbsCtr;
+    CurntOrg = &AbsCtr;
+    InTop = 1;
+}
 
 void
 mod_pass (ZILCH)
@@ -69,17 +141,28 @@ mod_pass (ZILCH)
     if ( ! Pass2)
     {
         SawPsect = UsedModule = 0;
+        CondCount = 0;
     }
 
+    CondNext = 0;
+
     AbsCtr = DataCtr = 0;
-    InModule = 0;
+    LocalCtx = NextCtx = 0;
+    InModule = InTop = TopPending = 0;
     CurntOrg = &AbsCtr;
+
+    if (LwasmMode)
+    {
+        top_setup ();
+    }
 }
 
 /* ******************************************************************** *
  * mod_write() - Called by w_ocod() for bytes generated in a module.    *
  *               On pass 2, adds them to the CRC and writes them out.   *
  * ******************************************************************** */
+
+/* Bytes written in a module, or at the top level in lwasm mode */
 
 void
 #ifdef __STDC__
@@ -91,6 +174,8 @@ mod_write (bytes, len)
 #endif
 {
     int i;
+
+    UsedModule = 1;     /* raw output: no ROF header or refs */
 
     if (Pass2)
     {
@@ -155,6 +240,7 @@ do_mod (ZILCH)
 
     /* Enter the module: a psect at address 0 */
 
+    InTop = 0;
     codsetup ();
     DLocField = RELATIVE | DIRENT;  /* labels are plain numbers, as in lwasm */
     TmpLocMsk = 0;
@@ -197,6 +283,31 @@ do_mod (ZILCH)
 }
 
 /* ******************************************************************** *
+ * mod_peek() - Is this line's operation "mod"? Called before the label *
+ *              is defined: lwasm gives the mod line itself address 0,  *
+ *              so a label on it is 0, not the old counter.             *
+ * ******************************************************************** */
+
+int
+mod_peek (ZILCH)
+{
+    register char *p = SrcChar;
+
+    while (*p && ! isblank (*p))        /* past the label */
+    {
+        ++p;
+    }
+
+    while (isblank (*p))
+    {
+        ++p;
+    }
+
+    return ((_tolower (p[0]) == 'm') && (_tolower (p[1]) == 'o') &&
+            (_tolower (p[2]) == 'd') && ((p[3] == '\0') || isblank (p[3])));
+}
+
+/* ******************************************************************** *
  * mod_emod() - "emod": append the CRC and leave the module. Writes the *
  *              3 bytes itself (they must not go into the CRC) and      *
  *              leaves S_Addrs at 0, so the caller's w_ocod() only      *
@@ -220,8 +331,9 @@ mod_emod (ZILCH)
     /* Back to the top level; its counter carries on from the module's end */
 
     InModule = 0;
-    precodeset ();
+    precodeset ();          /* S_Addrs = 0: the caller's w_ocod only lists */
     AbsCtr = CodeSize;
+    TopPending = LwasmMode; /* back to top-level code at the next line */
 
     CmdCod = (char *) ModBytes;
     NumBytes = 3;
@@ -273,6 +385,11 @@ mod_dot (ZILCH)
     if (InModule)
     {
         return DataCtr;
+    }
+
+    if (InTop)
+    {
+        return AbsCtr;
     }
 
     if (S_Addrs)

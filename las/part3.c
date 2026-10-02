@@ -682,29 +682,73 @@ asm_dirct (ZILCH)
 int
 do_ifs (ZILCH)
 {
+    int _istrue = 1,    /* an expression error counts as true, as in RMA */
+        _ok = 1;
+
     NumBytes = 0;
     ++_If_Dpth;
 
-    if (_if_tbl[(int)(MLCod.opcode)] != is_pass1)
+    if ((_if_tbl[(int)(MLCod.opcode)] != is_pass1) &&
+        (_if_tbl[(int)(MLCod.opcode)] != is_def) &&
+        (_if_tbl[(int)(MLCod.opcode)] != is_ndef))
     {
         if (getNmbr () == 0)
         {
-            return 0;
+            _ok = 0;
         }
-
-        if (d0791 != OptBPtr)
+        else if (d0791 != OptBPtr)
         {
-            return (ilExtRef ());
+            /* condundefzero: symbols that are simply undefined count as
+             * 0 (getNmbr already used 0 for them). References to
+             * relocatable or external symbols are still an error. */
+
+            register struct ref_ent *r = d0791;
+
+            while (PragUndefZero && (r < OptBPtr) &&
+                   ! (r->RAddr->locmsk & RELATIVE))
+            {
+                ++r;
+            }
+
+            if (r < OptBPtr)
+            {
+                ilExtRef ();
+                _ok = 0;
+            }
+            else
+            {
+                OptBPtr = d0791;
+            }
         }
     }
 
-    if ((*_if_tbl[(int)(MLCod.opcode)]) () == 0)
+    if (_ok)
+    {
+        _istrue = ((*_if_tbl[(int)(MLCod.opcode)]) () != 0);
+    }
+
+    /* lwasm decides a conditional once, as it first reads the line, with
+     * what is known at that point; values are worked out later. So in
+     * lwasm mode pass 2 replays pass 1's decisions instead of deciding
+     * again with pass 1's final symbol values. Otherwise an include guard
+     * ("ifne OS9.D-1 / OS9.D set 1") true in pass 1 is false in pass 2. */
+
+    if (LwasmMode)
+    {
+        _istrue = cond_log (_istrue);
+    }
+
+    if ( ! _istrue)
     {
         ++FalseIf;     /* Inc FalseIf on FALSE */
     }
 
-    doList &= (C_Flg > 0);
-    return 1;
+    if (_ok)            /* as RMA: an error line stays in the listing */
+    {
+        doList &= (C_Flg > 0);
+    }
+
+    return _ok;
 }
 
 int

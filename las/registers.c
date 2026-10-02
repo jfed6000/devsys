@@ -4,6 +4,7 @@
  * $Id::                                                    $   *
  * ************************************************************ */
 
+#define NEED_CTYPE
 #include "rma.h"
 
 #ifdef COCO
@@ -47,6 +48,12 @@ immediat (ZILCH)
     if (SkipSpac () == '#')
     {
         ++SrcChar;
+
+        if (LwasmMode)
+        {
+            SkipSpac ();    /* lwasm allows "#   value" */
+        }
+
         return 1;
     }
     return 0;
@@ -191,7 +198,11 @@ regofst (ZILCH)      /*              l10d1()                 */
         return l1215 ();
     }
 
-    if (SrcChar[1] == ',')
+    /* "a,x" etc. is accumulator-offset indexing. In lwasm, a size
+     * prefix means an expression follows: "std <d,s" is the symbol d,
+     * an 8-bit offset, not D-register offset. */
+
+    if ((SrcChar[1] == ',') && ! (LwasmMode && HadArrow))
     {
         switch (_toupper (c))
         {
@@ -219,6 +230,34 @@ regofst (ZILCH)      /*              l10d1()                 */
                 INDX_BYT = 0x8e;
                 AIM_INDXD;
                 return ((_toupper (SrcChar[2]) == 'W') ? ilAdrMod() : ckpcr());
+        }
+    }
+
+    {
+        /* lwasm keeps a 5-bit zero offset when the offset is written as
+         * exactly "0" (sta 0,u = A7 40); any other zero (a symbol, 1-1,
+         * $0) becomes the no-offset form (sta ,u = A7 C4), as RMA always
+         * does. Remember which it was before the expression is read. */
+
+        register char *_p = SrcChar;
+
+        while (isblank (*_p))
+        {
+            ++_p;
+        }
+
+        IdxLitZero = 0;
+
+        if (LwasmMode && (*_p == '0'))
+        {
+            ++_p;
+
+            while (isblank (*_p))
+            {
+                ++_p;
+            }
+
+            IdxLitZero = (*_p == ',');
         }
     }
 
@@ -865,7 +904,7 @@ l1584 ()
         return (indx_setup ());
     }
 
-    if ( ! HadArrow && (IndxVal == 0))
+    if ( ! HadArrow && (IndxVal == 0) && ! IdxLitZero)
     {
         if ( ! Is_W)
         {
