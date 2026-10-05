@@ -1155,12 +1155,32 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 
 <p class="cap">Measure where the memory goes</p>
 <p>The last problem was plain size. Linking a program against <code>libwildbitsl2</code> made native rlink hold all 2,074 constant names, and <code>play</code>, the largest program, still ran out after that was fixed. Counting every allocation in the model showed where it went: 19K went to <code>malloc</code> for the table rlink uses to choose library members, and was freed before linking. But rlink's own allocator used <code>sbrk</code>, which takes fresh memory from the top and can't reuse what <code>malloc</code> has freed. Switching rlink to <code>malloc</code> lets the link reuse it, and <code>play</code> now peaks at 24.5K. The same measurement showed the member table reserving room for 512 modules (13K) when the link has 77; it now grows as needed.</p>
+
+<h3>Taking it to the real machine</h3>
+<p>Everything so far ran in MAME, on the Jr2 image. MAME proves the outputs are right. It can't prove the hardware behaves the same: real block-switch timing, the SD card, the RAM a running system leaves free. Your machine is a K2, and the Wildbits MAME only emulates the Jr2. So the card goes through a fixed loop, the same one your port guide uses for games:</p>
+<ol>
+<li><code>harness/card.py build</code> copies your K2 boot image and adds the toolchain: the six tools in <code>/dd/CMDS</code>, CoCoC's C libraries in <code>/dd/LIB</code> and headers in <code>/dd/DEFS</code>, a <code>/dd/TMP</code>, and <code>/dd/DEVSYS</code> with test sources and a script, <code>selftest</code>.</li>
+<li><code>card.py mame</code> builds the same card from the Jr2 image and runs <code>selftest</code> in MAME first. A card that fails in MAME would fail on the machine too, and the emulator says why.</li>
+<li>You write the card with <code>dd</code>, boot the K2 and type <code>/dd/DEVSYS/selftest</code>.</li>
+<li>You read the card back with <code>dd</code>, and <code>card.py check</code> compares every result with what the Linux tools make.</li>
+</ol>
+<p><code>selftest</code> is a <strong>procedure file</strong>: a text file of shell commands with the execute attribute set. When you type its name, the shell sees it isn't a module and runs its lines itself. It builds and runs <code>hello.c</code> with <code>dcc</code>, assembles eight <code>level1/cmds</code> sources without and with a defs image, and writes the time between steps with <code>date -t</code>. Every output goes to a new file in <code>/dd/DEVSYS/R</code>, because OS-9's shell won't redirect into a file that already exists (error #218). In the MAME rehearsal, the eight modules took 190 seconds without an image and 84 with one, all identical to the Linux build.</p>
+
+<h3>One program, several processes</h3>
+<p><code>las</code> now fills its 64K: five 8K slots of code, two of data, one window for the symbol blocks, and 24 bytes to spare. The F256 has 1800K, but one process sees only 64K of it. There are two classic ways out.</p>
+<p>The first is an <strong>overlay</strong>: load one part of the program's code over another while it runs. Our C compiler and linker have no support for that. A call into another module would need a jump table and a shared data pointer, and most of <code>las</code> is needed all the time anyway.</p>
+<p>The second is the OS-9 way: split the work between processes. OS-9 programs are <strong>reentrant</strong>: the code never changes itself and keeps all its variables in the data area. So any number of processes can run one copy of a module in memory, and a second process costs only its own data blocks. <code>F$Fork</code> starts one. Unlike Unix <code>fork</code>, it doesn't copy the parent. It starts a fresh process from a module, with its own 64K. That is how Microware's <code>cc</code> ran its passes, and how our <code>dcc</code> driver runs <code>dcpp</code>, <code>dcc68</code>, <code>dco68</code>, <code>las</code> and <code>rlink</code>.</p>
+<p>The processes can share memory, too. <code>F$MapBlk</code> maps any block number you give it into your map. It doesn't check which process allocated the block (<code>level2/modules/kernel/fmapblk.asm</code>). So a child that knows the numbers of <code>las</code>'s symbol blocks can read the symbol table directly, with a pipe for the control messages. That gives two plans, recorded in <code>DESIGN.md</code>:</p>
+<ul>
+<li><strong>Native sizing.</strong> On Linux, lwasm's <code>,pcr</code> sizing runs a trial pass in a <code>fork()</code>ed child (chapter 4). On the F256, <code>las</code> could <code>F$Fork</code> a second copy of itself for the trial. It's cheap in memory, but the trial's code must fit in <code>las</code>'s own 64K, so it needs room first.</li>
+<li><strong>Room.</strong> Move a self-contained job into a smaller helper program. Reading the <code>--defs</code> library is one: the helper could write a defs image, which <code>las</code> already knows how to load.</li>
+</ul>
 </section>
 
 <!-- 12 -->
 <section class="ch" id="project">
 <h2><span class="num">CHAPTER 12</span>Where this leads</h2>
-<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles 199 of the 200 NitrOS9 module sources, <code>rlink</code> links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Phase 9 made it faster: a saved image of the defs means each build stops re-reading them (chapter 9).</p>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles 199 of the 200 NitrOS9 module sources, <code>rlink</code> links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Phase 9 made it faster: a saved image of the defs means each build stops re-reading them (chapter 9). Next comes the real machine: a card for your K2, tested in MAME first. After that, room in <code>las</code> and lwasm's instruction sizes natively, by splitting work between processes that share the symbol blocks (chapter 11).</p>
 <p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
 </section>
 
@@ -1211,13 +1231,16 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>negative control</dt><dd>A deliberate fault fed to a test to show it can detect a problem.</dd>
   <dt>object file</dt><dd>Assembled code that isn't finished: it still has names to resolve and places to patch.</dd>
   <dt>operator precedence</dt><dd>Which operators are applied first in an expression, as multiplication before addition in arithmetic.</dd>
+  <dt>overlay</dt><dd>Code loaded over other code while a program runs, so a program bigger than its address space can run in pieces. Our toolchain doesn't support it.</dd>
   <dt>padding</dt><dd>Unused bytes a compiler adds inside or after a structure so its fields line up on convenient addresses.</dd>
   <dt>peephole optimizer</dt><dd>An optimizer that looks at a few instructions at a time and replaces known patterns with shorter or faster ones. DCC's is <code>dco68</code>.</dd>
   <dt>phasing error</dt><dd>An address that came out different in pass 2 than in pass 1.</dd>
   <dt>position-independent</dt><dd>Code that works wherever it's loaded, because it uses addresses relative to the program counter (<code>,pcr</code>).</dd>
+  <dt>procedure file</dt><dd>An OS-9 text file of shell commands with the execute attribute. Typing its name runs its lines, like a shell script.</dd>
   <dt>prototype</dt><dd>A function declaration that lists its parameter types, so the compiler converts each argument at the call. K&amp;R C has none.</dd>
   <dt>psect / vsect</dt><dd>RMA's code section and variable section.</dd>
   <dt>refactor</dt><dd>Restructuring code without changing what it does.</dd>
+  <dt>reentrant</dt><dd>Code that never changes itself and keeps its variables in each process's data area, so many processes can share one copy. All OS-9 modules are.</dd>
   <dt>reference</dt><dd>In testing, the trusted program whose output counts as correct. Here, lwasm.</dd>
   <dt>regression test</dt><dd>A test that checks a change didn't alter existing behaviour, by comparing against the previous version.</dd>
   <dt>ROF</dt><dd>Relocatable Object Format: Microware's object file format, made by RMA and read by rlink.</dd>
