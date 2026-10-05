@@ -240,6 +240,8 @@ class Process:
         self.memtop = mem
         self.highwater = mem
         pstart = mem - len(params)
+        self.stacktop = self.minsp = pstart
+        self.minpc = None
         m[pstart:mem] = params
         c = self.cpu
         c.u = 0
@@ -271,17 +273,23 @@ class Process:
     def backtrace(self, name):
         """Words on the stack that are return addresses (they follow a JSR or
         LBSR in the module) - a heuristic, but DCC code calls with LBSR."""
-        c, m = self.cpu, self.cpu.mem
+        c = self.cpu
+        out = self.callers(c.s, c.mem[c.s:min(c.s + 2048, 0xFE00) + 1])
+        print(f"break {name}: D=${(c.a << 8) | c.b:04X} X=${c.x:04X} Y=${c.y:04X} S=${c.s:04X} " + " <- ".join(out), file=sys.stderr)
+
+    def callers(self, s, stack):
+        """Return addresses in a copy of the stack starting at address s."""
+        m = self.cpu.mem
         out = []
-        for a in range(c.s, min(c.s + 2048, 0xFE00), 1):
-            r = m[a] << 8 | m[a + 1]
+        for i in range(len(stack) - 1):
+            r = stack[i] << 8 | stack[i + 1]
             if not (self.modbase < r < self.modbase + self.codesize):
                 continue
             if m[r - 3] in (0x17, 0xBD) or m[r - 2] == 0x8D:
                 out.append(self.where(r))
             if len(out) == 40:
                 break
-        print(f"break {name}: D=${(c.a << 8) | c.b:04X} X=${c.x:04X} Y=${c.y:04X} S=${c.s:04X} " + " <- ".join(out), file=sys.stderr)
+        return out
 
     # ----------------------------------------------------------- helpers
     def name_at(self, addr):
@@ -332,6 +340,9 @@ class Process:
                     self.backtrace(self.breaks[pc])
                 c.step()
                 self.instr += 1
+                if c.s < self.minsp:
+                    self.minsp, self.minpc = c.s, c.pc
+                    self.minstack = bytes(m[c.s:self.stacktop])
         except Exit as e:
             return e.status
         except Halt as e:
@@ -615,6 +626,19 @@ def main():
         print(f"os9run: exit {status}, {p.instr} instructions, data area "
               f"{p.highwater} bytes (module at ${p.modbase:04X}), "
               f"{NEXTBLK[0] - 0x40} RAM blocks, {p.mapblks} F$MapBlk", file=sys.stderr)
+        # CoCoC's cstart: _mtop is the top of ibrk's memory (static data,
+        # then ibrk upwards); the stack grows down from the parameters
+        mtop = None
+        for line in open(a.map, encoding="latin-1") if a.map else ():
+            t = line.split()
+            if t[:2] == ["_mtop", "udat"]:
+                mtop = int(t[2], 16)
+        heap = f", ibrk top ${p.cpu.mem[mtop] << 8 | p.cpu.mem[mtop + 1]:04X}" if mtop else ""
+        print(f"os9run: stack {p.stacktop - p.minsp} bytes deep (lowest S ${p.minsp:04X}, "
+              f"top ${p.stacktop:04X}){heap}", file=sys.stderr)
+        if p.minpc is not None and p.syms:
+            print(f"os9run: deepest stack in {p.where(p.minpc)} <- "
+                  + " <- ".join(p.callers(p.minsp, p.minstack)), file=sys.stderr)
     sys.exit(status)
 
 

@@ -334,8 +334,26 @@ current directory.
 | Step | Work | Done when | Status |
 |---|---|---|---|
 | **11. Real hardware** | A card for the owner's **K2** (SD card): `harness/card.py build` → `dd` → `/dd/DEVSYS/selftest` on the machine → `dd` back → `card.py check` | the K2 gives the Linux tools' output; F256 timings recorded | card built 2026-10-02 (`harness/out/devsys_k2.dsk`), rehearsed in MAME on the Jr2 image: all good (hello, 8 modules both ways, 190 s → 84 s emulated); **waiting for the run on the K2** |
-| **12. Room in las** | Measure las's data and stack use; then a helper program (fork and share, §10) or a one-block data area (6 module slots) | room for native sizing | not started |
+| **12. Room in las** | Measure las's data and stack use; then a helper program (fork and share, §10) or a one-block data area (6 module slots) | room for native sizing | **measured** 2026-10-05 (below); choice open |
 | **13. Native sizing** | `F$Fork` las itself for the sizing trial, sharing the symbol blocks by number, sizes back through a pipe (§10 "Fork and share") | native lwasm-mode output equals lwasm's | not started |
+
+**Step 12 measurement** (2026-10-05). Native las under `os9run.py --stats`
+(now also reports the deepest stack, the function there, and CoCoC's
+`ibrk` top `_mtop`) on 348 inputs: the 200 NitrOS9 module sources, the 90
+object sources (with `--defs`) and the 58 RMA-mode tool sources. All give
+the host's results except `minted` (`struct`, as on Linux). Peaks:
+
+| Part | Bytes | What |
+|---|---|---|
+| Static data | 7,596 | `end` = $1DAC: `CondBits` 2,048 (module.c, 16,384 conditionals), `SecNames` 1,024 (lwobj.c), rma_main ~2.5K (command tables, line buffers), defsimg 381, stdio `_iob` 208 |
+| `ibrk` heap | 768–1,536 | stdio buffers: `_setbase` takes 256 (disk) or 128 (terminal) per FILE slot and never returns them, so it grows with `use` nesting (`llwbsd` the most) |
+| Stack | 136 assembling; 349 at start | the start-up peak is `args_file`'s 256-byte `word` (via `getc`, `_setbase`, `getstat`), when the heap is still small |
+| `sbrk` (`getmem`) | 0–256 | macro descriptors; only `llwbsd` grew the data area (13,056 → 13,312) |
+
+So las needs about **9.5K** at its worst, in a 13K data area (2 blocks);
+one 8K block would need ~1.4K of statics moved out plus a margin, e.g.
+`CondBits` (2K) and `SecNames` (1K) into the banked blocks. Free between
+the heap and the stack: never less than 3,296 bytes (`shellplus`).
 
 Phases 3–6 can run alongside each other. Phase 7 should happen early enough to
 catch DCC/K&R surprises.
@@ -393,7 +411,7 @@ line.
 - [ ] `wbinfo` contains `dtb` (assembly date and time), so its link matches lwlink only when both run in the same second. The harness should mask those 6 bytes or treat the file as nondeterministic.
 - [ ] `--defs` resolves a value at assembly time where lwasm left it to the linker. Where that changes an instruction's size choice (e.g. an `equ` defined from defs constants then used as an address), las and lwasm may differ. None seen in the corpus after phase 3b.
 - [ ] **Sizing on the 6809** (still open after phase 7; the native build has no sizing, D21). The trial needs `fork()`, which OS-9 lacks; the CoCo build compiles sizing out and keeps RMA's long `,pcr` forms. Options: `F$Fork` las itself with a hidden option and a pipe, or reset pass-1 state in-process. The trial also doubles pass-1 time.
-- [ ] **Fork and share** (owner, 2026-10-02: the way past 64K per process). OS-9 programs are reentrant, so a second process running a module already in memory costs only its data blocks, and the F256 has 1800K. `F$MapBlk` maps any block number with no ownership check (`level2/modules/kernel/fmapblk.asm`), so las's symbol blocks are shared memory: pass the block numbers to a child. CoCoC has `os9fork` and `wait` (the `dcc` driver uses them, proven by `native.py cc`); a named pipe (`/pipe/name`) needs no `dup`. Two uses: (1) **native sizing**: `F$Fork` las itself with a hidden option to run the trial pass and send one byte per site through a pipe, making native output lwasm-identical (D21); cheap in RAM, but the trial code must fit in las's own map first (D36: 24 bytes free). (2) **code room**: move a separable job into a smaller helper program (the `--defs` ROF reader, 1.5K, could write a defs image las already loads; the listing; image recording). Open: who frees shared blocks (`F$DelRAM` once, after both finish), and measure las's data and stack before choosing between a helper and a one-block data area
+- [ ] **Fork and share** (owner, 2026-10-02: the way past 64K per process). OS-9 programs are reentrant, so a second process running a module already in memory costs only its data blocks, and the F256 has 1800K. `F$MapBlk` maps any block number with no ownership check (`level2/modules/kernel/fmapblk.asm`), so las's symbol blocks are shared memory: pass the block numbers to a child. CoCoC has `os9fork` and `wait` (the `dcc` driver uses them, proven by `native.py cc`); a named pipe (`/pipe/name`) needs no `dup`. Two uses: (1) **native sizing**: `F$Fork` las itself with a hidden option to run the trial pass and send one byte per site through a pipe, making native output lwasm-identical (D21); cheap in RAM, but the trial code must fit in las's own map first (D36: 24 bytes free). (2) **code room**: move a separable job into a smaller helper program (the `--defs` ROF reader, 1.5K, could write a defs image las already loads; the listing; image recording). Open: who frees shared blocks (`F$DelRAM` once, after both finish), and choose between a helper and a one-block data area (measured: las needs ~9.5K of data, §9 step 12)
 - [ ] Sizing model limits: a literal `,pcr` target (`leax 5,pcr`) and targets that are `equ *` symbols are treated as unreachable (long); forward-referenced constants in direct/extended and `n,X` operands keep RMA's long form where lwasm would shorten them; distances use las's layout, which differs from lwasm's if a file interleaves sections. None occur in the corpus.
 - [ ] lwasm's symbolic `org`: `scf.d` does `ORG PD.OPT` with `PD.OPT` external, so lwasm's `PD.EKO` is "PD.OPT+4" and `PD.EKO-PD.OPT` cancels to 4 (5-bit offset). las makes the labels absolute and keeps `PD.OPT` as a reference, so `opts.o` has three 16-bit offsets (not linked by any of the 13 programs). Fix: give labels under a symbolic `org` the base as a reference, and cancel +X/−X reference pairs.
 - [ ] **C libraries with long names** (phase 10): CoCoC's `clib.l` etc. still have 8-character names (`localtim`), served by D19's aliasing. Rebuilding them with the devsys DCC removes the need. Only one direction is handled: an old object referencing `localtim` would not find a rebuilt library's `localtime`.
