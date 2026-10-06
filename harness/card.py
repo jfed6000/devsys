@@ -19,7 +19,8 @@
       with selftest as the startup, then checked: proves the card before
       it goes on the machine.
 
-What selftest does, timed with date -t between steps:
+What selftest does, timed with date -t between steps (mfree before and
+after, so check can report free RAM and blocks not given back; mmap last):
   1. dcc builds hello.c (dcpp, dcc68, dco68, las, rlink) and runs it
   2. las assembles CMDS of level1/cmds without a defs image
   3. the same with --defsimg (the first records the image, the rest load it)
@@ -28,6 +29,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -87,7 +89,8 @@ def build(image, out):
         native.put(path, f"{out},{t}", text=native.is_text(path))
 
     r = f"/dd/{D}/R"
-    lines = ["-x", "* devsys selftest: results in /dd/DEVSYS/R", f"date -t >{r}/T0",
+    lines = ["-x", "* devsys selftest: results in /dd/DEVSYS/R", f"mfree >{r}/M0",
+             f"date -t >{r}/T0",
              f"chd /dd/{D}/C", f"dcc hello.c -f={r}/hello >{r}/CO >>{r}/CE",
              f"{r}/hello >{r}/HO >>{r}/HE", f"date -t >{r}/T1", f"chd /dd/{D}/G/src"]
     argfile = os.path.join(WORK, "args.tmp")
@@ -100,7 +103,8 @@ def build(image, out):
             lines.append(f"las {os.path.basename(j['source'])} --args={sub}{n}"
                          f" >{r}/L{sub}{n} >>{r}/E{sub}{n}")
         lines.append(f"date -t >{r}/T{rnd + 2}")
-    lines.append(f"echo done >{r}/DONE")
+    # free RAM after: less than before means a tool kept blocks (F$DelRAM)
+    lines += [f"mfree >{r}/M1", f"mmap >{r}/MM", f"echo done >{r}/DONE"]
     if max(len(l) for l in lines) > 199:
         sys.exit("card: a selftest line is longer than the shell's 200 characters")
     st = os.path.join(WORK, "selftest")
@@ -168,6 +172,22 @@ def check(dsk):
               f"{(t[2] - t[1]).seconds} s without an image, {(t[3] - t[2]).seconds} s with it")
     except (ValueError, IndexError):
         print(f"  clock: {times}")
+    # 4. free RAM (mfree's "Total:" line) before and after; mmap for the record
+    totals = []
+    for k in (0, 1):
+        m = re.search(r"Total:\s*([0-9A-Fa-f]+)\s+(\S+)", text(f"{r}/M{k}") or "")
+        totals.append((int(m.group(1), 16), m.group(2)) if m else None)   # blocks in hex
+    if None in totals:
+        print("  free RAM: no mfree output")
+        bad += 1
+    else:
+        print(f"  free RAM: {totals[0][0]} blocks ({totals[0][1]}) before, "
+              f"{totals[1][0]} ({totals[1][1]}) after")
+        if totals[1][0] < totals[0][0]:
+            print(f"  {totals[0][0] - totals[1][0]} block(s) not given back")
+            bad += 1
+    for k in ("M0", "M1", "MM"):
+        get(f"{r}/{k}", os.path.join(WORK, "res", k))
     print(f"card: {'all good' if not bad else f'{bad} problem(s)'}")
     return 0 if not bad else 1
 

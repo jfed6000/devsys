@@ -297,7 +297,9 @@ and with a defs image; `date -t` between steps; everything to
 tools; `card.py mame` runs the same card for the Jr2 in MAME first (the
 Wildbits MAME has no K2). The K2 image's `DEFS` was empty and its `CMDS`
 has none of the six names, so installing replaces nothing. Selftest runs
-once per card write: the shell won't redirect into an existing file (#218).
+once per card write: the shell won't redirect into an existing file (#218). The second card adds `mfree` before and after and
+`mmap` at the end: free RAM, and a check that every tool gave its blocks
+back (`mfree` prints the block count in hex).
 
 **Defs images (phase 9).** `harness/imgcheck.py` runs lwdiff's 290 jobs
 three times (no image, recording, loading) and requires the same object,
@@ -401,7 +403,7 @@ line.
 - [ ] Defaults for lwlink-style header values (type, attr, rev, stack) — read them from `lwlink/script.c`.
 - [x] Size of the DCC-compiled fork on the 6809: 34,675 bytes, leaving about 16K for symbols (§6, phase 7).
 - [ ] `F$MapBlk` cost per call on the F256 — sets how much bank switching hurts. Phase 9 suggests it now dominates: with an image, `echo` runs 6.4× fewer instructions (model) but `level1/cmds` is only 2.3× faster in MAME, and a load still makes ~5,900 window switches (each `sym_add` walks a bucket's tree across blocks). Next speedup: fewer switches while loading (e.g. keep a bucket's tree in one block, or load into blocks in bucket order). Counted (logic, so valid in the model): `scfg.asm` makes about 22,500 window switches (each F$ClrBlk + F$MapBlk) for 78M instructions. Time it on the hardware; if it matters, a second window slot or keeping each hash bucket's tree in one block would cut switches.
-- [ ] How much RAM does the target F256 have free for symbol blocks? The machine has 1800K+ (owner, 2026-10-02); measure what a running system leaves free in phase 8. The step 11 selftest didn't measure it: add `mfree` (and `free`) to the next card's selftest.
+- [ ] How much RAM does the target F256 have free for symbol blocks? The machine has 1800K+ (owner, 2026-10-02); measure what a running system leaves free in phase 8. The step 11 selftest didn't measure it; the second card (2026-10-05) runs `mfree` before and after (and `mmap`), and `card.py check` fails if blocks weren't given back. MAME's Jr2 image: **1,648K free (206 blocks)**, the same after the run. Waiting for the K2's number.
 - [x] Do the K2's results match MAME's? Yes (step 11, 2026-10-05): every output of the selftest is identical to the Linux tools', and the K2 runs it about 17% faster than MAME's Jr2.
 - [x] DCC limits when compiling the tools natively (phase 7). What it took: K&R declarations in rlink's `proto.h`; `#define void int` in COpt; lwsel's struct members renamed (K&R C has one namespace for all struct members, and `refs` was taken); `atexit` and `ftruncate` replaced (CoCoC's clib has neither; `_ss_size` sets the size); the source directory searched before CoCoC's `Defs` (COpt has its own `ctype.h`). Three 6809-only bugs in las: `MLCod.q_long` and `MLCod.shrtlng.f_byt` (K&R took them as offset 0 of `MLCod`, clearing the opcode), and a `long` passed where `do_rmb`'s callees take an `int` (no prototypes, so the callee read the high word: 0). gcc's `-Wtraditional-conversion` over a copy where those values are `long` found the last kind; only two sites.
 - [ ] Does anything in the build depend on lwasm listing or map output?
