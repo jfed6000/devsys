@@ -163,3 +163,4 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-05 — Ch 11: the second K2 card (one-block las, `mfree`/`mmap`): 1,656K free, all blocks given back.
 - 2026-10-05 — Step 13: ch 11 "Sizing on the F256: a child that starts from the top" (F$Fork vs fork(), the shared block, the model bug, timings); ch 12 updated. Glossary: pipe, shared memory.
 - 2026-10-05 — Ch 11: why the sizing answers use a shared block even where pipes exist (PipeMan's end-of-file and blocking edges; las and rlink can't read from a pipe).
+- 2026-10-05 — Ch 11: the third K2 card (native sizing on the hardware: `copy` 1,469 bytes; 255 s / 120 s).
