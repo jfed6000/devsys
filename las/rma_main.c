@@ -39,6 +39,8 @@ main (argc, argv)
     incdirs[0] = ".";
     inccount++;
 
+    ArgC = argc;
+    ArgV = argv;
     GetOpts (argc, argv);
     preload_load ();
     do_defines ();
@@ -59,7 +61,7 @@ main (argc, argv)
     sym_setmsk (LRefs_NonDPdat, DIRENT);
     NowMac = 0;
 
-    if (OFlg)
+    if (OFlg && ! SzTrial)     /* the OS-9 trial writes nothing */
     {
 #ifdef WIN32    /* Unix systems handle ".b" mode, but OSK, at least doesn't */
         OutFile = f_opn (O_Nam, "wb");
@@ -860,7 +862,11 @@ errexit (report)
      char *report;
 #endif
 {
-    fprintf (stderr, "asm: %s\n", report);
+    if ( ! SzTrial)             /* the parent will say it (sizing.c) */
+    {
+        fprintf (stderr, "asm: %s\n", report);
+    }
+
     bank_done ();
     exit (errno);
 }

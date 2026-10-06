@@ -578,7 +578,15 @@ class Process:
                 f.refs += 1
         extra = max(0, c.b * 256 - (module[11] << 8 | module[12]))
         child = Process(self.disk, module, params, child_paths, extra, self.trace, self)
+        # A mapped block is shared RAM, but this model keeps a copy in the
+        # slot: write the parent's copies back before the child runs and
+        # read them again after (las's sizing trial shares a block, D38)
+        for sl, n in self.mapped.items():
+            RAM[n][0][:] = m[sl * 0x2000:(sl + 1) * 0x2000]
         status = child.run()
+        for sl, n in self.mapped.items():
+            if n in RAM:
+                m[sl * 0x2000:(sl + 1) * 0x2000] = RAM[n][0]
         for f in child.paths:
             if f is not None:
                 f.close()

@@ -20,20 +20,20 @@ Suites (default: all):
 
   lw    native las assembles NitrOS9 module sources from the Level 2
         build (lwdiff's jobs.json; run harness/lwdiff.py first). Each
-        module must equal las/build/nosz's (no ,pcr sizing, as natively)
+        module must equal the host las's (with ,pcr sizing, D38)
         on the same files. Slow: about 40 s of wall time per file
         (--shard to split it over several MAMEs). Not in
         the default set; --only TEXT picks files whose id contains TEXT
   obj   phase 10: native las assembles the 90 object-format sources (the
         libraries' and the .as programs'), merge builds libwildbitsl2,
         libnet and libalib, and native rlink --lwlink links the build's 13
-        programs. Objects must equal las/build/nosz's, programs the host
+        programs. Objects must equal the host las's, programs the host
         rlink's from those objects. Not in the default set
   img   phase 9: the 57 commands of level1/cmds (one directory, one
         configuration, as the real build has them) assembled twice by
         native las: without a defs image, then with --defsimg (the first
         records it, the others load it). Every module both times must
-        equal las/build/nosz's; the emulated clock (date -t) is read
+        equal the host las's; the emulated clock (date -t) is read
         before and after each round. Not in the default set
 
   python3 harness/native.py                  # las, link, cc
@@ -286,7 +286,9 @@ def host_hello():
 
 JOBS = os.path.join(HERE, "out", "l2-jr2", "jobs.json")
 GEN = os.path.join(HERE, "out", "l2-jr2", "generated")
-NOSZ = os.path.join(DEVSYS, "las/build/nosz/las")
+# The reference for native lwasm-mode output: the host las, ",pcr" sizing
+# included (step 13; until then las/build/nosz, DESIGN.md D21)
+REF = os.path.join(DEVSYS, "las/build/unix/las")
 ONLY = []
 SHARD = [0, 1]                  # this run's index, number of runs
 
@@ -401,7 +403,7 @@ def suite_lw(dsk):
         bad = 0
         hostroot = os.path.join(WORK, "lwhost")
         for n, j, files in work:
-            # the same layout on Linux, assembled by the no-sizing las
+            # the same layout on Linux, assembled by the host las
             jd = os.path.join(hostroot, f"J{n}")
             os.makedirs(os.path.join(jd, "src"), exist_ok=True)
             os.makedirs(os.path.join(hostroot, "S"), exist_ok=True)
@@ -411,7 +413,7 @@ def suite_lw(dsk):
                 os.makedirs(os.path.dirname(t), exist_ok=True)
                 shutil.copyfile(path, t)
             ref = os.path.join(jd, "ref")
-            argv = [NOSZ, os.path.basename(j["source"])] + lw_args(j) + \
+            argv = [REF, os.path.basename(j["source"])] + lw_args(j) + \
                 ["-i=" + os.path.join(hostroot, "S"), "-o=" + ref]
             subprocess.run(argv, cwd=os.path.join(jd, "src"), env=lwdiff.clean_env(),
                            capture_output=True)
@@ -423,7 +425,7 @@ def suite_lw(dsk):
             bad += 1
             err = (os9_text(f"{dsk},T/J{n}/src/E") or "").strip()
             print(f"  lw {j['id']}: {'differs' if ok else 'no output'} {err[:150]}")
-        print(f"lw: {len(work) - bad} of {len(work)} NitrOS9 modules identical to las/build/nosz")
+        print(f"lw: {len(work) - bad} of {len(work)} NitrOS9 modules identical to the host las")
         return bad == 0
     return lines, check
 
@@ -481,7 +483,7 @@ def suite_img(dsk):
         bad = skipped = 0
         for n, (j, _) in enumerate(staged):
             ref = os.path.join(hostroot, f"ref{n}")
-            subprocess.run([NOSZ, os.path.basename(j["source"])] + lw_args(j) +
+            subprocess.run([REF, os.path.basename(j["source"])] + lw_args(j) +
                            ["-i=" + os.path.join(hostroot, "S"), "-o=" + ref],
                            cwd=os.path.join(hostroot, "G", "src"), env=lwdiff.clean_env(),
                            capture_output=True)
@@ -510,7 +512,7 @@ def suite_img(dsk):
         except (ValueError, IndexError):
             pass
         total = 2 * (len(staged) - skipped)
-        print(f"img: {total - bad} of {total} modules identical to las/build/nosz"
+        print(f"img: {total - bad} of {total} modules identical to the host las"
               + (f" ({skipped} sources that fail on Linux too left out)" if skipped else ""))
         return bad == 0
     return lines, check
@@ -545,7 +547,7 @@ def suite_obj(dsk):
     """Phase 10: the object-format sources (lib/, the .as programs)
     assembled natively, the three libraries built from them with merge,
     and the build's 13 programs linked natively with rlink --lwlink. The
-    reference is the same chain on Linux with las/build/nosz and rlink."""
+    reference is the same chain on Linux with the host las and rlink."""
     staged = stage_lw("obj")
     libs, links = link_cmds()
     consts = [j["id"] for j, _ in staged if lwdiff.is_constants_object(j)]
@@ -609,7 +611,7 @@ def suite_obj(dsk):
             ref = os.path.join(hostobj, j["id"])
             defs = [] if j["id"] in consts else \
                 ["--defs=" + os.path.join(hostobj, c) for c in consts]
-            subprocess.run([NOSZ, os.path.basename(j["source"])] + lw_args(j) + defs +
+            subprocess.run([REF, os.path.basename(j["source"])] + lw_args(j) + defs +
                            ["-i=" + os.path.join(host, "S"), "-o=" + ref],
                            cwd=os.path.join(jd, "src"), env=lwdiff.clean_env(),
                            capture_output=True)
@@ -625,7 +627,7 @@ def suite_obj(dsk):
             bad += 1
             err = (os9_text(f"{dsk},T/J{n}/src/E") or "").strip()
             print(f"  obj {j['id']}: {'differs' if ok else 'no output'} {err[:150]}")
-        print(f"obj: {len(work) - bad} of {len(work)} objects identical to las/build/nosz")
+        print(f"obj: {len(work) - bad} of {len(work)} objects identical to the host las")
         # libraries: the native merge must equal the native members joined
         badlib = 0
         for lib, members in libs:
@@ -721,7 +723,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("suites", nargs="*", help="las, link, cc (default: all)")
     ap.add_argument("--image", default=IMAGE, help="Jr2 disk image to copy")
-    ap.add_argument("--seconds", type=int, default=3600,
+    ap.add_argument("--seconds", type=int, default=7200,
                     help="emulated seconds before giving up")
     ap.add_argument("--keep", action="store_true", help="keep the test image")
     ap.add_argument("--only", action="append", default=[],

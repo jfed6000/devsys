@@ -326,6 +326,10 @@ one_arg (arg)
     {
         ImgName = arg + 10;     /* defsimg.c */
     }
+    else if (strncmp (arg, "--sztrial=", 10) == 0)
+    {
+        sz_child (arg + 10);    /* OS-9: this is a sizing trial (sizing.c) */
+    }
     else if ((*arg == '-') && (arg[1] == 'D'))
     {
         /* -D is case-sensitive: lower-case -d is the page depth */
@@ -421,7 +425,11 @@ f_opn (fna, fmo)
 
     if ( ! (fptr = fopen (fna, fmo)) )
     {
-        fprintf (stderr, "\"%s\" - ", fna);
+        if ( ! SzTrial)
+        {
+            fprintf (stderr, "\"%s\" - ", fna);
+        }
+
         errexit ("can't open file");
     }
 
@@ -490,7 +498,11 @@ u_opn(fna, fmo)
         return fptr;
     }
 
-    fprintf(stderr, "\"%s\" - ", fna);
+    if ( ! SzTrial)
+    {
+        fprintf(stderr, "\"%s\" - ", fna);
+    }
+
     errexit("can't open file");
     return 0;  /* Doesn't happen but it does keep gcc quiet */
 }

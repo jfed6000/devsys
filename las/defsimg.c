@@ -992,6 +992,15 @@ img_use (name)
     {
         return 0;
     }
+#else
+    /* On OS-9 the parent waits for the trial, which may load the image
+     * but never records one; it reads the defs if the parent asks
+     * (sizing.c: a defs label's section was needed) */
+
+    if (SzTrial && SzNoImg)
+    {
+        return 0;
+    }
 #endif
 
     UseSeen = 1;
@@ -1017,10 +1026,25 @@ img_use (name)
         return 1;
     }
 
-    if (r)
+    if (r && ! SzTrial)
     {
         record (name);
     }
 
     return 0;
+}
+
+/* ******************************************************************** *
+ * img_made() - Did a loaded image create this symbol (sizing.c)?       *
+ * ******************************************************************** */
+
+int
+#ifdef __STDC__
+img_made (SYMH h)
+#else
+img_made (h)
+     SYMH h;
+#endif
+{
+    return (State == LOADED) && (h >= Lo) && (h < Hi);
 }

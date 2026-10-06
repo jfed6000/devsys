@@ -13,7 +13,7 @@
       FILE: the card read back (dd with an explicit byte count). Compares
       what the F256 made with the Linux tools: hello.c's module and what it
       printed, each NitrOS9 module without and with a defs image (against
-      las/build/nosz), and prints the F256's timings.
+      the host las, ,pcr sizing included), and prints the F256's timings.
   card.py mame [--image FILE]
       The same card for the Jr2 (MAME has no K2), run in the Wildbits MAME
       with selftest as the startup, then checked: proves the card before
@@ -139,7 +139,7 @@ def check(dsk):
     if not ok:
         print("    " + ((text(f"{r}/CE") or "") + (text(f"{r}/HE") or "")).strip()[:300])
 
-    # 2, 3. modules, against the no-sizing las on the same layout
+    # 2, 3. modules, against the host las on the same layout
     staged, placed = jobs()
     host = os.path.join(WORK, "host")
     shutil.rmtree(host, ignore_errors=True)
@@ -149,7 +149,7 @@ def check(dsk):
         shutil.copyfile(path, t)
     for n, (j, _) in enumerate(staged):
         refp = os.path.join(host, f"ref{n}")
-        subprocess.run([native.NOSZ, os.path.basename(j["source"])] + native.lw_args(j) +
+        subprocess.run([native.REF, os.path.basename(j["source"])] + native.lw_args(j) +
                        ["-i=" + os.path.join(host, "S"), "-o=" + refp],
                        cwd=os.path.join(host, "G", "src"), env=lwdiff.clean_env(),
                        capture_output=True)

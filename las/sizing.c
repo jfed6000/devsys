@@ -35,9 +35,25 @@
  *     equate has its final value in pass 1, and pass 2's phase     *
  *     check still guards the result.                               *
  *                                                                  *
- * Only in lwasm mode, and only where fork() exists. Elsewhere the  *
- * sizes stay as RMA chose them. -DNOSIZING builds a host las       *
- * without it (build/nosz), the reference for the 6809 build.       *
+ * The child is made two ways:                                     *
+ *                                                                  *
+ *  - Unix: fork(). The child is a copy of the parent just before   *
+ *    pass 1; the sizes come back through a pipe.                   *
+ *  - OS-9: F$Fork starts a new las from the top, so the parent     *
+ *    runs "las" with its own arguments plus a hidden --sztrial=N   *
+ *    (sz_child). The child does everything the parent did up to    *
+ *    pass 1, then the trial. OS-9 Level 2 programs are reentrant,  *
+ *    so the child shares las's code in memory and costs only its   *
+ *    own data and symbol blocks. The sizes come back in an 8K RAM  *
+ *    block the parent allocated: N is its number, and the child    *
+ *    maps it (F$MapBlk works on any block). The F256's boot has no *
+ *    pipe modules. Only for a single source file (lwasm takes one).*
+ *                                                                  *
+ * The trial's records (Items, Labels) live in banked memory        *
+ * (bank.c), in chunks: on the 6809 las's own data is one 8K block  *
+ * (D37), too small for 2,000 labels.                               *
+ *                                                                  *
+ * -DNOSIZING builds a host las without sizing (build/nosz).        *
  *                                                                  *
  * Addresses are las's: if a file interleaves lwasm sections, las   *
  * lays them out in source order and lwasm doesn't.                 *
@@ -47,18 +63,32 @@
 
 #if (defined(__unix) || defined(__unix__) || defined(__linux__)) \
     && !defined(NOSIZING)
-#  define SZ_FORK
+#  define SZ_FORK               /* fork(); sizes through a pipe */
 #  include <unistd.h>
 #  include <fcntl.h>
 #  include <sys/wait.h>
 #  include <stdlib.h>
 #endif
 
-static int PcrSites;            /* ",pcr" sites seen in this pass */
-static char *SzDec;             /* one byte per site, 1 = short */
-static int SzCount;
+#if defined(COCO) && !defined(NOSIZING)
+#  define SZ_OS9                /* F$Fork; sizes in a shared block */
+#endif
 
-#ifdef SZ_FORK
+#if defined(SZ_FORK) || defined(SZ_OS9)
+#  define SZ_TRIAL
+#endif
+
+static int PcrSites;            /* ",pcr" sites seen in this pass */
+static char *SzDec;             /* the sizes: Unix a byte per site, */
+static int SzCount;             /* OS-9 a bit (1 = short) */
+
+#ifdef SZ_OS9
+#  define SZ_SHORT(n) (SzDec[(n) >> 3] & (1 << ((n) & 7)))
+#else
+#  define SZ_SHORT(n) SzDec[n]
+#endif
+
+#ifdef SZ_TRIAL
 
 #define K_PCR   1               /* a ",pcr" site */
 #define K_OTHER 2               /* a line lwasm might leave unsettled */
@@ -66,12 +96,13 @@ static int SzCount;
 struct szitem
 {
     int start;                  /* address of the line (trial layout) */
-    int len8;                   /* ",pcr": length of the 8-bit form */
     int tconst;                 /* ",pcr": constant added to the target */
-    int tabs;                   /* ",pcr": absolute target (module) */
-    SYMH tsym;      /* ",pcr": target label, or 0 */
-    SYMH osym[4];   /* K_OTHER: the operand's symbols */
-    int sec;                    /* lwasm section of the line */
+    int tabs;                   /* ",pcr": absolute target (module);
+                                 * sz_decide puts tsym's value here */
+    SYMH tsym;                  /* ",pcr": target label, or 0 */
+    SYMH osym[4];               /* K_OTHER: the operand's symbols */
+    char len8;                  /* ",pcr": length of the 8-bit form */
+    char sec;                   /* lwasm section of the line */
     char nosym;                 /* K_OTHER: how many in osym */
     char kind;
     char nomax;                 /* a lea: lwasm has no longest length */
@@ -79,35 +110,62 @@ struct szitem
     char shrt;                  /* settled at the 8-bit form */
 };
 
-struct szlabel
+struct szlabel                  /* K&R: member names must be unique */
 {
-    SYMH sym;
-    int sec;
+    SYMH lsym;
+    char lsec;
 };
 
-static struct szitem *Items;
-static int NItems, MaxItems;
-static struct szlabel *Labels;
-static int NLabels, MaxLabels;
-static int SzFd = -1;           /* trial: where the sizes go */
+/* Items and labels are stored in chunks from bank_alloc. A pointer
+ * from item() or bank_ptr() is good only until another block is
+ * mapped (a symbol accessor, another chunk): as in symtab.c, copy
+ * fields to locals around any such call. */
+
+#define ISHIFT  7               /* 128 items a chunk (2,944 bytes) */
+#define LSHIFT  9               /* 512 labels a chunk (1,536 bytes) */
+#define ICHUNK  (1 << ISHIFT)
+#define LCHUNK  (1 << LSHIFT)
+#define MAXCHUNK 16             /* 2,048 items, 8,192 labels */
+
+static unsigned IChunk[MAXCHUNK], LChunk[MAXCHUNK];
+static int NItems, NLabels;
+static char SzFull;             /* ran out of chunks: the trial fails */
+static char SzRetry;            /* OS-9: a defs label's section is
+                                 * unknown (image loaded): try again
+                                 * reading the defs */
+static struct szitem Spare;     /* where records go once SzFull */
+
+static struct szitem *
+#ifdef __STDC__
+item (int i)
+#else
+item (i)
+     int i;
+#endif
+{
+    return (struct szitem *) bank_ptr (IChunk[i >> ISHIFT]) +
+           (i & (ICHUNK - 1));
+}
 
 static struct szitem *
 new_item (ZILCH)
 {
-    if (NItems == MaxItems)
+    if ((NItems & (ICHUNK - 1)) == 0)
     {
-        MaxItems = MaxItems ? MaxItems * 2 : 256;
-        Items = (struct szitem *) realloc (Items,
-                                           MaxItems * sizeof (struct szitem));
-
-        if ( ! Items)
+        if ((NItems >> ISHIFT) == MAXCHUNK)
         {
-            _exit (2);
+            SzFull = 1;
+            memset (&Spare, 0, sizeof (Spare));
+            return &Spare;
         }
+
+        /* bank_alloc zeroes it */
+
+        IChunk[NItems >> ISHIFT] =
+            bank_alloc (ICHUNK * sizeof (struct szitem));
     }
 
-    memset (&Items[NItems], 0, sizeof (struct szitem));
-    return &Items[NItems++];
+    return item (NItems++);
 }
 
 /* Is the line being assembled a leax/leay/leas/leau? */
@@ -118,7 +176,21 @@ is_lea (ZILCH)
     return ! MLCod.prebyte && ((MLCod.opcode & 0xfc) == 0x30);
 }
 
-#endif /* SZ_FORK */
+#endif /* SZ_TRIAL */
+
+#ifdef SZ_FORK
+static int SzFd = -1;           /* trial: where the sizes go */
+#endif
+
+#ifdef SZ_OS9
+#define SZHDR   4               /* block: "SZ", count, a byte per site */
+#define SZMAX   (8192 - SZHDR)
+
+static int SzBlk;               /* trial: the parent's block */
+
+extern int os9fork ();
+extern int wait ();
+#endif
 
 /* ******************************************************************** *
  * sz_pass() - start of a pass: count ",pcr" sites from the beginning   *
@@ -143,26 +215,31 @@ sz_label (sym)
      SYMH sym;
 #endif
 {
-#ifdef SZ_FORK
+#ifdef SZ_TRIAL
+    register struct szlabel *lb;
+
     if ( ! SzTrial)
     {
         return;
     }
 
-    if (NLabels == MaxLabels)
+    if ((NLabels & (LCHUNK - 1)) == 0)
     {
-        MaxLabels = MaxLabels ? MaxLabels * 2 : 256;
-        Labels = (struct szlabel *) realloc (Labels,
-                                       MaxLabels * sizeof (struct szlabel));
-
-        if ( ! Labels)
+        if ((NLabels >> LSHIFT) == MAXCHUNK)
         {
-            _exit (2);
+            SzFull = 1;
+            return;
         }
+
+        LChunk[NLabels >> LSHIFT] =
+            bank_alloc (LCHUNK * sizeof (struct szlabel));
     }
 
-    Labels[NLabels].sym = sym;
-    Labels[NLabels++].sec = CurSecId;
+    lb = (struct szlabel *) bank_ptr (LChunk[NLabels >> LSHIFT]) +
+         (NLabels & (LCHUNK - 1));
+    lb->lsym = sym;
+    lb->lsec = CurSecId;
+    ++NLabels;
 #endif
 }
 
@@ -184,37 +261,44 @@ sz_pcr (value, len8)
 {
     int site = PcrSites++;
 
-#ifdef SZ_FORK
+#ifdef SZ_TRIAL
     if (SzTrial)
     {
-        register struct szitem *it = new_item ();
+        register struct szitem *it;
         int nrefs = (int) (OptBPtr - d0791);
+        int kind = K_PCR, tconst = 0, tabs = 0;
+        SYMH tsym = 0;
 
-        it->kind = K_PCR;
+        /* everything that maps a symbol first: then the item */
+
+        if ((nrefs == 1) && ! (d0791->ETyp & NEGMASK) && d0791->RAddr)
+        {
+            tsym = d0791->RAddr;
+            tconst = value - (int) sym_val (tsym);
+        }
+        else if (nrefs == 0)
+        {
+            tabs = value;
+        }
+        else
+        {
+            kind = K_OTHER;     /* lwasm can't know it either */
+        }
+
+        it = new_item ();
+        it->kind = kind;
         it->start = PC_BASE;
         it->len8 = len8;
         it->sec = CurSecId;
         it->nomax = is_lea ();
-
-        if ((nrefs == 1) && ! (d0791->ETyp & NEGMASK) && d0791->RAddr)
-        {
-            it->tsym = d0791->RAddr;
-            it->tconst = value - (int) sym_val (d0791->RAddr);
-        }
-        else if (nrefs == 0)
-        {
-            it->tabs = value;
-        }
-        else
-        {
-            it->kind = K_OTHER;     /* lwasm can't know it either */
-        }
-
+        it->tsym = tsym;
+        it->tconst = tconst;
+        it->tabs = tabs;
         return 0;
     }
 #endif
 
-    return SzDec && (site < SzCount) && SzDec[site];
+    return SzDec && (site < SzCount) && SZ_SHORT (site);
 }
 
 /* ******************************************************************** *
@@ -227,7 +311,7 @@ sz_pcr (value, len8)
 void
 sz_other (ZILCH)
 {
-#ifdef SZ_FORK
+#ifdef SZ_TRIAL
     register struct szitem *it;
     register struct ref_ent *r;
 
@@ -256,7 +340,7 @@ sz_other (ZILCH)
 #endif
 }
 
-#ifdef SZ_FORK
+#ifdef SZ_TRIAL
 
 /* The lwasm section a code label was defined in, or -1 */
 
@@ -268,13 +352,35 @@ label_sec (sym)
      SYMH sym;
 #endif
 {
+    register struct szlabel *lb;
     register int i;
+    int c, n;
 
-    for (i = NLabels - 1; i >= 0; --i)
+    /* A symbol a defs image made never passed sz_label: whether it is
+     * a code label isn't known (OS-9; sz_trial tries again) */
+
+    if (img_made (sym))
     {
-        if (Labels[i].sym == sym)
+        SzRetry = 1;
+    }
+
+    for (c = (NLabels - 1) >> LSHIFT; c >= 0; --c)
+    {
+        n = NLabels - (c << LSHIFT);
+
+        if (n > LCHUNK)
         {
-            return Labels[i].sec;
+            n = LCHUNK;
+        }
+
+        lb = (struct szlabel *) bank_ptr (LChunk[c]);
+
+        for (i = n - 1; i >= 0; --i)
+        {
+            if (lb[i].lsym == sym)
+            {
+                return lb[i].lsec;
+            }
         }
     }
 
@@ -319,9 +425,11 @@ try_pcr (i)
      int i;
 #endif
 {
-    register struct szitem *it = &Items[i];
-    int lbl = it->tsym ? (int) sym_val (it->tsym) : it->tabs;
-    int s = it->start;
+    register struct szitem *b = item (i);
+    int lbl = b->tabs;          /* the target (sz_decide) */
+    int s = b->start;
+    int len8 = b->len8;
+    int tconst = b->tconst;
     int lo, hi, k, off, shrunk = 0, known = 1, guess = 1;
 
     /* The lines between: after this one and before the target's, or
@@ -340,7 +448,7 @@ try_pcr (i)
 
     for (k = 0; k < NItems; ++k)
     {
-        register struct szitem *b = &Items[k];
+        b = item (k);
 
         if ((k == i) || (b->start < lo) || (b->start >= hi))
         {
@@ -368,26 +476,27 @@ try_pcr (i)
 
     if (lbl > s)
     {
-        off = (lbl - shrunk - 1) - (s + it->len8);
+        off = (lbl - shrunk - 1) - (s + len8);
     }
     else
     {
-        off = lbl - (s - shrunk + it->len8);
+        off = lbl - (s - shrunk + len8);
     }
 
-    off += it->tconst;
+    off += tconst;
+    b = item (i);
 
     if (known)
     {
-        it->done = 1;
-        it->shrt = (off >= -128) && (off <= 127);
+        b->done = 1;
+        b->shrt = (off >= -128) && (off <= 127);
         return 1;
     }
 
     if (guess && (off >= -100) && (off <= 100))
     {
-        it->done = 1;
-        it->shrt = 1;
+        b->done = 1;
+        b->shrt = 1;
         return 1;
     }
 
@@ -399,6 +508,7 @@ try_pcr (i)
 static void
 closure (ZILCH)
 {
+    register struct szitem *it;
     int i, changed;
 
     do
@@ -407,7 +517,9 @@ closure (ZILCH)
 
         for (i = 0; i < NItems; ++i)
         {
-            if (Items[i].kind == K_PCR && ! Items[i].done && try_pcr (i))
+            it = item (i);
+
+            if ((it->kind == K_PCR) && ! it->done && try_pcr (i))
             {
                 changed = 1;
             }
@@ -422,47 +534,73 @@ closure (ZILCH)
 static void
 sz_decide (ZILCH)
 {
-    int i, j;
+    register struct szitem *it;
+    SYMH tsym, osym[4];
+    int i, j, kind, nosym, sec, tabs, done;
 
     for (i = 0; i < NItems; ++i)
     {
-        register struct szitem *it = &Items[i];
+        /* copy out: label_sec, sym_msk and sym_val map other blocks */
 
-        if (it->kind == K_PCR)
+        it = item (i);
+        kind = it->kind;
+        tsym = it->tsym;
+        tabs = it->tabs;
+        sec = it->sec;
+        nosym = it->nosym;
+
+        for (j = 0; j < 4; ++j)
+        {
+            osym[j] = it->osym[j];
+        }
+
+        if (kind == K_PCR)
         {
             /* A target lwasm can never reach: an external, a symbol
              * that isn't a code label, or one in another section */
 
-            if (it->tsym ? ((label_sec (it->tsym) != it->sec) ||
-                            ! (sym_msk (it->tsym) & RELATIVE))
-                         : ! UsedModule)
+            if (tsym ? ((label_sec (tsym) != sec) ||
+                        ! (sym_msk (tsym) & RELATIVE))
+                     : ! UsedModule)
             {
-                it->kind = K_OTHER;
-                it->nosym = 0;
+                kind = K_OTHER;
+                nosym = 0;
+            }
+            else if (tsym)
+            {
+                tabs = (int) sym_val (tsym);
             }
         }
 
-        if (it->kind == K_OTHER)
+        done = 0;
+
+        if (kind == K_OTHER)
         {
             /* settled from the start if every symbol is a number */
 
-            it->done = (it->nosym > 0);
+            done = (nosym > 0);
 
-            for (j = 0; j < it->nosym; ++j)
+            for (j = 0; j < nosym; ++j)
             {
-                if ( ! lw_known (it->osym[j]))
+                if ( ! lw_known (osym[j]))
                 {
-                    it->done = 0;
+                    done = 0;
                 }
             }
         }
+
+        it = item (i);
+        it->kind = kind;
+        it->nosym = nosym;
+        it->tabs = tabs;
+        it->done = done;
     }
 
     for (;;)
     {
         closure ();
 
-        for (i = 0; (i < NItems) && Items[i].done; ++i)
+        for (i = 0; (i < NItems) && item (i)->done; ++i)
         {
         }
 
@@ -471,10 +609,30 @@ sz_decide (ZILCH)
             break;
         }
 
-        Items[i].done = 1;      /* forced: the long form */
-        Items[i].shrt = 0;
+        it = item (i);
+        it->done = 1;           /* forced: the long form */
+        it->shrt = 0;
     }
 }
+
+/* The decision for item i: 1 = short */
+
+static int
+#ifdef __STDC__
+item_short (int i)
+#else
+item_short (i)
+     int i;
+#endif
+{
+    register struct szitem *it = item (i);
+
+    return (it->kind == K_PCR) && it->shrt;
+}
+
+#endif /* SZ_TRIAL */
+
+#ifdef SZ_FORK
 
 /* ******************************************************************** *
  * sz_trial() - Before pass 1 of a file in lwasm mode: fork. The child  *
@@ -587,13 +745,13 @@ sz_finish (ZILCH)
 
     for (i = 0; i < NItems && dec; ++i)
     {
-        if (Items[i].len8)
+        if (item (i)->len8)
         {
-            dec[k++] = (Items[i].kind == K_PCR) && Items[i].shrt;
+            dec[k++] = item_short (i);
         }
     }
 
-    if ( ! dec || (k != n) ||
+    if (SzFull || ! dec || (k != n) ||
             (write (SzFd, &n, sizeof (n)) != sizeof (n)) ||
             (write (SzFd, dec, n) != n))
     {
@@ -603,7 +761,223 @@ sz_finish (ZILCH)
     _exit (0);
 }
 
-#else /* ! SZ_FORK */
+void
+#ifdef __STDC__
+sz_child (char *arg)
+#else
+sz_child (arg)
+     char *arg;
+#endif
+{
+    errexit ("--sztrial is for OS-9");
+}
+
+#endif /* SZ_FORK */
+
+#ifdef SZ_OS9
+
+/* ******************************************************************** *
+ * sz_child() - "--sztrial=N[,n]": this las is the trial, for a parent  *
+ *              waiting with block N; ",n": don't load a defs image.    *
+ * ******************************************************************** */
+
+void
+#ifdef __STDC__
+sz_child (char *arg)
+#else
+sz_child (arg)
+     char *arg;
+#endif
+{
+    SzTrial = 1;
+    SzBlk = atoi (arg);
+    SzNoImg = (strchr (arg, ',') != 0);
+}
+
+/* The child's parameters, in buf: the parent's own arguments and
+ * "--sztrial=N". Returns the length, or 0 if too long: a parameter
+ * area over 400 bytes would push las's data past one block (D37). */
+
+static int
+#ifdef __STDC__
+sz_params (char *buf, int blk, int noimg)
+#else
+sz_params (buf, blk, noimg)
+     char *buf;
+     int blk, noimg;
+#endif
+{
+    register char *p = buf;
+    int i, len;
+
+    for (i = 1; i < ArgC; ++i)
+    {
+        len = strlen (ArgV[i]);
+
+        if (p - buf + len > 360)
+        {
+            return 0;
+        }
+
+        strcpy (p, ArgV[i]);
+        p += len;
+        *p++ = ' ';
+    }
+
+    sprintf (p, "--sztrial=%d%s\n", blk, noimg ? ",n" : "");
+    return strlen (buf);
+}
+
+/* ******************************************************************** *
+ * sz_trial() - Before pass 1 in lwasm mode: run the trial las and wait *
+ *              for it. The block holds the child's parameters while    *
+ *              F$Fork copies them, then the sizes the child writes.    *
+ * ******************************************************************** */
+
+void
+sz_trial (ZILCH)
+{
+    static char warned;
+    register char *p;
+    int blk, len, n, i, tries, status = -1;
+
+    SzCount = 0;
+
+    if (SzTrial)
+    {
+        return;                 /* this is the trial */
+    }
+
+    if (LastSrc - SrcNam != 1)
+    {
+        if ( ! warned)
+        {
+            fprintf (stderr,
+                     "las: sizing needs one source file; using long offsets\n");
+            warned = 1;
+        }
+
+        return;
+    }
+
+    if ((blk = bank_share ()) == -1)
+    {
+        fprintf (stderr, "las: no RAM for sizing; using long offsets\n");
+        return;
+    }
+
+    /* A defs image may hide which defs symbols are code labels: then
+     * the child exits with 3 and runs again reading the defs */
+
+    for (tries = 0; tries < 2; ++tries)
+    {
+        p = bank_mapnum (blk);
+        p[0] = p[1] = 0;
+
+        if ( ! (len = sz_params (p + SZHDR, blk, tries)) ||
+                (os9fork ("las", len, p + SZHDR, 1, 1, 0) == -1))
+        {
+            status = -1;
+            break;
+        }
+
+        wait (&status);
+
+        if (status != 3)
+        {
+            break;
+        }
+    }
+
+    p = bank_mapnum (blk);
+
+    if ((status == 0) && (p[0] == 'S') && (p[1] == 'Z'))
+    {
+        n = *(int *) (p + 2);
+
+        /* getmem doesn't map blocks, so p stays good */
+
+        SzDec = (char *) getmem ((n >> 3) + 1);
+        memset (SzDec, 0, (n >> 3) + 1);
+
+        for (i = 0; i < n; ++i)
+        {
+            if (p[SZHDR + i])
+            {
+                SzDec[i >> 3] |= 1 << (i & 7);
+            }
+        }
+
+        SzCount = n;
+    }
+    else
+    {
+        fprintf (stderr, "las: sizing trial failed; using long offsets\n");
+    }
+
+    bank_unshare (blk);
+}
+
+/* ******************************************************************** *
+ * sz_finish() - The trial's end: decide, put the sizes in the parent's *
+ *               block, and exit (3: try again without a defs image).   *
+ * ******************************************************************** */
+
+void
+sz_finish (ZILCH)
+{
+    char buf[32];
+    register char *p;
+    int i, k = 0, nb = 0;
+
+    sz_decide ();
+
+    if (SzRetry)
+    {
+        bank_done ();
+        exit (3);
+    }
+
+    /* every ",pcr" site in order, including those lwasm can't reach
+     * (all recorded with len8 set); 32 at a time, as the block and
+     * the items share the window */
+
+    for (i = 0; i <= NItems; ++i)
+    {
+        if ((i < NItems) && item (i)->len8)
+        {
+            buf[nb++] = item_short (i);
+        }
+
+        if ((nb == sizeof (buf)) || ((i == NItems) && nb))
+        {
+            if (k + nb <= SZMAX)
+            {
+                memcpy (bank_mapnum (SzBlk) + SZHDR + k, buf, nb);
+            }
+
+            k += nb;
+            nb = 0;
+        }
+    }
+
+    if (SzFull || (k != PcrSites) || (k > SZMAX))
+    {
+        bank_done ();
+        exit (1);
+    }
+
+    p = bank_mapnum (SzBlk);
+    *(int *) (p + 2) = k;
+    p[1] = 'Z';
+    p[0] = 'S';
+    bank_done ();               /* unmaps the block too */
+    exit (0);
+}
+
+#endif /* SZ_OS9 */
+
+#ifndef SZ_TRIAL
 
 void
 sz_trial (ZILCH)
@@ -615,4 +989,15 @@ sz_finish (ZILCH)
 {
 }
 
-#endif /* SZ_FORK */
+void
+#ifdef __STDC__
+sz_child (char *arg)
+#else
+sz_child (arg)
+     char *arg;
+#endif
+{
+    errexit ("--sztrial: this las has no sizing");
+}
+
+#endif /* ! SZ_TRIAL */
