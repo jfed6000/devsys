@@ -27,3 +27,4 @@ las/build/bankwin/las
 # Cross-built 6809 tools (rebuild with make -C native -f GNUmakefile)
 native/obj/
 native/bin/
+harness/in/
