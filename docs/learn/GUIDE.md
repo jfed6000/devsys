@@ -91,6 +91,7 @@ Then add a line to the changelog at the bottom of this file.
 | 9. Precompiled defs | ✅ Ch 9 "Saving the defs: precompiled images": what reading the defs changes besides symbols, replaying creations to keep tree shape, cache invalidation (the blunt exact rule, H6309 as the stale-image danger, pass 2's check via the setters), imgcheck and its variants, the 5-slot size limit and stack checks, the peephole optimizer bug (`puls x,u,pc` and a `long` in X) |
 | 10. Libraries | ✅ Ch 11 "Building NitrOS9's programs on the F256" (the obj suite's four steps, `merge` as a librarian, `dtb` masking) and the bugs only the F256 showed: a `char` result in half a register (calling convention, `std -2,s` vs `tstb`), two files sharing one stdio buffer, the stack meeting the heap, a shortcut that outlived its pointer, measuring where memory goes (`sbrk` vs `malloc`). Ch 11 "A small model": when the model is wrong. Still open: how rlink searches `.l` files in detail |
 | 11. Real hardware | ✅ Ch 11 "Taking it to the real machine" (the card loop, MAME rehearsal, procedure files, #218) and "One program, several processes" (overlays vs processes, reentrancy, F$Fork vs Unix fork, shared blocks through F$MapBlk, the two plans). Still to add: the K2's real results and timings |
+| 12. Room in las | ✅ Ch 11 "Measure first: where a C program's data goes" (static data, ibrk heap, stack, sbrk heap; CoCoC's guards; the os9run measurement and its surprises) and "One block of data, six of code" (D37: CondBits, SecNames, getmem on ibrk, las_MEM; three graceful limits). Glossary: ibrk / sbrk, stack, static data |
 | any | Macros and `rept`; the 6809 calling conventions used by DCC; how `cstart` sets up a C program |
 
 ## Changelog
@@ -157,3 +158,4 @@ Then add a line to the changelog at the bottom of this file.
   convention, heap, sharding, sign extension.
 - 2026-10-02 — Phase 9: ch 9 "Saving the defs: precompiled images"; updated the three-part-fix table and ch 12. Glossary: cache invalidation, defs image, peephole optimizer.
 - 2026-10-02 — Ch 11: "Taking it to the real machine" and "One program, several processes"; ch 12 next steps. Glossary: overlay, procedure file, reentrant.
+- 2026-10-05 — Step 12: ch 11 "Measure first: where a C program's data goes" and "One block of data, six of code" (two memory maps from the llwbsd measurement); ch 12 next steps. Glossary: ibrk / sbrk, stack, static data.

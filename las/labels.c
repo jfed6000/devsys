@@ -503,7 +503,9 @@ getmem (memreq)
 # ifndef COCO
     if ((memgot = calloc (memreq, 1)))
 #else
-    if ((memgot = sbrk (memreq)) != -1)
+    /* ibrk: from the gap between the static data and the stack, which
+     * stdio's buffers share, so las's data stays in one 8K block (D37) */
+    if ((memgot = ibrk (memreq)) != -1)
 #endif
     {
         return memgot;

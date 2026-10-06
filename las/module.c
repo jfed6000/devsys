@@ -67,7 +67,7 @@ crc_byte (c)
  *              One bit per conditional.                                *
  * ******************************************************************** */
 
-#define CONDMAX 16384           /* conditionals per source file */
+#define CONDMAX 2048            /* conditionals per source file (corpus: 168) */
 
 static unsigned char CondBits[CONDMAX / 8];
 static int CondCount, CondNext;

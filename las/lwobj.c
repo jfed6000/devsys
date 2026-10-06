@@ -45,7 +45,7 @@
 #define LOWER(c) ((((c) >= 'A') && ((c) <= 'Z')) ? ((c) + ('a' - 'A')) : (c))
 
 static int SecKind;             /* the section we are in */
-static char SecNames[32][32];   /* section names seen, by CurSecId - 1 */
+static char *SecNames[32];      /* section names seen, by CurSecId - 1 */
 static int NSecNames;
 static char SecOrgBad;          /* after an unresolvable org (sec_org) */
 static char SecOpen;            /* the file's psect has been opened */
@@ -304,7 +304,7 @@ do_section (ZILCH)
 
     if ((n == NSecNames) && (NSecNames < 32))
     {
-        strcpy (SecNames[NSecNames++], name);
+        SecNames[NSecNames++] = strcpy ((char *) getmem (strlen (name) + 1), name);
     }
 
     CurSecId = n + 1;

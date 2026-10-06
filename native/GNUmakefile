@@ -40,14 +40,14 @@ las_DIR		:= $(DEVSYS)/las
 las_OBJS	:= rma_main findcmd part3 registers directives labels numeric \
 		   file_io macros symtab bank module lwobj preload sizing defsimg
 las_DEFS	:= -DCOCO
-# 16 pages: the stack and stdio buffers (a macro's work file takes 512
-# bytes) share this space; llwbsd overflowed without it. The data area
-# still fits the two blocks below the window slot (D30)
-las_MEM		:= 16
+# 8 pages: the stack, stdio buffers and getmem's ibrk memory share this
+# space (D30). The data area must stay in one 8K block with the
+# parameters (up to 200 bytes), so that a 6-block las still forks (D37)
+las_MEM		:= 8
 # No stack checks (-s) in these: they don't recurse, and every call into
 # them comes from a checked function. The symbol accessors are las's
 # hottest calls, and the 6-byte check per function is room las needs: the
-# module must stay at most 40,192 bytes (5 blocks ending by $FD00, D35)
+# module must stay at most 48,384 bytes (6 blocks ending by $FD00, D37)
 las_NOCHECK	:= symtab bank defsimg module preload
 
 rlink_DIR	:= $(DEVSYS)/rlink

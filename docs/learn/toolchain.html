@@ -1175,12 +1175,53 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 <li><strong>Native sizing.</strong> On Linux, lwasm's <code>,pcr</code> sizing runs a trial pass in a <code>fork()</code>ed child (chapter 4). On the F256, <code>las</code> could <code>F$Fork</code> a second copy of itself for the trial. It's cheap in memory, but the trial's code must fit in <code>las</code>'s own 64K, so it needs room first.</li>
 <li><strong>Room.</strong> Move a self-contained job into a smaller helper program. Reading the <code>--defs</code> library is one: the helper could write a defs image, which <code>las</code> already knows how to load.</li>
 </ul>
+
+<h3>Measure first: where a C program's data goes</h3>
+<p>Step 12 needed one number before choosing: how much of its two data blocks <code>las</code> really uses. A program built with CoCoC lays out its data area in four parts, set up by <code>cstart</code> (CoCoC's start-up code, which runs before <code>main</code>):</p>
+<ul>
+<li><strong>Static data</strong>: every global and <code>static</code> variable, at fixed addresses from <code>$0000</code>. The link map's <code>end</code> symbol marks where it stops.</li>
+<li><strong>The ibrk heap</strong>, from <code>end</code> upwards. <code>ibrk(n)</code> hands out the next <code>n</code> bytes and moves <code>_mtop</code> up. It never gives memory back. CoCoC's stdio takes each file's <a href="#glossary">buffer</a> from here: 256 bytes for a disk file, 128 for a terminal.</li>
+<li><strong>The stack</strong>, from the top of the data area downwards. Every function call pushes its return address and local variables.</li>
+<li><strong>The sbrk heap</strong>, above the stack. <code>sbrk(n)</code> asks OS-9 for more memory with <code>F$Mem</code>, which makes the data area bigger.</li>
+</ul>
+<p>The heap and the stack grow towards each other. CoCoC guards the meeting point: <code>ibrk</code> refuses to cross the stack's lowest reservation, and every function compiled with stack checks tests that the stack hasn't reached <code>_mtop</code>, printing <code>STACK OVERFLOW</code> if it has.</p>
+<p>The OS-9 model (<code>harness/os9run.py --stats</code>) now records the lowest stack pointer, the function running at that moment, and <code>_mtop</code> at exit. We ran native <code>las</code> through it on 348 inputs: the 200 NitrOS9 module sources, the 90 object sources and the tools' own 58 compiler outputs. The worst case was <code>llwbsd</code>, which opens the most nested <code>use</code> files and defines macros:</p>
+<div class="memmap" role="img" aria-label="las's data area for llwbsd before step 12: two blocks plus a page">
+  <div class="addr">$3300</div><div class="blk data">sbrk: macro memory, 256 bytes (F$Mem grew the area to $3400)</div>
+  <div class="addr">$308F</div><div class="blk data">stack, 349 bytes deep at most, from $31EC</div>
+  <div class="addr">$23AC</div><div class="blk">never used: 3,299 bytes</div>
+  <div class="addr">$1DAC</div><div class="blk data">ibrk heap: stdio buffers, 1,536 bytes</div>
+  <div class="addr">$0000</div><div class="blk data">static data: 7,596 bytes</div>
+</div>
+<p>The stack's deepest point turned out to be at start-up, in <code>args_file</code> reading the <code>--args</code> file, because that function keeps a 256-byte word buffer on the stack. While assembling, the stack never went deeper than 136 bytes. The static data was the surprise: two arrays held 3K, almost all of it empty.</p>
+<div class="scroll"><table>
+<tr><th>Array</th><th>Size</th><th>Holds</th><th>Most used in the corpus</th></tr>
+<tr><td><code>CondBits</code> (<code>las/module.c</code>)</td><td>2,048 bytes</td><td>one bit per conditional, 16,384 of them</td><td>168</td></tr>
+<tr><td><code>SecNames</code> (<code>las/lwobj.c</code>)</td><td>1,024 bytes</td><td>32 section names of 32 bytes</td><td>3 names, the longest 9 characters</td></tr>
+</table></div>
+<p><code>CondBits</code> exists for lwasm mode. lwasm decides each conditional once, the first time it reads the line, so pass 2 replays pass 1's answers instead of deciding again (chapter 4, "Conditions across two passes"). It only records conditionals that are actually evaluated, not the ones skipped inside a false block, which is why the count is so low. <code>SecNames</code> gives each section name a number, so the <code>,pcr</code> sizing can tell whether a label is in the same section.</p>
+
+<h3>One block of data, six of code</h3>
+<p>With the numbers in hand, the choice between the two plans was easy. A helper program could take out the 1.5K <code>--defs</code> reader. Fitting the data into one 8K block frees a whole slot for code: <code>las</code> may then be up to 48,384 bytes, the same limit as <code>dcc68</code>. That is 8K of room instead of 24 bytes. Four small changes did it (<code>DESIGN.md</code> D37):</p>
+<ul>
+<li><code>CondBits</code> holds 2,048 conditionals: 256 bytes, still twelve times the corpus's most. Going over stops with <code>too many conditionals</code>, as before.</li>
+<li><code>SecNames</code> keeps 32 pointers, and each name gets exactly its own length from the heap. This also fixes a bug nobody had hit: a section name of 32 characters or more overran its row.</li>
+<li>las's own heap allocator, <code>getmem</code> (<code>las/labels.c</code>), uses <code>ibrk</code> instead of <code>sbrk</code>. In one block nothing can grow the data area, because the module, the data and the symbol window would fill all 8 slots. With <code>ibrk</code>, macros, file names and stdio buffers all share one gap below the stack.</li>
+<li>The extra memory rlink adds to the data area (<code>las_MEM</code> in <code>native/GNUmakefile</code>) went from 16 pages to 8. The data size in the module header plus a 200-character command line now always fits in 8,192 bytes.</li>
+</ul>
+<div class="memmap" role="img" aria-label="las's data area for llwbsd after step 12: one block">
+  <div class="addr">$1D8F</div><div class="blk data">stack, from $1EEC (the command line is above it, to $1F00)</div>
+  <div class="addr">$1A2A</div><div class="blk">free: 869 bytes</div>
+  <div class="addr">$12EC</div><div class="blk data">ibrk heap: stdio buffers, macros, section names</div>
+  <div class="addr">$0000</div><div class="blk data">static data: 4,844 bytes</div>
+</div>
+<p>Running out of the shared gap still fails cleanly in each of its three users. stdio falls back to an unbuffered file, slower but correct. <code>getmem</code> stops with <code>symbol table overflow</code>, RMA's own message. The stack check prints <code>STACK OVERFLOW</code>. The module also got 89 bytes smaller, because <code>sbrk</code>'s code is no longer linked.</p>
 </section>
 
 <!-- 12 -->
 <section class="ch" id="project">
 <h2><span class="num">CHAPTER 12</span>Where this leads</h2>
-<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles 199 of the 200 NitrOS9 module sources, <code>rlink</code> links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Phase 9 made it faster: a saved image of the defs means each build stops re-reading them (chapter 9). Next comes the real machine: a card for your K2, tested in MAME first. After that, room in <code>las</code> and lwasm's instruction sizes natively, by splitting work between processes that share the symbol blocks (chapter 11).</p>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles 199 of the 200 NitrOS9 module sources, <code>rlink</code> links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Phase 9 made it faster: a saved image of the defs means each build stops re-reading them (chapter 9). Next comes the real machine: a card for your K2, tested in MAME first. <code>las</code> now keeps its data in one 8K block, which leaves room for 8K more code (chapter 11). That room is for lwasm's instruction sizes natively: <code>las</code> will start a second copy of itself for the trial pass, sharing the symbol blocks (chapter 11).</p>
 <p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
 </section>
 
@@ -1214,6 +1255,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>handle</dt><dd>A number that names something without being its address. <code>las</code> gives out symbol handles so the symbols can move between banked blocks.</dd>
   <dt>heap</dt><dd>The part of a program's data area handed out while it runs (<code>malloc</code>, <code>sbrk</code>). It grows up towards the stack.</dd>
   <dt>hash function</dt><dd>A calculation that turns a name into a number, always the same number for the same name. Used to pick a bucket.</dd>
+  <dt>ibrk / sbrk</dt><dd>CoCoC's two ways to get heap memory. <code>ibrk</code> takes it from inside the data area, between the static data and the stack. <code>sbrk</code> asks OS-9 to make the data area bigger (<code>F$Mem</code>) and takes it from above the stack.</dd>
   <dt>include guard</dt><dd>A condition at the top of an include file that makes the file skip itself if it has already been read.</dd>
   <dt>interface</dt><dd>The set of operations a piece of code offers, with how it works kept private, so the inside can change without affecting callers.</dd>
   <dt>knock-on error</dt><dd>An error caused by an earlier error. Fixing the first one makes it disappear.</dd>
@@ -1248,6 +1290,8 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
   <dt>sharding</dt><dd>Splitting one big job into independent slices that run at the same time, like the 200 native NitrOS9 files over 8 MAMEs.</dd>
   <dt>sign extension</dt><dd>Widening a signed number by copying its top bit into the new high bits. The 6809's <code>sex</code> does it from B into A.</dd>
+  <dt>stack</dt><dd>Memory used last-in, first-out. Each function call pushes its return address and local variables, and they go when it returns. On the 6809 the S register points to it, and it grows downwards.</dd>
+  <dt>static data</dt><dd>A program's global and <code>static</code> variables, at fixed addresses for the whole run. In a Level 2 C program they start at <code>$0000</code>.</dd>
   <dt>symbol table</dt><dd>The assembler's list of every name and its value.</dd>
   <dt>threaded tree</dt><dd>A tree whose unused right pointers point to the next node in order, so it can be walked without a stack.</dd>
   <dt>trial run</dt><dd>A throwaway pass 1 that <code>las</code> runs in a separate process to decide instruction sizes before assembling for real.</dd>
@@ -1258,7 +1302,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 </dl>
 </section>
 
-<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24; phase 9 and 10 results from the same day): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
+<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24; phase 9 and 10 results from the same day; step 12's memory measurements from <code>os9run.py</code> on 2026-10-05): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
 </main>
 </div>
 
