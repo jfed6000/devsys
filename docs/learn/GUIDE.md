@@ -160,3 +160,4 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-02 — Ch 11: "Taking it to the real machine" and "One program, several processes"; ch 12 next steps. Glossary: overlay, procedure file, reentrant.
 - 2026-10-05 — Step 12: ch 11 "Measure first: where a C program's data goes" and "One block of data, six of code" (two memory maps from the llwbsd measurement); ch 12 next steps. Glossary: ibrk / sbrk, stack, static data.
 - 2026-10-05 — Step 11: ch 11 "Taking it to the real machine" gets the K2's results and timings; ch 12 updated.
+- 2026-10-05 — Ch 11: the second K2 card (one-block las, `mfree`/`mmap`): 1,656K free, all blocks given back.
