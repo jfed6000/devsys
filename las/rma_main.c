@@ -218,7 +218,7 @@ AsmblLin (ZILCH)
 {
     char _curch;
     MACDSCR *_macdsc;
-    int _modcmd;
+    int _modcmd, _inst = 0;
 
     if (TopPending)         /* after emod in lwasm mode (module.c) */
     {
@@ -297,6 +297,18 @@ AsmblLin (ZILCH)
         if ((*_p == '*') || (*_p == ';'))
         {
             return 1;
+        }
+    }
+
+    /* lwasm: struct, endstruct and the fields between (lwstruct.c) */
+
+    if (LwasmMode && ! MacDefining && ! FalseIf && ! InRept)
+    {
+        int r = st_line ();
+
+        if (r >= 0)
+        {
+            return r;
         }
     }
 
@@ -603,6 +615,31 @@ AsmblLin (ZILCH)
                             Cod_Ent = FindCmd (LabelName, CodTbBgn, CodTbEnd);
                         }
 
+                        /* lwasm: a struct's name reserves an instance,
+                         * as "rmb sizeof{name}" would here (lwstruct.c) */
+
+                        _inst = 0;
+
+                        if ((Cod_Ent == 0) && LwasmMode &&
+                            ((_inst = st_inst (LabelName)) != 0))
+                        {
+                            if (_inst < 0)
+                            {
+                                return 0;
+                            }
+
+                            if (InTop && (Cod_Ent = FindCmd ("rmb", S_TopLw,
+                                                             STopLwEnd)))
+                            {
+                                _modcmd = 2;
+                            }
+                            else if ((Cod_Ent = FindCmd ("rmb", S_LwSect,
+                                                         SLwSectEnd)))
+                            {
+                                _modcmd = 3;
+                            }
+                        }
+
                         /* Finally.. if we have a valid Cod_Ent
                          * Set up and write the code to the ROF (if -o)
                          */
@@ -665,6 +702,11 @@ AsmblLin (ZILCH)
                             }
                             else
                             {
+                                if ((_inst > 0) && ! st_post ())
+                                {
+                                    return 0;
+                                }
+
                                 w_ocod (CmdCod, NumBytes);
 
                                 if (Oprand == SrcChar)

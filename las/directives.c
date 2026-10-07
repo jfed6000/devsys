@@ -98,6 +98,13 @@ l1723 (ZILCH)
     register SYMH smbl_tmp = CurntLabel;
     int flag = 0;
 
+    if (StPre)          /* a struct instance's size (lwstruct.c) */
+    {
+        StPre = 0;
+        NmbrInt = StSize;
+        return 1;
+    }
+
     if (getNmbr ())
     {
         if (LwasmMode)

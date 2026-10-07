@@ -38,7 +38,8 @@ BIN	:= bin
 # and _OS9, as the native cc does. See docs/DESIGN.md D20 and D25.
 las_DIR		:= $(DEVSYS)/las
 las_OBJS	:= rma_main findcmd part3 registers directives labels numeric \
-		   file_io macros symtab bank module lwobj preload sizing defsimg
+		   file_io macros symtab bank module lwobj preload sizing defsimg \
+		   lwstruct
 las_DEFS	:= -DCOCO
 # 8 pages: the stack, stdio buffers and getmem's ibrk memory share this
 # space (D30). The data area must stay in one 8K block with the

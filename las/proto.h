@@ -222,6 +222,9 @@ int bdrglist(void);
 int bd_rgnam(void);
 int nstmacdf(void);
 int e_report(char *report);
+int st_line(void);
+int st_inst(char *op);
+int st_post(void);
 void errexit(char *report);
 
 #else
@@ -440,6 +443,9 @@ int bdrglist();
 int bd_rgnam();
 int nstmacdf();
 int e_report();
+int st_line();
+int st_inst();
+int st_post();
 void errexit();
 #endif   /* __STDC__*/
 

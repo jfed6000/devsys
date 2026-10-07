@@ -167,3 +167,4 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-07 — Ch 7: "How the driver knows a pass failed" (Linux `dcc` lost every pass's exit status through `exit(system())`; `-w`'s `-n` from `cc`'s one-pass `c.comp`; /nil on the devsys disks). Glossary: driver, exit status.
 - 2026-10-07 — Appendix A "What we changed in DCC": every source change since the fork (pass, file, what, why, D number), the build-only options, and how dccdiff proves nothing else changed.
 - 2026-10-07 — Ch 3: "How `las` tells them apart" (mode from the first `psect`/`section`/`mod`, D40; why a prescan, why lwasm when none); ch 4 and glossary "dialect" updated.
+- 2026-10-07 — Ch 4: "Structures: names for offsets" (minted's `undo_item`, why fields get a prefix, nesting and instances, D41); ch 11 and 12: all 200 module sources. Glossary: struct.

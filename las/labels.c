@@ -46,11 +46,30 @@ MovLbl (destpos)
 
     if (isalpha ((int)(*SrcChar)))
     {
+        char *start = destpos;
+
         count = SYMLEN - 1;
 
         while ((count-- > 0) && (_ischar (*SrcChar)))
         {
             *(destpos++) = *(SrcChar++);
+        }
+
+        /* lwasm: "sizeof{name}" is one name, a struct's size (lwstruct.c) */
+
+        if (LwasmMode && (*SrcChar == '{') && (destpos - start == 6) &&
+            (strncmp (start, "sizeof", 6) == 0))
+        {
+            while ((count-- > 0) && *SrcChar && (*SrcChar != '}') &&
+                   notblank (*SrcChar))
+            {
+                *(destpos++) = *(SrcChar++);
+            }
+
+            if ((count > 0) && (*SrcChar == '}'))
+            {
+                *(destpos++) = *(SrcChar++);
+            }
         }
 
         *destpos = '\0';
