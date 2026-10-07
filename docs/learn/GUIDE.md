@@ -166,3 +166,4 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-05 — Ch 11: the third K2 card (native sizing on the hardware: `copy` 1,469 bytes; 255 s / 120 s).
 - 2026-10-07 — Ch 7: "How the driver knows a pass failed" (Linux `dcc` lost every pass's exit status through `exit(system())`; `-w`'s `-n` from `cc`'s one-pass `c.comp`; /nil on the devsys disks). Glossary: driver, exit status.
 - 2026-10-07 — Appendix A "What we changed in DCC": every source change since the fork (pass, file, what, why, D number), the build-only options, and how dccdiff proves nothing else changed.
+- 2026-10-07 — Ch 3: "How `las` tells them apart" (mode from the first `psect`/`section`/`mod`, D40; why a prescan, why lwasm when none); ch 4 and glossary "dialect" updated.

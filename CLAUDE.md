@@ -75,9 +75,11 @@ using examples from their own trees.
 - Native testing (phase 7 on) uses the Wildbits MAME: see DESIGN.md "Phase 7
   test plan" and `~/projects/wild/tempest/docs/port-guide.md` §13. Never modify
   MAME, and mount a copy of a disk image, never the original.
-- `las` has two modes. Default: RMA behaviour. `--lwasm`: lwasm behaviour
-  (DESIGN.md D12, §4). NitrOS9 sources need `--lwasm` plus the build's
-  `--pragma=` list, which the harnesses pass. A change for lwasm compatibility
+- `las` has two modes: RMA behaviour and lwasm behaviour (`--lwasm`;
+  DESIGN.md D12, §4). With neither `--lwasm` nor `--rma`, las picks the mode
+  from the source (D40: `psect` → RMA, `section`/`mod` or nothing → lwasm).
+  NitrOS9 sources also need the build's `--pragma=` list; the harnesses pass
+  it with `--lwasm` (except `native.py lw`, which tests the detection). A change for lwasm compatibility
   normally goes behind `LwasmMode`, so `regress.py --skip lwdiff` (RMA/DCC
   inputs) must stay 450/450.
 - Host builds: `las` at `las/build/unix/las`; the unmodified RMA at

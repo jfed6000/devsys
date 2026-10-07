@@ -359,11 +359,12 @@ def stage_lw(fmt="os9"):
     return out
 
 
-def lw_args(j):
+def lw_args(j, flag=True):
     """The job's las options. Natively they go in a file read with
     --args= (las file_io.c): the shell takes 200 characters a line, and
-    cstart would split a --pragma= list at its commas."""
-    a = ["--lwasm"] + [f"-D{d}" for d in j["defines"]]
+    cstart would split a --pragma= list at its commas. flag=False leaves
+    out --lwasm, so las decides the mode from the source (D40)."""
+    a = (["--lwasm"] if flag else []) + [f"-D{d}" for d in j["defines"]]
     if j["pragmas"]:
         a.append("--pragma=" + ",".join(j["pragmas"]))
     return a
@@ -389,7 +390,9 @@ def suite_lw(dsk):
         src = os.path.basename(j["source"])
         argfile = os.path.join(WORK, "args.tmp")
         with open(argfile, "w") as f:
-            f.write("\n".join(lw_args(j) + ["-i=/dd/T/S", "-o=M"]) + "\n")
+            # no --lwasm: native las detects the mode (D40); the host
+            # reference below keeps the flag, so both must agree
+            f.write("\n".join(lw_args(j, flag=False) + ["-i=/dd/T/S", "-o=M"]) + "\n")
         put(argfile, f"{dsk},{jd}/src/A", text=True)
         lines += [f"chd /dd/{jd}/src", f"las {src} --args=A >L >>E"]
         work.append((n, j, files))

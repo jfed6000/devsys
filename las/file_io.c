@@ -239,6 +239,105 @@ do_defines (ZILCH)
 }
 
 static void one_arg ();
+static char ModeSet;    /* --lwasm or --rma was given */
+
+/* ******************************************************************** *
+ * guess_mode() - With neither --lwasm nor --rma, the source decides:   *
+ *                the first "psect" means RMA, the first "section" or   *
+ *                "mod" means lwasm. Only the source files themselves   *
+ *                are read (not use files), and only a line's operation *
+ *                field counts. No such line: lwasm, as RMA can't put   *
+ *                code or data outside a psect (raw data files, fonts). *
+ *                Read a character at a time: las's data is one 8K      *
+ *                block (D37)                                           *
+ * ******************************************************************** */
+
+static void
+#ifdef __STDC__
+guess_mode (void)
+#else
+guess_mode ()
+#endif
+{
+    const char **src;
+    FILE *f;
+    char word[8];
+    int c, n, found = 0;
+
+    for (src = SrcNam; src < LastSrc; ++src)
+    {
+        if ( ! (f = fopen (*src, "r")))
+        {
+            return;     /* the assembly itself reports it */
+        }
+
+        c = getc (f);
+
+        while ((c != EOF) && ! found)
+        {
+            /* 0x0d and 0x0a, not '\n': on OS-9 '\n' is CR */
+
+            if ((c != '*') && (c != ';'))       /* not a comment line */
+            {
+                while ((c != EOF) && (c != ' ') && (c != '\t') &&
+                       (c != 0x0d) && (c != 0x0a))
+                {
+                    c = getc (f);       /* the label, if any */
+                }
+
+                while ((c == ' ') || (c == '\t'))
+                {
+                    c = getc (f);
+                }
+
+                n = 0;
+
+                while ((c != EOF) && (c != ' ') && (c != '\t') &&
+                       (c != 0x0d) && (c != 0x0a))
+                {
+                    if (n < (int) sizeof (word) - 1)
+                    {
+                        word[n] = _tolower (c);
+                    }
+
+                    ++n;
+                    c = getc (f);
+                }
+
+                if (n < (int) sizeof (word))
+                {
+                    word[n] = '\0';
+
+                    if (strcmp (word, "psect") == 0)
+                    {
+                        found = 1;      /* RMA, the default */
+                    }
+                    else if ((strcmp (word, "section") == 0) ||
+                             (strcmp (word, "mod") == 0))
+                    {
+                        LwasmMode = found = 1;
+                    }
+                }
+            }
+
+            while ((c != EOF) && (c != 0x0d) && (c != 0x0a))
+            {
+                c = getc (f);
+            }
+
+            c = getc (f);
+        }
+
+        fclose (f);
+
+        if (found)
+        {
+            return;
+        }
+    }
+
+    LwasmMode = 1;
+}
 
 /* ******************************************************************** *
  * args_file() - --args=FILE: more arguments, read from FILE, separated *
@@ -312,7 +411,12 @@ one_arg (arg)
     }
     else if (strcmp (arg, "--lwasm") == 0)
     {
-        LwasmMode = 1;
+        LwasmMode = ModeSet = 1;
+    }
+    else if (strcmp (arg, "--rma") == 0)
+    {
+        LwasmMode = 0;
+        ModeSet = 1;
     }
     else if (strncmp (arg, "--defs=", 7) == 0)
     {
@@ -404,6 +508,11 @@ GetOpts (_argc, _argv)
     if (LastSrc == SrcNam)
     {
         errexit ("no input file");
+    }
+
+    if ( ! ModeSet)
+    {
+        guess_mode ();
     }
 
     if ( ! O_Nam)

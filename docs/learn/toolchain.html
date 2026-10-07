@@ -388,6 +388,20 @@ main: ...
 <p>The <strong>object formats</strong> win when code is shared or split up: C programs, libraries, big applications. You link only the library pieces you use.</p>
 <p>The <strong>module format</strong> wins when exact layout matters. A device descriptor is a table of bytes at fixed offsets. A driver must start with an entry table right after the header. With <code>mod</code> you write exactly the bytes you want, in order, and every header field is visible in the source. It's also one step instead of two, which matters when the build runs on a 6809.</p>
 <p class="why">If you <code>use</code> a whole library file in a module, you get the whole library. If you link against it, you get only the pieces you call. That's the main practical difference.</p>
+
+<h3>How <code>las</code> tells them apart</h3>
+<p><code>las</code> assembles all three. It reads RMA sources the way RMA does, and module and lwasm-object sources the way lwasm does (the two <em>dialects</em> of chapter 4). You can name the dialect with <code>--rma</code> or <code>--lwasm</code>, but you don't have to: the boxes above show each format announcing itself in its operation field. Before it starts, <code>las</code> reads the source for the first line whose operation is one of three words:</p>
+<div class="scroll"><table>
+<thead><tr><th>First one found</th><th>Dialect</th><th>Output</th></tr></thead>
+<tbody>
+<tr><td><code>psect</code></td><td>RMA</td><td>ROF object, for <code>rlink</code></td></tr>
+<tr><td><code>section</code></td><td>lwasm</td><td>ROF object, for <code>rlink --lwlink</code></td></tr>
+<tr><td><code>mod</code></td><td>lwasm</td><td>the finished module</td></tr>
+<tr><td>none of them</td><td>lwasm</td><td>raw bytes (fonts, patterns, pictures)</td></tr>
+</tbody></table></div>
+<p>Why read ahead, and not just switch when it meets the word? Because the dialect changes how every line is read, and the first lines of <code>echo.asm</code> come before its <code>mod</code>: they <code>use</code> the defs, which are read differently in each dialect. So the choice has to be made before line 1.</p>
+<p>Why does "none" mean lwasm? RMA puts code and data only inside a <code>psect</code>. Outside one it says "bad mnemonic", so a file without <code>psect</code> can't be an RMA program. In your NitrOS9 tree, the 28 such files are all lwasm data files like <code>level2/sys/stdfonts.asm</code>.</p>
+<p>Checked on every source we test with: 262 NitrOS9 sources decide by <code>section</code> or <code>mod</code>, the other 28 fall back, and all 252 hand-written RMA sources have <code>psect</code>. With the flag left out, all 290 NitrOS9 sources give the same bytes as with it. NitrOS9 builds still pass their <code>--pragma=</code> list, because those options are choices of that build, not lwasm's defaults.</p>
 </section>
 
 <!-- 4 -->
@@ -463,7 +477,7 @@ OS9.D    SET   1
 <p>The first row happens to give the same answer either way, which is exactly why this kind of difference is dangerous: most expressions agree, and the ones that don't give a wrong number, not an error. <code>las</code> uses lwasm's precedence in lwasm mode and RMA's otherwise. Names follow the same pattern: NitrOS9 builds with case-insensitive symbols, so <code>HW.PAGE</code> in one file finds <code>HW.Page</code> in the defs.</p>
 
 <h3>Two dialects in one assembler</h3>
-<p><code>las</code> now speaks two dialects. By default it behaves like RMA, which RMA's own sources and the C compiler's output rely on. With <code>--lwasm</code> it behaves like lwasm: the local labels, condition replay, operators and the other differences above. Keeping them separate means each set of sources keeps the meaning it was written for, and the regression test can keep guarding RMA behaviour while lwasm behaviour is built up.</p>
+<p><code>las</code> now speaks two dialects. In RMA's it behaves like RMA, which RMA's own sources and the C compiler's output rely on. In lwasm's (<code>--lwasm</code>, or detected from the source as chapter 3 shows) it behaves like lwasm: the local labels, condition replay, operators and the other differences above. Keeping them separate means each set of sources keeps the meaning it was written for, and the regression test can keep guarding RMA behaviour while lwasm behaviour is built up.</p>
 
 <h3>Reading a listing</h3>
 <p>This is part of RMA's listing for the C example from chapter 7:</p>
@@ -1277,7 +1291,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>cross compiler</dt><dd>A compiler that runs on one machine and makes code for another. Our Linux DCC is one.</dd>
   <dt>defs image</dt><dd>A file recording what reading the defs did (symbols, conditionals, counters), so <code>las --defsimg</code> can skip reading them next time.</dd>
   <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
-  <dt>dialect</dt><dd>One assembler's version of the shared assembly language. <code>las</code> supports RMA's (default) and lwasm's (<code>--lwasm</code>).</dd>
+  <dt>dialect</dt><dd>One assembler's version of the shared assembly language. <code>las</code> supports RMA's and lwasm's, and picks one from the source (chapter 3) unless <code>--rma</code> or <code>--lwasm</code> names it.</dd>
   <dt>differential testing</dt><dd>Testing a program by giving it and a trusted program the same input and comparing the outputs.</dd>
   <dt>driver</dt><dd>A program that runs other programs in order and passes files between them. <code>dcc</code> runs <code>dcpp</code>, <code>dcc68</code>, <code>dco68</code>, <code>las</code> and <code>rlink</code>.</dd>
   <dt>dry run</dt><dd><code>make -n</code>: print the commands a build would run without running them.</dd>
