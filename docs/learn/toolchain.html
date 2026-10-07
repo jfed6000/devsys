@@ -219,6 +219,7 @@ html { scroll-behavior: smooth; }
     <li><a href="#native">Running on the F256</a></li>
     <li><a href="#project">Where this leads</a></li>
     <li><a href="#glossary">Glossary</a></li>
+    <li><a href="#dcc-changes">A. What we changed in DCC</a></li>
   </ol>
 </nav>
 
@@ -691,6 +692,19 @@ rlink: Unresolved references: localtime</code></pre>
 <p class="cap">Checking that nothing else changed</p>
 <p>After the change, 59 of CoCoC's C files compiled differently, which was expected. But "expected" isn't checked. The comparison tool (<code>harness/dccdiff.py --names8</code>) splits both outputs into words and accepts a difference only where the new word is longer than 8 characters and the old one is its first 8. All 59 passed, so nothing changed except the names. That's a pattern worth reusing: when you know <em>what kind</em> of difference a change should make, write a test that allows exactly that kind and nothing else.</p>
 <p>The symbol entries use chapter 9's trick. Each keeps the old room for 8 characters, and only a longer name gets a longer entry, so short names cost the same memory on the 6809 as before. And testing under AddressSanitizer turned up the usual suspects: a pointer that was never set, in the code for <code>struct tag x[3]</code>. It had worked only while fresh memory happened to be zero, and one XLisp source crashed the original compiler. It compiles now.</p>
+<p class="cap">How the driver knows a pass failed</p>
+<p><code>dcc</code> itself compiles nothing. It is a <strong>driver</strong>: it starts each pass as a separate process, waits for it, and looks at the number the pass hands back when it ends, its <strong>exit status</strong>. 0 means it worked. Anything else means stop: there is no point optimizing code the compiler couldn't finish. Until 2026-10-07 the Linux build lost that number. Here is a file with a missing semicolon, through the old driver:</p>
+<pre><code> dcc68: -o=ctmp.pNeJLM.i ctmp.pNeJLM.m
+bad.c:4: *** ; expected ***
+errors: 2
+ dco68: ctmp.pNeJLM.i ctmp.pNeJLM.m
+   rma: -o=bad.r ctmp.pNeJLM.m
+*** error - source errors ***
+$ echo $?
+0</code></pre>
+<p>dcc68 found two errors and failed, yet the driver ran the optimizer and the assembler anyway, and reported success. The cause is one line in <code>dcc/DCC/dcc.c</code>: <code>exit(system(cmd))</code>. On Unix, <code>system()</code> doesn't return the program's exit code. It returns a <strong>wait status</strong>, which packs the code into the second byte (exit code 1 comes back as 256) so the low byte can say whether a signal killed the program. An exit code only has room for one byte, so <code>exit(256)</code> leaves 0. Every failure became a success. The fix unpacks it with <code>WEXITSTATUS</code>. On the F256, <code>os9fork</code> and <code>wait</code> pass OS-9's error code straight through, so the native driver never had this bug.</p>
+<p>The lost number hid a second bug. <code>dcc -w</code> means "check for errors and throw the output away". For it, the driver gave dcc68 an option <code>-n</code>, and dcc68 has never had one: it stopped with <code>unknown flag: -n</code>, and the driver called that success. The line came from CoCoC's older <code>cc</code> driver (<code>Source/Compiler/CC/cc.c</code>), which gave <code>-n</code> only to a one-pass compiler, <code>c.comp</code>, behind <code>#ifndef TWOPASS</code>. DCC's driver copied the line without the condition. Sending the output to <code>/nil</code> already throws it away, so the fix just drops <code>-n</code>. On the F256 that also needs a <code>/nil</code> device, which the boot disk lacked. The devsys disks now have it (recipe <code>recipes/wildbits/l2_devsys</code> in your netrek tree). Now a good file gives 0 and a bad one 1, with or without <code>-w</code>.</p>
+<p>The lesson is about tests as much as code. A tool that always says "fine" can't fail a test, so a script checking only the exit code would have passed for years. Our harnesses compare the output files themselves, which is why they never relied on it.</p>
 </section>
 
 <!-- 8 -->
@@ -1265,8 +1279,10 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>defs / defsfile</dt><dd>Include files full of <code>equ</code> definitions: system call numbers, hardware registers, structure offsets.</dd>
   <dt>dialect</dt><dd>One assembler's version of the shared assembly language. <code>las</code> supports RMA's (default) and lwasm's (<code>--lwasm</code>).</dd>
   <dt>differential testing</dt><dd>Testing a program by giving it and a trusted program the same input and comparing the outputs.</dd>
+  <dt>driver</dt><dd>A program that runs other programs in order and passes files between them. <code>dcc</code> runs <code>dcpp</code>, <code>dcc68</code>, <code>dco68</code>, <code>las</code> and <code>rlink</code>.</dd>
   <dt>dry run</dt><dd><code>make -n</code>: print the commands a build would run without running them.</dd>
   <dt>emod</dt><dd>Ends a module-format source; the assembler appends the CRC here.</dd>
+  <dt>exit status</dt><dd>The number a program hands back when it ends: 0 for success, anything else for failure. On Unix, <code>system()</code> and <code>wait</code> return it packed into a larger <em>wait status</em>; <code>WEXITSTATUS</code> unpacks it.</dd>
   <dt>external reference</dt><dd>A name used in one file and defined in another. Resolved by the linker.</dd>
   <dt>fixup / relocation</dt><dd>A place in the code the linker must patch once final positions are known.</dd>
   <dt>forward reference</dt><dd>Using a label before it's defined. The reason assemblers make two passes.</dd>
@@ -1322,7 +1338,35 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 </dl>
 </section>
 
-<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24; phase 9 and 10 results from the same day; step 12's memory measurements from <code>os9run.py</code>, the K2 card run and step 13's native sizing results on 2026-10-05): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
+<!-- A -->
+<section class="ch" id="dcc-changes">
+<h2><span class="num">APPENDIX A</span>What we changed in DCC</h2>
+<p>DCC is four programs, each a pass of the compiler (chapter 7): <code>dcpp</code> (preprocessor), <code>dcc68</code> (compiler), <code>dco68</code> (optimizer), and the <code>dcc</code> driver that runs them and then the assembler and linker. We forked it on 2026-10-02 from your CoCoC tree (<code>~/projects/dcc/CoCoC/Source/Compiler</code>, commit <code>68fdbf9</code> plus the edits you hadn't committed yet, saved as <code>dcc/uncommitted-at-fork.patch</code>). Those edits were yours: casts and a <code>-std=gnu89</code> flag so it builds with a modern gcc. Everything below is ours. <code>dcpp</code> has no changes at all.</p>
+<p>Each change has a reason, and most came from a test that failed. The D numbers point to the full record in <code>docs/DESIGN.md</code>.</p>
+<div class="scroll"><table>
+<thead><tr><th>Pass</th><th>Where</th><th>What changed</th><th>Why</th><th>When</th></tr></thead>
+<tbody>
+<tr><td><code>dcc68</code></td><td><code>CC09/cj.h</code>, <code>lex.c</code>, <code>codgen.c</code>, <code>local.c</code>, <code>declare.c</code></td><td>Names are significant to 31 characters (<code>NAMESIZE</code> 8 &rarr; 31) and are written to the assembly in full (no more <code>%.8s</code>). Each symbol entry keeps room for 8 characters and only a longer name gets a longer entry (<code>SHORTNAME</code>)</td><td>Names that differed only after character 8 were the same name to the old compiler. Short names cost the same memory as before (chapter 7, "Old libraries, new names")</td><td>Phase 6, D18</td></tr>
+<tr><td><code>dcc68</code></td><td><code>CC09/lex.c</code> <code>getword</code></td><td>The name buffer is <code>NAMESIZE+1</code> bytes</td><td>An 8-character name wrote its closing <code>\0</code> one byte past the buffer. Found by AddressSanitizer</td><td>Phase 6, D18</td></tr>
+<tr><td><code>dcc68</code></td><td><code>CC09/declare.c</code></td><td>Two pointers are set to <code>NULL</code>: the dimension list in the declarator, and each new dimension's link</td><td>For <code>struct tag x[3]</code> they were left as whatever was in memory. That only worked while fresh memory was zero; <code>XLisp/xlkmap.c</code> crashed the original compiler and compiles now</td><td>Phase 6, D18</td></tr>
+<tr><td><code>dcc68</code></td><td><code>CC09/cj.h</code></td><td>On OS-9 its tables grow with <code>sbrk</code> instead of <code>ibrk</code></td><td>The F256 won't start a 6-block module that asks for more than 8K of data up front. With <code>sbrk</code> it starts small and grows while running</td><td>Phase 7, D25</td></tr>
+<tr><td><code>dcc68</code></td><td><code>CC09/bool.c</code></td><td>After calling a <code>char</code> function in a condition (<code>if (f())</code>, <code>while</code>, <code>?:</code>) it tests B with <code>tstb</code>, not all of D</td><td>A <code>char</code> function returns its value in B only, so whatever A held could make the condition true. Found when native <code>las</code> rejected <code>section _constant</code>. No CoCoC source had such a site</td><td>Phase 10, D33</td></tr>
+<tr><td><code>dco68</code></td><td><code>COpt/op.h</code></td><td>Labels up to 32 characters (<code>LABELSIZE</code> 11 &rarr; 32)</td><td>The optimizer has to hold dcc68's 31-character names</td><td>Phase 6, D18</td></tr>
+<tr><td><code>dco68</code></td><td><code>COpt/inst.c</code></td><td>The <code>puls ...,pc</code> test checks the operand is at least 3 characters first</td><td><code>puls u</code> made it read two bytes before the operand. Found by AddressSanitizer</td><td>Phase 6, D18</td></tr>
+<tr><td><code>dco68</code></td><td><code>COpt/op.h</code></td><td><code>#define void int</code> on OS-9</td><td>DCC itself has no <code>void</code>, and compiling the optimizer for the 6809 means compiling it with DCC</td><td>Phase 7, D20</td></tr>
+<tr><td><code>dcc</code></td><td><code>DCC/dcc.h</code></td><td>Runs <code>las</code> instead of <code>rma</code></td><td><code>las</code> is our assembler, and the only one that keeps long names</td><td>Phase 6, D18</td></tr>
+<tr><td><code>dcc</code></td><td><code>DCC/dcc.c</code></td><td><code>-w</code> no longer gives dcc68 <code>-n</code></td><td>dcc68 never had <code>-n</code>, so <code>dcc -w</code> always failed (chapter 7, "How the driver knows a pass failed")</td><td>2026-10-07, D39</td></tr>
+<tr><td><code>dcc</code></td><td><code>DCC/dcc.c</code> <code>runit</code></td><td>On Linux, the driver passes each pass's real exit code back</td><td><code>exit(system(cmd))</code> turned every failure into success, so a file with errors went on through the optimizer and assembler and <code>dcc</code> said 0</td><td>2026-10-07, D39</td></tr>
+</tbody></table></div>
+<p><strong>The same fix in your tree.</strong> The two driver fixes from 2026-10-07 went into CoCoC's <code>DCC/dcc.c</code> as well, and the rebuilt driver is <code>~/projects/bin/dcc</code>. So that file no longer differs between the two trees. The other changes are only in devsys.</p>
+<p><strong>Build options for the 6809, not source changes.</strong> <code>native/GNUmakefile</code> compiles dcc68 with <code>-s</code> (no stack checks) and without <code>-DPROF</code>, so <code>dcc -p</code> (profiling) isn't available on the F256. Both save code: dcc68 is 48,355 bytes, 29 under the most a 6-block module can be (D25).</p>
+<p><strong>How we know nothing else changed.</strong> <code>harness/dccdiff.py</code> compiles every C source in CoCoC with both compilers and compares the assembly. 139 are identical. The 59 that differ differ only in names longer than 8 characters, which <code>--names8</code> checks word by word. <code>xlkmap.c</code> compiles only with ours. To see the source changes yourself:</p>
+<pre><code>cd ~/projects/devsys
+diff -ru -x '*.o' ~/projects/dcc/CoCoC/Source/Compiler/CC09 dcc/CC09</code></pre>
+<p>Do the same for <code>COpt</code> and <code>DCC</code>. The list of changes is also in <code>dcc/README.devsys</code>.</p>
+</section>
+
+<footer>Examples come from real runs on 2026-10-02 (chapter 11: the Wildbits MAME, <code>wbjr2</code>, on the Jr2 image of 2026-09-24; phase 9 and 10 results from the same day; step 12's memory measurements from <code>os9run.py</code>, the K2 card run and step 13's native sizing results on 2026-10-05; the <code>dcc</code> exit-status runs on 2026-10-07): lwasm 4.25, the Linux build of RMA in <code>~/projects/dcc/rma</code>, DCC from <code>~/projects/dcc/CoCoC</code>, and the lwdiff harness baseline over the Level 2 jr2 build.</footer>
 </main>
 </div>
 

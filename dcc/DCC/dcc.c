@@ -325,7 +325,9 @@ saver:
 			thisfilp = srcfile;
 
 			if (nullflag) {
-				splcat ("-n");          /* waste the output */
+				/* waste the output. cc gave its one-pass c.comp -n
+				 * here; dcc68 has no -n (it fails "unknown flag"),
+				 * and -o=/nil already throws the code away */
 #ifdef MWOS
 				strcpy (destfile, "/nil");
 #else
@@ -522,7 +524,11 @@ int code;
 	if ((childid = fork()) == 0) { /* we're the child */
 		char foo[4096];
 		sprintf(foo, "%s%s", cmd, parmbuf);
-		exit(system (foo)); /* don't clean up */
+		/* don't clean up. system() returns a wait status (exit
+		 * code * 256), and exit() keeps only the low byte: pass
+		 * the pass's own exit code, or every failure is 0 */
+		childstat = system (foo);
+		exit (WIFEXITED (childstat) ? WEXITSTATUS (childstat) : 1);
 	} else if (childid < 0) { /* fork failed */
 		error ("can't run '%s' -- fork() failed, reason: %s", cmd, strerror(errno));
 		return 0;
@@ -530,6 +536,9 @@ int code;
 #endif
 	wait (&childstat);
 	childid = 0;
+#ifndef MWOS
+	childstat = WIFEXITED (childstat) ? WEXITSTATUS (childstat) : 1;
+#endif
 	if (childstat > code)
 		trap (childstat);
 }

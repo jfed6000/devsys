@@ -27,6 +27,10 @@ Changes (phase 10; docs/DESIGN.md D33):
   CC09  a char function's result used as a condition (if (f()), while,
         ?:) is tested with tstb, not "std -2,s": the callee sets only B
         (bool.c checkop). Inherited from CoCoC; dccdiff unchanged
+Changes (2026-10-07; docs/DESIGN.md D39; also made in the CoCoC tree):
+  DCC   -w no longer passes -n to dcc68, which never accepted it ("unknown
+        flag: -n"); on Linux runit passes each pass's exit code back
+        (exit(system()) made every failure 0)
 
 The 6809 build (../native/GNUmakefile) compiles dcc68 with -s and
 without -DPROF so it stays at most 48,384 bytes (6 blocks ending by $FD00);

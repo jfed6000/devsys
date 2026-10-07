@@ -164,3 +164,5 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-05 — Step 13: ch 11 "Sizing on the F256: a child that starts from the top" (F$Fork vs fork(), the shared block, the model bug, timings); ch 12 updated. Glossary: pipe, shared memory.
 - 2026-10-05 — Ch 11: why the sizing answers use a shared block even where pipes exist (PipeMan's end-of-file and blocking edges; las and rlink can't read from a pipe).
 - 2026-10-05 — Ch 11: the third K2 card (native sizing on the hardware: `copy` 1,469 bytes; 255 s / 120 s).
+- 2026-10-07 — Ch 7: "How the driver knows a pass failed" (Linux `dcc` lost every pass's exit status through `exit(system())`; `-w`'s `-n` from `cc`'s one-pass `c.comp`; /nil on the devsys disks). Glossary: driver, exit status.
+- 2026-10-07 — Appendix A "What we changed in DCC": every source change since the fork (pass, file, what, why, D number), the build-only options, and how dccdiff proves nothing else changed.
