@@ -37,7 +37,7 @@ DEFAULT_LWASM = os.path.join(HOME, "projects/coco-shelf/bin/lwasm.orig")
 DEFAULT_LAS = os.path.join(DEVSYS, "las/build/unix/las")
 DEFAULT_LWAR = os.path.join(HOME, "projects/coco-shelf/bin/lwar")
 DEFAULT_LWLINK = os.path.join(HOME, "projects/coco-shelf/bin/lwlink")
-DEFAULT_RLINK = os.path.join(DEVSYS, "rlink/rlink")
+DEFAULT_LLINK = os.path.join(DEVSYS, "llink/llink")
 
 # lwar/lwlink commands seen by the last collect(), in build order
 LINK_CMDS = []
@@ -349,9 +349,9 @@ def classify(job, ref_ok, ref_out, ref_msg, lasr):
 
 LINK_ORDER = ["LINK_MATCH", "LINK_DIFF", "LINK_FAIL", "LINK_REF_FAIL"]
 LINK_MEANING = {
-    "LINK_MATCH": "rlink --lwlink module is byte-identical to lwlink's",
+    "LINK_MATCH": "llink module (lwlink layout, detected) is byte-identical to lwlink's",
     "LINK_DIFF": "both linked, but the modules differ",
-    "LINK_FAIL": "rlink failed, or an object it needs didn't assemble",
+    "LINK_FAIL": "llink failed, or an object it needs didn't assemble",
     "LINK_REF_FAIL": "lwlink itself failed",
 }
 
@@ -360,7 +360,7 @@ def run_links(jobs, results, args, refdir, lasdir):
     """Replay the build's lwar and lwlink commands on both sides.
 
     Reference: lwar and lwlink on lwasm's objects. las: a ROF library is
-    its members' .r files one after another, and rlink --lwlink links
+    its members' .r files one after another, and llink links
     with the same libraries in the same order.
     """
     byobj = {os.path.normpath(os.path.join(j["cwd"], j["output"])): j["id"] for j in jobs}
@@ -419,7 +419,9 @@ def run_links(jobs, results, args, refdir, lasdir):
                 str(m) for m in missing)
             out.append(r)
             continue
-        p = subprocess.run([args.rlink, "--lwlink"]
+        # no --lwlink: llink must pick lwlink's layout from the mainline
+        # (D42); native.py obj keeps the flag, so both are tested
+        p = subprocess.run([args.llink]
                            + [("-l=" + os.path.join(lasdir, "_lib", v + ".l")) if k == "lib"
                               else os.path.join(lasdir, v) for k, v in seq]
                            + ["-o=" + name, "-n=" + name],
@@ -427,7 +429,7 @@ def run_links(jobs, results, args, refdir, lasdir):
                            capture_output=True, text=True)
         if not os.path.exists(lasout):
             r["status"] = "LINK_FAIL"
-            r["detail"] = "rlink: " + ((p.stdout + p.stderr).strip().splitlines() or ["failed"])[0][:110]
+            r["detail"] = "llink: " + ((p.stdout + p.stderr).strip().splitlines() or ["failed"])[0][:110]
             bad = [m for l in libs for m in libs_ok.get(l, [])]
             if bad:
                 r["detail"] += f" (library members that didn't assemble: {len(bad)})"
@@ -438,7 +440,7 @@ def run_links(jobs, results, args, refdir, lasdir):
             else:
                 k = next((i for i in range(min(len(a), len(b))) if a[i] != b[i]), min(len(a), len(b)))
                 r["status"] = "LINK_DIFF"
-                r["detail"] = f"lwlink {len(a)} bytes, rlink {len(b)} bytes, first difference at ${k:04X}"
+                r["detail"] = f"lwlink {len(a)} bytes, llink {len(b)} bytes, first difference at ${k:04X}"
         out.append(r)
     return out
 
@@ -522,7 +524,7 @@ def write_report(results, jobs, args, workdir, report_path, corpus, links=()):
         L.append("## Linked programs\n")
         L.append("Object-format files are compared after linking: the build's lwar and "
                  "lwlink commands are replayed with lwasm's objects, and the same links are "
-                 "made from las's ROF objects with rlink --lwlink.\n")
+                 "made from las's ROF objects with llink (which detects lwlink's layout).\n")
         L.append("| Status | Programs | Meaning |\n|---|---|---|")
         for s in LINK_ORDER:
             if lc[s]:
@@ -575,7 +577,7 @@ def main():
     ap.add_argument("--nitros9", default=os.environ.get("NITROS9DIR", DEFAULT_NITROS9))
     ap.add_argument("--lwasm", default=DEFAULT_LWASM)
     ap.add_argument("--las", default=DEFAULT_LAS)
-    ap.add_argument("--rlink", default=DEFAULT_RLINK)
+    ap.add_argument("--llink", default=DEFAULT_LLINK)
     ap.add_argument("--lwar", default=DEFAULT_LWAR)
     ap.add_argument("--lwlink", default=DEFAULT_LWLINK)
     ap.add_argument("--only", help="only files whose id or source contains this text")
@@ -585,7 +587,7 @@ def main():
     args = ap.parse_args()
     args.nitros9 = os.path.abspath(args.nitros9)
     args.las = os.path.abspath(args.las)       # las runs in its own scratch directory
-    args.rlink = os.path.abspath(args.rlink)
+    args.llink = os.path.abspath(args.llink)
     args.lwasm = os.path.abspath(args.lwasm)
 
     if not os.path.exists(args.las):

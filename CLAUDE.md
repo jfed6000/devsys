@@ -3,12 +3,12 @@
 Goal: build programs on the Foenix F256 itself (6809, NitrOS9 **Level 2
 only**) from the same sources lwasm assembles on Linux. Plan: fork the C
 version of RMA as the single assembler (named `las`, in `las/`), use DCC as the C compiler, and use ROF
-+ rlink as the only native object format.
++ our rlink fork (`llink`) as the only native object format.
 
 ## Repository
 
 `devsys` is one git repo (branch `main`, no remote) holding `las/`, `docs/`,
-and our forks of rlink (`rlink/`) and DCC (`dcc/`). No upstream remotes: this is a clean
+and our forks of rlink (`llink/`, renamed `llink`, D42) and DCC (`dcc/`). No upstream remotes: this is a clean
 break, nothing is contributed back. The user will set up the project's own
 remote later; don't add one or push.
 
@@ -17,15 +17,15 @@ remote later; don't add one or push.
 | File | What it is |
 |---|---|
 | `las/` | The assembler: our fork of RMA (from upstream commit `e82adeb`, no upstream history kept). Build: `cd las/build/unix && make`. |
-| `rlink/` | Our fork of rlink (D13): long names, `--lwlink` mode (lwlink's module layout, library choice and module order, `lwsel.c`). Build: `cd rlink && make -f GNUmakefile`. |
+| `llink/` | Our fork of rlink (D13), renamed `llink` (D42) so it never clashes with the original `rlink` on PATH or in `/dd/CMDS`: long names, lwlink's module layout, library choice and module order (`lwsel.c`), chosen from the mainline (`__lwsec`) or forced with `--lwlink`/`--mw`. Internal file names kept (`rlink.h`, `rlink_main.c`). Build: `cd llink && make -f GNUmakefile`. |
 | `dcc/` | Our fork of DCC (D18): `CPP` (dcpp), `CC09` (dcc68), `COpt` (dco68), `DCC` (the `dcc` driver, runs `las`). Build: `make -f GNUmakefile` in each. `python3 harness/dccdiff.py [--names8]` compiles every CoCoC C source with it and with CoCoC's binaries and compares; `--names8` ignores differences that are only longer names. |
 | `las/sizing.c` | lwasm's `,pcr` sizing (D16): a trial pass 1 in a child process decides sizes (Linux `fork()` + pipe; OS-9 `F$Fork` of las itself + a shared block, D38). If a lwasm-mode file grows by a byte or two, `python3 harness/sizediff.py [id]` lists the instructions whose length differs from lwasm's. |
-| `harness/lwdiff.py` | Compares `las` with lwasm over the real Level 2 build. Run `python3 harness/lwdiff.py` after every change to `las` or `rlink`; `--only NAME --verbose` for one file. Also replays the build's lwar/lwlink commands and compares linked programs (`--rlink`, `--lwlink` options). Object-format files get the constants library as `--defs`. Report in `harness/reports/`. `harness/rofdump.py file.r` prints a ROF file. |
+| `harness/lwdiff.py` | Compares `las` with lwasm over the real Level 2 build. Run `python3 harness/lwdiff.py` after every change to `las` or `llink`; `--only NAME --verbose` for one file. Also replays the build's lwar/lwlink commands and compares linked programs (`--llink`, `--lwlink` options; its links rely on llink's layout detection). Object-format files get the constants library as `--defs`. Report in `harness/reports/`. `harness/rofdump.py file.r` prints a ROF file. |
 | `corpus/` | NitrOS9 source the harness assembles: clones of the user's forks (`jfed6000/nitros9`, `jfed6000/nitros9-languages`, branch `devsys`), pinned by `harness/corpus.lock`. Not version-controlled. Set up or restore with `harness/corpus.sh`; `harness/corpus.sh update` moves to the newest `devsys` commits. Don't edit files in it. |
 | `harness/regress.py` | Checks that a change to `las` did **not** change behaviour: compares the working tree with `HEAD` (or `--ref REV`) on ~740 inputs. Must pass for refactors (phases 1, 2, 8, 9). `--skip lwdiff` when a change is meant to alter NitrOS9 results (then check the RMA/DCC differences one by one, as DESIGN.md §8 describes for phase 3). |
-| `las/build/stats`, `las/build/asan` | Extra builds of the same source: `stats` (`-DSYMSTATS`) prints symbol table memory, used by `harness/symstats.py`; `asan` checks memory errors: `ASAN_OPTIONS=detect_leaks=0 python3 harness/regress.py --current las/build/asan/las`. Run the asan check after any change to how memory is allocated. For rlink, build a sanitizer copy in scratch (`make -f GNUmakefile CFLAGS="-g -m32 -Wno-implicit-int -fsanitize=address" LFLAGS="-m32 -fsanitize=address"`) and pass it to lwdiff with `--rlink`. |
-| `native/GNUmakefile` | Phase 7 cross-build: compiles las, rlink and DCC for the 6809 with the host DCC passes, `las` and `rlink` into `native/bin/` (`make -f GNUmakefile`; `obj/TOOL.map` + `obj/TOOL/*.lst` give every address a name). DESIGN.md D20, D25. |
-| `harness/native.py` | Runs the cross-built tools on the F256 in MAME (suites `las`, `link`, `cc`; about 1 minute) and compares with the host tools. Suite `lw` assembles the 200 NitrOS9 module sources natively (`--only NAME`); suite `obj` assembles the 90 object sources, builds the libraries and links the 13 `.as` programs (phase 10); suite `img` assembles level1/cmds without and with a defs image (phase 9). Run long suites in parallel: `--shard K/N --work DIR --no-build` (run `make -f GNUmakefile` in `native/` first; 8 shards of `lw` take about 22 minutes). Native las options that don't fit the shell's 200-character line go in a file: `las src --args=FILE`. After any change to las, rlink or DCC, run **every** suite, not only the one you think is affected (DESIGN.md §8). `--keep` keeps the test image. |
+| `las/build/stats`, `las/build/asan` | Extra builds of the same source: `stats` (`-DSYMSTATS`) prints symbol table memory, used by `harness/symstats.py`; `asan` checks memory errors: `ASAN_OPTIONS=detect_leaks=0 python3 harness/regress.py --current las/build/asan/las`. Run the asan check after any change to how memory is allocated. For llink, build a sanitizer copy in scratch (`make -f GNUmakefile CFLAGS="-g -m32 -Wno-implicit-int -fsanitize=address" LFLAGS="-m32 -fsanitize=address"`) and pass it to lwdiff with `--llink`. |
+| `native/GNUmakefile` | Phase 7 cross-build: compiles las, llink and DCC for the 6809 with the host DCC passes, `las` and `llink` into `native/bin/` (`make -f GNUmakefile`; `obj/TOOL.map` + `obj/TOOL/*.lst` give every address a name). DESIGN.md D20, D25. |
+| `harness/native.py` | Runs the cross-built tools on the F256 in MAME (suites `las`, `link`, `cc`; about 1 minute) and compares with the host tools. Suite `lw` assembles the 200 NitrOS9 module sources natively (`--only NAME`); suite `obj` assembles the 90 object sources, builds the libraries and links the 13 `.as` programs (phase 10); suite `img` assembles level1/cmds without and with a defs image (phase 9). Run long suites in parallel: `--shard K/N --work DIR --no-build` (run `make -f GNUmakefile` in `native/` first; 8 shards of `lw` take about 22 minutes). Native las options that don't fit the shell's 200-character line go in a file: `las src --args=FILE`. After any change to las, llink or DCC, run **every** suite, not only the one you think is affected (DESIGN.md §8). `--keep` keeps the test image. |
 | `harness/card.py` | Real hardware (K2, SD card): `build` makes `harness/out/devsys_k2.dsk` (tools, C libs/headers, `/dd/DEVSYS/selftest`); the owner `dd`s it to the card and types `/dd/DEVSYS/selftest`; `check FILE` compares the card read back with the Linux tools; `mame` rehearses the same card on the Jr2 image. |
 | `harness/os9run.py` | Runs one OS-9 program on a host model (6809 from `harness/cpu6809.py` + system calls). For debugging native failures in seconds: `--trace`, `--stats`, `--map native/obj/las.map --break e_report` (`--break NAME+HEX` for an address inside a function). Not the proof; MAME is. |
 | `las/symtab.c`, `las/bank.c` | Phase 8: symbols are handles (`SYMH`), read and changed only through `symtab.c`'s accessors; storage is 8K banked blocks (`bank.c`). In `symtab.c`, never use two entries in one statement (a pointer is good only until another block is mapped). After any change there: `python3 harness/regress.py --current las/build/bankwin/las` (emulates the 6809's single window, DESIGN.md D27). |
@@ -38,7 +38,7 @@ remote later; don't add one or push.
 | `docs/learn/tools/` | `build_examples.sh` regenerates examples; `check_hex.py` verifies the page's hex dumps; `hash_data.py` recomputes chapter 9's hashing figures. |
 
 Related trees (reference sources; don't modify without asking):
-`~/projects/dcc/rma` (RMA C source), `~/projects/dcc/mw-rlink`,
+`~/projects/dcc/rma` (RMA C source), `~/projects/dcc/mw-rlink` (the original rlink; `~/projects/bin/rlink` is its binary),
 `~/projects/dcc/CoCoC` (DCC), and the user's own NitrOS9 working trees in
 `~/projects/wild/Sept2026/`. Use `corpus/` for NitrOS9 source, not those.
 

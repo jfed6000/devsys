@@ -130,7 +130,7 @@
 #define MODNAMSIZE  15      /* module name */
 
 #define NAMESIZE    31      /* significant characters in an identifier
-                             * (devsys: was 8; las and rlink take 63) */
+                             * (devsys: was 8; las and llink take 63) */
 #define SHORTNAME   8       /* name room in every symbol entry; a longer
                              * name gets a longer entry (lex.c lookup) */
 #define UNIQUE      '_'     /* for local labels etc. */

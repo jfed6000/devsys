@@ -109,6 +109,7 @@ int L1047 ();*/
 
 /* Begin of uninit DP */
 GLOBAL direct int   LwLink;     /* --lwlink: lwlink's module layout (rl_03.c) */
+GLOBAL direct int   LayoutSet;  /* --lwlink or --mw given (else lw_detect) */
 GLOBAL direct int   FileCount;
 GLOBAL direct int   lfilenum;
 GLOBAL direct int   printmap;

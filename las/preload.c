@@ -11,7 +11,7 @@
  * --defs=file reads the constants a ROF file or library exports.   *
  * They are NOT defined in the symbol table: references to them     *
  * stay external, with the instruction sizes lwasm uses for         *
- * externals, and rlink fills them in. preload_resolve() is called  *
+ * externals, and llink fills them in. preload_resolve() is called  *
  * only where ROF can't express the reference or the value is       *
  * needed while assembling (operators other than + and -, equ/set,  *
  * org/rmb counts); it replaces those references with their values. *

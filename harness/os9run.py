@@ -21,7 +21,7 @@ instruction counts).
   --stderr FILE   path 2 (default: the terminal)
   --mem N         extra data memory in bytes, like OS-9's "#N" modifier
   --trace         print every system call to stderr
-  --map FILE      rlink's link map (-m) of the module: names for addresses
+  --map FILE      llink's link map (-m) of the module: names for addresses
   --break NAME    each time NAME is entered, print the calls on the stack
                   (NAME+HEX: each time that address inside NAME is reached)
                   (needs --map; repeatable)
@@ -170,7 +170,7 @@ def crc_byte(acc, b):
 
 
 def read_map(path):
-    """rlink -m -s output -> sorted [(module offset, name)] of code symbols.
+    """llink -m -s output -> sorted [(module offset, name)] of code symbols.
     Static functions come from each object's las listing (-l -s), found
     next to its .r file, at the section's code base from the map."""
     import re

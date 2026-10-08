@@ -11,7 +11,7 @@ OBJS	= \
 	util.o \
 	lwsel.o
 
-rlink: $(OBJS)
+llink: $(OBJS)
 	$(CC) $(LFLAGS) -o $@ $(OBJS)
 
 # Every object depends on the headers: a struct size change (e.g. SYMLEN)
@@ -19,4 +19,4 @@ rlink: $(OBJS)
 $(OBJS): rlink.h rof.h module.h types.h proto.h
 
 clean:
-	-rm rlink $(OBJS)
+	-rm llink $(OBJS)

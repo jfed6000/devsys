@@ -21,7 +21,7 @@
 
 What selftest does, timed with date -t between steps (mfree before and
 after, so check can report free RAM and blocks not given back; mmap last):
-  1. dcc builds hello.c (dcpp, dcc68, dco68, las, rlink) and runs it
+  1. dcc builds hello.c (dcpp, dcc68, dco68, las, llink) and runs it
   2. las assembles CMDS of level1/cmds without a defs image
   3. the same with --defsimg (the first records the image, the rest load it)
 """

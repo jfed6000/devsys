@@ -262,6 +262,7 @@ html { scroll-behavior: smooth; }
 
 <p><strong>Why so many separate programs?</strong> On a 6809, a program can address only 64K. One program that did all six jobs wouldn't fit, so each job became its own program, passing files to the next. That's also why a C build creates temporary files. Modern compilers like gcc still use the same stages; they just hide them.</p>
 <p>Hand-written assembly skips the first three steps and starts at the assembler. And as chapter 3 explains, some assembly skips the linker as well.</p>
+<p>These are the names in CoCoC, the C compiler as you had it. This project replaces the last two stages with its own forks, under their own names: <code>las</code> instead of <code>rma</code>, and <code>llink</code> instead of <code>rlink</code> (chapter 6 explains the second). The first three keep their names.</p>
 </section>
 
 <!-- 2 -->
@@ -394,8 +395,8 @@ main: ...
 <div class="scroll"><table>
 <thead><tr><th>First one found</th><th>Dialect</th><th>Output</th></tr></thead>
 <tbody>
-<tr><td><code>psect</code></td><td>RMA</td><td>ROF object, for <code>rlink</code></td></tr>
-<tr><td><code>section</code></td><td>lwasm</td><td>ROF object, for <code>rlink --lwlink</code></td></tr>
+<tr><td><code>psect</code></td><td>RMA</td><td>ROF object, for <code>llink</code></td></tr>
+<tr><td><code>section</code></td><td>lwasm</td><td>ROF object, for <code>llink</code> (lwlink's layout)</td></tr>
 <tr><td><code>mod</code></td><td>lwasm</td><td>the finished module</td></tr>
 <tr><td>none of them</td><td>lwasm</td><td>raw bytes (fonts, patterns, pictures)</td></tr>
 </tbody></table></div>
@@ -579,6 +580,11 @@ program needs PUTS  →  take puts
 puts needs FPUTS    →  but fputs was already passed</code></pre>
 <p>lwlink keeps going round until a full pass adds nothing new, so it finds <code>fputs</code> on the second pass. And it lays the members out in the order they sit in the library, not the order it found them. The order matters: it decides where every routine ends up, and so every address in the module. <code>las</code>'s rlink does the same in <code>--lwlink</code> mode: it decides the members up front, exactly as lwlink would, and then links them in library order.</p>
 <p>The order between files has a twist too. lwlink places sections by <em>name</em> first, in the order its script lists them (<code>code</code>, <code>.text</code>, <code>data</code>, <code>.data</code>), and by command-line position second. NitrOS9 links with the libraries first: <code>lwlink -lwildbitsl2 -lnet -lalib dw.o</code>. The <code>net</code> library uses <code>section code</code>, like the programs, so a <code>net</code> routine lands <em>before</em> the program's own code. The <code>alib</code> library uses <code>.text</code>, so its routines land after. Same command line, opposite results, purely because of a section's name. <code>las</code> records each file's section in its object (as the constant <code>__lwsec</code>), and rlink sorts by the same rule.</p>
+
+<h3>One linker, two layouts, and a new name</h3>
+<p>Our fork of rlink is called <code>llink</code> since 2026-10-08. The reason is practical. Your PATH has <code>~/projects/bin/rlink</code>, the original, which keeps only 9 characters of a name. The <code>dcc</code> driver runs its linker by name, so with both called <code>rlink</code>, a C program built with our <code>dcc</code> on Linux could quietly link with the old one. On the F256 the two can't even sit side by side in <code>/dd/CMDS</code>. <code>las</code> never had this problem, because it doesn't share a name with <code>rma</code>. <code>llink</code> pairs with it.</p>
+<p>The same day, <code>llink</code> learned to choose between the two layouts above by itself, so <code>--lwlink</code> is now optional. It uses a clue <code>las</code> already leaves: every object it makes from lwasm-style source exports <code>__lwsec</code>. Before linking, <code>llink</code> reads the input files' headers and global names until it reaches the <strong>mainline</strong>, the one module that has a module type (a program's <code>__start</code> file, or a C program's <code>cstart.r</code>). If the mainline exports <code>__lwsec</code>, it uses lwlink's layout; if not, Microware's. Measured on every object the tests make: all 19 lwasm-style mainlines have it, and none of the 9 Microware ones nor any of the 677 modules in CoCoC's libraries do.</p>
+<p>Why the mainline, and not any object at all? Because one lwasm library member has no <code>__lwsec</code>: <code>wildbitsl2</code>'s constants-only object, which has no code section to rank. A rule based on members would trip over it. The mainline is the module that sets the program's header anyway. <code>--lwlink</code> and <code>--mw</code> still force a layout, for the rare link that needs it.</p>
 
 <h3>Values only the linker knows</h3>
 <p>Many NitrOS9 object-format files never include the defs. Names like <code>F$Exit</code> or <code>Prgrm</code> are simply undefined while assembling, so they become external references, and the linker fills in the numbers from a library that exports the defs (<code>wildbitsl2</code>).</p>
@@ -1285,7 +1291,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 <!-- 12 -->
 <section class="ch" id="project">
 <h2><span class="num">CHAPTER 12</span>Where this leads</h2>
-<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles all 200 NitrOS9 module sources (the last one, <code>minted</code>, once <code>las</code> learned lwasm's <code>struct</code>), <code>rlink</code> links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Phase 9 made it faster: a saved image of the defs means each build stops re-reading them (chapter 9). They run on your K2 too, with the same output as on Linux. <code>las</code> now keeps its data in one 8K block, which leaves room for 8K more code (chapter 11). That room went to lwasm's instruction sizes natively (step 13): <code>las</code> starts a second copy of itself for the trial pass, and the two share one block of RAM for the answers (chapter 11). Native output now equals lwasm's, at the cost of running pass 1 twice.</p>
+<p>The project in one paragraph: fork the C version of RMA so it reads all three source formats. Module-format files come out as finished modules. Both object styles come out as ROF for rlink. Fix the name limits in rlink and DCC. Give RMA the three-part symbol table. Prove each step on Linux by comparing its output with lwasm's, byte for byte, across the whole Level 2 F256 tree. Then compile the tools with DCC and run them on the F256. That last step works now (chapter 11): with its symbols in extra 8K blocks (phase 8), <code>las</code> on the F256 assembles all 200 NitrOS9 module sources (the last one, <code>minted</code>, once <code>las</code> learned lwasm's <code>struct</code>), <code>llink</code> (our rlink) links every tool, and the libraries and the 13 <code>.as</code> programs build on the F256 too (phase 10). Phase 9 made it faster: a saved image of the defs means each build stops re-reading them (chapter 9). They run on your K2 too, with the same output as on Linux. <code>las</code> now keeps its data in one 8K block, which leaves room for 8K more code (chapter 11). That room went to lwasm's instruction sizes natively (step 13): <code>las</code> starts a second copy of itself for the trial pass, and the two share one block of RAM for the answers (chapter 11). Native output now equals lwasm's, at the cost of running pass 1 twice.</p>
 <p>The decisions, measurements, open questions and phased roadmap are in <code>docs/DESIGN.md</code>. The latest harness results are in <code>harness/reports/</code>.</p>
 </section>
 
@@ -1294,7 +1300,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 <h2><span class="num">CHAPTER 13</span>Glossary</h2>
 <dl class="gloss">
   <dt>AddressSanitizer</dt><dd>A compiler option that makes a program stop as soon as it reads or writes outside memory it allocated.</dd>
-  <dt>alias</dt><dd>A second name for the same address. rlink adds one when a long name like <code>localtime</code> is wanted and an old library only has its first 8 characters, <code>localtim</code>.</dd>
+  <dt>alias</dt><dd>A second name for the same address. <code>llink</code> adds one when a long name like <code>localtime</code> is wanted and an old library only has its first 8 characters, <code>localtim</code>.</dd>
   <dt>assembler</dt><dd>Turns assembly language into machine-code bytes.</dd>
   <dt>bank switching</dt><dd>Swapping which block of physical RAM appears in part of the address space.</dd>
   <dt>binary search tree</dt><dd>A tree where each node has up to two branches: earlier-sorting names on the left, later on the right. Each comparison rules out a whole branch.</dd>
@@ -1328,10 +1334,11 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>K&amp;R C</dt><dd>The C language as it was before the 1989 ANSI standard.</dd>
   <dt>library</dt><dd>A bundle of object files (members). The linker takes only the members it needs.</dd>
   <dt>linker</dt><dd>Joins object files and library members into one program and fills in cross-references.</dd>
+  <dt>llink</dt><dd>This project's fork of Microware's rlink, renamed so the two never share a name. Long names, aliases for old libraries, and lwlink's layout when the mainline came from lwasm-style source.</dd>
   <dt>local label</dt><dd>A label that only exists within part of a file. In lwasm, a name containing <code>@</code>, valid until the next blank line.</dd>
   <dt>location counter</dt><dd>The address where the assembler will put the next byte. Inside an OS-9 module there are two: <code>*</code> for code, <code>.</code> for data.</dd>
   <dt>LWOBJ</dt><dd>lwasm's object file format, read by lwlink.</dd>
-  <dt>mainline</dt><dd>In rlink, the one object file that is the program itself, as opposed to library members. It supplies the module type and entry point.</dd>
+  <dt>mainline</dt><dd>In rlink and <code>llink</code>, the one object file that is the program itself, as opposed to library members. It supplies the module type and entry point, and <code>llink</code> picks its layout from it.</dd>
   <dt>MMU</dt><dd>Hardware that maps 8K blocks of physical RAM into the 6809's 64K address space.</dd>
   <dt>mod</dt><dd>Starts a module-format source and supplies the header fields.</dd>
   <dt>module</dt><dd>OS-9's unit of executable code: header, body, name, CRC.</dd>
@@ -1352,7 +1359,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>reentrant</dt><dd>Code that never changes itself and keeps its variables in each process's data area, so many processes can share one copy. All OS-9 modules are.</dd>
   <dt>reference</dt><dd>In testing, the trusted program whose output counts as correct. Here, lwasm.</dd>
   <dt>regression test</dt><dd>A test that checks a change didn't alter existing behaviour, by comparing against the previous version.</dd>
-  <dt>ROF</dt><dd>Relocatable Object Format: Microware's object file format, made by RMA and read by rlink.</dd>
+  <dt>ROF</dt><dd>Relocatable Object Format: Microware's object file format, made by RMA (and <code>las</code>) and read by rlink (and <code>llink</code>).</dd>
   <dt>ROF version</dt><dd>A byte in every ROF header naming the format that wrote it: 0 for Microware's tools, 1 for <code>las</code>. Version 1 adds common blocks, and tells rlink names were kept in full.</dd>
   <dt>section</dt><dd>lwasm's equivalent of psect/vsect.</dd>
   <dt>sharding</dt><dd>Splitting one big job into independent slices that run at the same time, like the 200 native NitrOS9 files over 8 MAMEs.</dd>
@@ -1388,6 +1395,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 <tr><td><code>dco68</code></td><td><code>COpt/inst.c</code></td><td>The <code>puls ...,pc</code> test checks the operand is at least 3 characters first</td><td><code>puls u</code> made it read two bytes before the operand. Found by AddressSanitizer</td><td>Phase 6, D18</td></tr>
 <tr><td><code>dco68</code></td><td><code>COpt/op.h</code></td><td><code>#define void int</code> on OS-9</td><td>DCC itself has no <code>void</code>, and compiling the optimizer for the 6809 means compiling it with DCC</td><td>Phase 7, D20</td></tr>
 <tr><td><code>dcc</code></td><td><code>DCC/dcc.h</code></td><td>Runs <code>las</code> instead of <code>rma</code></td><td><code>las</code> is our assembler, and the only one that keeps long names</td><td>Phase 6, D18</td></tr>
+<tr><td><code>dcc</code></td><td><code>DCC/dcc.h</code></td><td>Runs <code>llink</code> instead of <code>rlink</code></td><td>Our rlink fork was renamed <code>llink</code>, so the driver can never pick up the original <code>rlink</code> from PATH or <code>/dd/CMDS</code> (chapter 6)</td><td>2026-10-08, D42</td></tr>
 <tr><td><code>dcc</code></td><td><code>DCC/dcc.c</code></td><td><code>-w</code> no longer gives dcc68 <code>-n</code></td><td>dcc68 never had <code>-n</code>, so <code>dcc -w</code> always failed (chapter 7, "How the driver knows a pass failed")</td><td>2026-10-07, D39</td></tr>
 <tr><td><code>dcc</code></td><td><code>DCC/dcc.c</code> <code>runit</code></td><td>On Linux, the driver passes each pass's real exit code back</td><td><code>exit(system(cmd))</code> turned every failure into success, so a file with errors went on through the optimizer and assembler and <code>dcc</code> said 0</td><td>2026-10-07, D39</td></tr>
 </tbody></table></div>

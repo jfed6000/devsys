@@ -1,6 +1,6 @@
 # lwdiff report: l2 / jr2
 
-Run 2026-10-07 14:18. 290 assemblies from a dry run of `recipes/wildbits/l2` (PLATFORM=jr2).
+Run 2026-10-08 13:07. 290 assemblies from a dry run of `recipes/wildbits/l2` (PLATFORM=jr2).
 
 Corpus: `nitros9` 2bc03298, `nitros9-languages` c05f23c3.
 
@@ -18,11 +18,11 @@ Formats in this build: `os9` 200, `obj` 90.
 
 ## Linked programs
 
-Object-format files are compared after linking: the build's lwar and lwlink commands are replayed with lwasm's objects, and the same links are made from las's ROF objects with rlink --lwlink.
+Object-format files are compared after linking: the build's lwar and lwlink commands are replayed with lwasm's objects, and the same links are made from las's ROF objects with llink (which detects lwlink's layout).
 
 | Status | Programs | Meaning |
 |---|---|---|
-| LINK_MATCH | 13 | rlink --lwlink module is byte-identical to lwlink's |
+| LINK_MATCH | 13 | llink module (lwlink layout, detected) is byte-identical to lwlink's |
 
 | Program | Status | Detail |
 |---|---|---|

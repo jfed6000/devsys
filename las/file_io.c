@@ -1169,7 +1169,7 @@ wrt_global (parm)
         styp = sym_typ (reg);
         sbloffst = sym_val (reg);
 
-        /* rlink only accepts a constant for a plain value; an exported
+        /* llink only accepts a constant for a plain value; an exported
          * "set" symbol's final value is just that (lwasm mode, where the
          * export pragma exports set symbols too) */
 

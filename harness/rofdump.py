@@ -4,7 +4,7 @@
 A ROF file (or a library, which is ROF files one after another) holds, per
 module: a header, the global symbols it defines, its code and initialised
 data, the external symbols it references (with where), and its local
-references (fixups). Format as in rlink's rof.h.
+references (fixups). Format as in llink's rof.h.
 
 Usage: python3 harness/rofdump.py file.r [--code]
 """

@@ -2,7 +2,7 @@
  * lwobj.c - lwasm's object format ("section" files) as ROF         *
  *                                                                  *
  * In lwasm mode a source that uses "section" is assembled to ROF,  *
- * for rlink, the way lwasm --format=obj assembles it to LWOBJ for  *
+ * for llink, the way lwasm --format=obj assembles it to LWOBJ for  *
  * lwlink. The file becomes one psect:                              *
  *                                                                  *
  *   code, .text, data, .data, others  the psect's code             *
@@ -17,12 +17,12 @@
  * header: from __os9 if the file has one, else lwlink's defaults   *
  * (type 1, lang 1, attr 8, rev 0); the entry point is __start.     *
  * Only a file with __start or __os9 gets a module type; library    *
- * members get 0, as in Microware's clib.l, so rlink sees one root. *
+ * members get 0, as in Microware's clib.l, so llink sees one root. *
  *                                                                  *
  * __lwsec, an exported constant, gives the rank of the file's first *
  * code-like section in lwlink's os9 script (code 0, .text 1, data  *
  * 2, .data 3, others 4): lwlink lays sections out by that order    *
- * first and command-line order second, and rlink --lwlink does the *
+ * first and command-line order second, and llink --lwlink does the *
  * same with it.                                                    *
  *                                                                  *
  * With the export pragma, every non-local label defined inside a   *
@@ -171,7 +171,7 @@ open_psect (ZILCH)
 
 /* ******************************************************************** *
  * os9_marker() - After a __os9 section: export the constant __os9,     *
- *          bit 0 set if it gave an edition. rlink --lwlink writes the  *
+ *          bit 0 set if it gave an edition. llink --lwlink writes the  *
  *          edition byte only then, as lwlink does.                     *
  * ******************************************************************** */
 

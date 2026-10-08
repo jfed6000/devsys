@@ -1,4 +1,4 @@
-/* rlink_main.c - mainline routine to build rlink */
+/* rlink_main.c - mainline routine to build llink (devsys fork of rlink) */
 
 #define MAIN
 
@@ -9,6 +9,7 @@ int tidy();
 
 static char *basenam();
 static B09fatal();
+static int lw_detect();
 
 int
 main (argc, argv)
@@ -34,7 +35,15 @@ main (argc, argv)
             /* lwlink's module layout, for modules built from lwasm-style
              * sources by las (see wrtlwmod in rl_03.c) */
 
-            LwLink = 1;
+            LwLink = LayoutSet = 1;
+            ++argv;
+            continue;
+        }
+
+        if (strcmp (*(argv + 1), "--mw") == 0)
+        {
+            LwLink = 0;     /* Microware's layout, whatever the objects */
+            LayoutSet = 1;
             ++argv;
             continue;
         }
@@ -143,6 +152,11 @@ main (argc, argv)
         fatal("no input files");
 
 #endif
+
+    if (!LayoutSet)
+    {
+        LwLink = lw_detect();   /* the mainline's layout (D42) */
+    }
 
     if (LwLink)
     {
@@ -344,3 +358,131 @@ UINT val;
     return ((val & 0xff00) >> 8) + ((val & 0xff) << 8);
 }
 #endif
+
+
+/* ******************************************************************** *
+ * lw_detect() - With neither --lwlink nor --mw: lwlink's layout if the *
+ *               mainline (the input module with a type/language) was   *
+ *               made by las from lwasm-style sources, which export the *
+ *               constant __lwsec (D17); else Microware's. Reads the    *
+ *               input files' headers and globals a byte at a time, up  *
+ *               to the mainline: on the 6809 memory is short. A -z     *
+ *               file of names isn't read; no mainline found: Microware *
+ * ******************************************************************** */
+
+static int
+dt_word (fp)
+    FILE *fp;
+{
+    int hi = getc (fp);
+
+    return (hi << 8) | (getc (fp) & 0xff);
+}
+
+static void
+dt_skip (fp, n)
+    FILE *fp;
+    unsigned n;
+{
+    while (n-- && (getc (fp) != EOF))
+    {
+    }
+}
+
+static int
+lw_detect ()
+{
+    static char lwsec[] = "__lwsec";
+    FILE *fp;
+    unsigned char h[28];
+    unsigned tylan, vers, code, n, k;
+    int i, c, j, lw;
+
+    for (i = 0; i < FileCount; ++i)
+    {
+        if (!(fp = fopen (filenames[i], "r")))
+        {
+            continue;           /* readrofs reports it */
+        }
+
+        while (fread (h, sizeof (h), 1, fp) == 1)
+        {
+            if ((h[0] != 0x62) || (h[1] != 0xcd) || (h[2] != 0x23) ||
+                    (h[3] != 0x87))
+            {
+                break;          /* not a ROF: readrofs reports it */
+            }
+
+            tylan = (h[4] << 8) | h[5];
+            vers = h[13];
+            code = ((h[22] << 8) | h[23]) + ((h[18] << 8) | h[19]) +
+                   ((h[20] << 8) | h[21]);
+
+            while ((c = getc (fp)) > 0)
+            {
+            }                   /* the module name */
+
+            lw = 0;
+
+            for (n = dt_word (fp); n; --n)      /* globals */
+            {
+                j = 0;
+
+                while ((c = getc (fp)) > 0)
+                {
+                    if ((j >= 0) && (lwsec[j] == c))
+                    {
+                        ++j;
+                    }
+                    else
+                    {
+                        j = -1;
+                    }
+                }
+
+                if (j == sizeof (lwsec) - 1)
+                {
+                    lw = 1;
+                }
+
+                dt_skip (fp, 3);        /* type, value */
+            }
+
+            if (tylan)
+            {
+                fclose (fp);
+                return lw;              /* the mainline decides */
+            }
+
+            dt_skip (fp, code);
+
+            for (n = dt_word (fp); n; --n)      /* external references */
+            {
+                while ((c = getc (fp)) > 0)
+                {
+                }
+
+                dt_skip (fp, 3 * dt_word (fp));
+            }
+
+            dt_skip (fp, 3 * dt_word (fp));     /* local references */
+
+            if (vers > 0)                       /* common blocks */
+            {
+                for (n = dt_word (fp); n; --n)
+                {
+                    while ((c = getc (fp)) > 0)
+                    {
+                    }
+
+                    k = dt_word (fp);           /* size */
+                    dt_skip (fp, 3 * dt_word (fp));
+                }
+            }
+        }
+
+        fclose (fp);
+    }
+
+    return 0;
+}

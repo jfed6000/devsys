@@ -9,14 +9,14 @@ compared with what the host tools produce from the same inputs.
 
 Suites (default: all):
   las   native las assembles every .a file of the cross-build (the DCC
-        output for las, rlink and DCC's own C sources); each ROF must equal
+        output for las, llink and DCC's own C sources); each ROF must equal
         the host las's, apart from the assembly date
-  link  native rlink links each tool from the host's .r files; each module
-        must equal the host rlink's (native/bin)
+  link  native llink links each tool from the host's .r files; each module
+        must equal the host llink's (native/bin)
   cc    native dcc compiles and links a small C program (native/hello.c)
-        with the whole native chain (dcpp, dcc68, dco68, las, rlink); the
+        with the whole native chain (dcpp, dcc68, dco68, las, llink); the
         module must equal the one the host passes build from the same
-        source, and it must run. dcc's rlink puts it in /dd/CMDS
+        source, and it must run. dcc's llink puts it in /dd/CMDS
 
   lw    native las assembles NitrOS9 module sources from the Level 2
         build (lwdiff's jobs.json; run harness/lwdiff.py first). Each
@@ -26,9 +26,9 @@ Suites (default: all):
         the default set; --only TEXT picks files whose id contains TEXT
   obj   phase 10: native las assembles the 90 object-format sources (the
         libraries' and the .as programs'), merge builds libwildbitsl2,
-        libnet and libalib, and native rlink --lwlink links the build's 13
+        libnet and libalib, and native llink --lwlink links the build's 13
         programs. Objects must equal the host las's, programs the host
-        rlink's from those objects. Not in the default set
+        llink's from those objects. Not in the default set
   img   phase 9: the 57 commands of level1/cmds (one directory, one
         configuration, as the real build has them) assembled twice by
         native las: without a defs image, then with --defsimg (the first
@@ -71,7 +71,7 @@ NATIVE = os.path.join(DEVSYS, "native")
 IMAGE = os.path.join(HOME, "projects/wild/netrek/nitros9/recipes/wildbits/l2/l2_wildbitsjr2.dsk")
 WORK = os.path.join(HERE, "out", "native")
 PAD = 128 * 1024 * 1024         # 2^27 bytes: a block count MAME accepts
-TOOLS = ["las", "rlink", "dcc", "dcpp", "dcc68", "dco68"]
+TOOLS = ["las", "llink", "dcc", "dcpp", "dcc68", "dco68"]
 LINKABLE = TOOLS
 MARKER = "MARKER"
 
@@ -199,11 +199,11 @@ def suite_link(dsk):
         for o in order:
             put(os.path.join(NATIVE, "obj", t, o + ".r"), f"{dsk},T/L{t}/{o}.r")
         # A full -o path: on OS-9 a bare name goes to the execution
-        # directory (rlink opens it with mode "x"), i.e. into /dd/CMDS
+        # directory (llink opens it with mode "x"), i.e. into /dd/CMDS
         mem = subprocess.run(["make", "-s", "-f", "GNUmakefile", f"printmem-{t}"],
                              cwd=NATIVE, capture_output=True, text=True).stdout.strip()
         lines += [f"chd /dd/T/L{t}",
-                  f"rlink -o=/dd/T/L{t}/{t} -n={t} {'-M=' + mem + ' ' if mem else ''}"
+                  f"llink -o=/dd/T/L{t}/{t} -n={t} {'-M=' + mem + ' ' if mem else ''}"
                   f"-m -z=names -l=/dd/lib/sys.l -l=/dd/lib/clib.l >map >>err"]
         tools.append(t)
 
@@ -219,7 +219,7 @@ def suite_link(dsk):
             bad += 1
             err = os9_text(f"{dsk},T/L{t}/err") or ""
             print(f"  link {t}: {'differs' if ok else 'no output'} {err.strip()[:200]}")
-        print(f"link: {len(tools) - bad} of {len(tools)} modules identical to host rlink")
+        print(f"link: {len(tools) - bad} of {len(tools)} modules identical to host llink")
         return bad == 0
     return lines, check
 
@@ -279,7 +279,7 @@ def host_hello():
         opt = run([os.path.join(dcc, "COpt/dco68")], stdin=fin)
     open(os.path.join(d, "hello.a"), "wb").write(opt.stdout)
     run([os.path.join(DEVSYS, "las/build/unix/las"), "-o=hello.r", "hello.a"])
-    run([os.path.join(DEVSYS, "rlink/rlink"), "-o=hello", "-n=hello",
+    run([os.path.join(DEVSYS, "llink/llink"), "-o=hello", "-n=hello",
          os.path.join(lib, "cstart.r"), "hello.r", "-l=" + os.path.join(lib, "clib.l")])
     return os.path.join(d, "hello")
 
@@ -549,8 +549,8 @@ def link_cmds():
 def suite_obj(dsk):
     """Phase 10: the object-format sources (lib/, the .as programs)
     assembled natively, the three libraries built from them with merge,
-    and the build's 13 programs linked natively with rlink --lwlink. The
-    reference is the same chain on Linux with the host las and rlink."""
+    and the build's 13 programs linked natively with llink --lwlink. The
+    reference is the same chain on Linux with the host las and llink."""
     staged = stage_lw("obj")
     libs, links = link_cmds()
     consts = [j["id"] for j, _ in staged if lwdiff.is_constants_object(j)]
@@ -590,7 +590,7 @@ def suite_obj(dsk):
     lines.append("chd /dd/T/K")
     for name, seq in links:
         args = " ".join(f"-l=/dd/T/O/{v}.l" if k == "lib" else f"/dd/T/O/{v}" for k, v in seq)
-        lines.append(f"rlink --lwlink {args} -o=/dd/T/K/{name} -n={name} >>{name}.e")
+        lines.append(f"llink --lwlink {args} -o=/dd/T/K/{name} -n={name} >>{name}.e")
     longest = max(len(l) for l in lines)
     if longest > 199:
         sys.exit(f"a startup line is {longest} characters (the shell takes 200)")
@@ -653,7 +653,7 @@ def suite_obj(dsk):
             ref = os.path.join(hostk, name)
             if os.path.exists(ref):
                 os.remove(ref)
-            subprocess.run([lwdiff.DEFAULT_RLINK, "--lwlink"] +
+            subprocess.run([lwdiff.DEFAULT_LLINK, "--lwlink"] +
                            [("-l=" + os.path.join(hostobj, v + ".l")) if k == "lib"
                             else os.path.join(hostobj, v) for k, v in seq] +
                            ["-o=" + name, "-n=" + name],
@@ -670,7 +670,7 @@ def suite_obj(dsk):
             badlink += 1
             err = (os9_text(f"{dsk},T/K/{name}.e") or "").strip()
             print(f"  link {name}: {'differs' if ok else 'no output'} {err[:150]}")
-        print(f"link: {len(links) - badlink} of {len(links)} programs identical to host rlink")
+        print(f"link: {len(links) - badlink} of {len(links)} programs identical to host llink")
         return bad == 0 and badlib == 0 and badlink == 0
     return lines, check
 

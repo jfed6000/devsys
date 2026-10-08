@@ -1,8 +1,10 @@
-rlink - forked into devsys on 2026-10-02 from ~/projects/dcc/mw-rlink:
+llink - devsys's fork of rlink, renamed llink on 2026-10-08 (D42) so it
+never shares a name with the original. Forked into devsys on 2026-10-02 from ~/projects/dcc/mw-rlink:
 upstream https://gitlab.com/debmint/mw-rlink commit 0c6de25 (the CoCo-native
 source) plus the owner's uncommitted Linux port in that working tree
 (GNUmakefile, rof.h, types.h, misc.c, util.c, ...). No upstream history kept.
 Build: make -f GNUmakefile (the 6809 build: ../native/GNUmakefile).
+Internal file names (rlink.h, rlink_main.c, ...) are kept, as las kept rma's.
 
 Changes:
   phase 5  names up to 63 characters (SYMLEN, was 9 and silently cut);
@@ -25,5 +27,9 @@ Changes:
            _bufsiz set only before a FILE slot has its buffer (CoCoC keeps
            the first one through freopen; 1,024 on a 256-byte buffer
            overwrote OutFile's)
+  2026-10-08 renamed llink (D42); with neither --lwlink nor the new --mw
+           it picks the layout from the mainline: lwlink's if the module
+           with a type/language exports __lwsec (las's lwasm-style objects),
+           else Microware's (lw_detect, rlink_main.c)
 
 Design and roadmap: ../docs/DESIGN.md

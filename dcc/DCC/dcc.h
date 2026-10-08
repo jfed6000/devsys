@@ -22,7 +22,7 @@
 #define COMPILER	"dcc68"
 #define OPTIMIZER	"dco68"
 #define ASSEMBLER	"las"		/* devsys: our RMA fork (was "rma") */
-#define LINKER		"rlink"
+#define LINKER		"llink"		/* devsys: our rlink fork (was "rlink") */
 
 direct int	aflag = FALSE,
 			bflag = FALSE,
