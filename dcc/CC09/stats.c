@@ -468,7 +468,7 @@ common:
         }
     }
 
-    modstk(0);
+    xmodstk(0,ftype);       /* devsys: see xmodstk (codgen.c) */
     gen(RETURN,0,0);
     lastst=RETURN;
 }

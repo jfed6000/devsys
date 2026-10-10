@@ -200,11 +200,7 @@ GLOBAL direct int MacDefining,
   ReptCount,
   InRept;
 
-GLOBAL char TmpNam[30]
-#ifdef MAIN
-    = "rma.tmp"
-#endif
-    ;
+GLOBAL char TmpNam[30];     /* the macro file, "rmaPID.tmp" (macros.c) */
 
 GLOBAL char AltLbl[SYMLEN],
             LabelName[SYMLEN];

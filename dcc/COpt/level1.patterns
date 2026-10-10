@@ -95,6 +95,9 @@ stu * cmpu #0
 leas 2,s puls u,pc
 ^1 x,u,pc
 
+puls d puls u,pc
+^1 d,u,pc
+
 leas 2,s pshs d
 std ,s
 

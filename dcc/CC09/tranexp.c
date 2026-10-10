@@ -517,7 +517,7 @@ expnode *node;
 #endif
     gen(CALL,NODE,node->left);
 
-    sp = modstk(oldsp);
+    sp = xmodstk(oldsp,node->type);     /* devsys: see xmodstk */
 
     node->op = DREG;
 #ifdef REGCONTS
@@ -861,7 +861,7 @@ register expnode *node;
                 gen(LOAD,XREG,op,lhs->val.num);
                 break;
             default:
-                comperr(lhs,"indirection");
+                indir(lhs);
 #else /* !REGCONTS */
             case NAME:
             case XIND:
@@ -870,7 +870,7 @@ register expnode *node;
                 gen(LOAD,XREG,op&NOTIND,lhs->val.num);
                 break;
             default:
-                comperr(lhs,"indirection");
+                indir(lhs);
 #endif
         }
         op = XIND;
@@ -912,7 +912,7 @@ fix:            node->val.sp = lhs->val.sp;
 //                node->val.num = 0;
                 break;
             default:
-                comperr(node,"indirection");
+                indir(node);
                 op = XIND;
         }
     }

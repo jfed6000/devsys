@@ -169,3 +169,4 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-07 — Ch 3: "How `las` tells them apart" (mode from the first `psect`/`section`/`mod`, D40; why a prescan, why lwasm when none); ch 4 and glossary "dialect" updated.
 - 2026-10-07 — Ch 4: "Structures: names for offsets" (minted's `undo_item`, why fields get a prefix, nesting and instances, D41); ch 11 and 12: all 200 module sources. Glossary: struct.
 - 2026-10-08 — Ch 6: "One linker, two layouts, and a new name" (rlink fork renamed `llink`; layout from the mainline's `__lwsec`, D42); ch 1 note on the devsys names; ch 3 table, ch 12, Appendix A row, glossary (llink; alias, mainline, ROF updated).
+- 2026-10-09 — Step 14: ch 9 "Fixed in step 14, at no cost" (dco68's `puls x,u,pc`: wider than thought, `puls d` + a merge rule, same size; why string literals cost bytes in DCC); ch 7 the errexit/dcpp follow-up to "How the driver knows a pass failed".

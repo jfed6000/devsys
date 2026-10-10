@@ -67,6 +67,29 @@ multidef()
 }
 
 
+/* devsys: one copy of the message for its three uses, as multidef():
+ * room in dcc68 for xmodstk (codgen.c) */
+
+storerr()
+{
+    error("storage error");
+}
+
+
+ptrmis(node)
+expnode *node;
+{
+    terror(node,"pointer mismatch");
+}
+
+
+indir(node)
+expnode *node;
+{
+    comperr(node,"indirection");
+}
+
+
 error(s)
 char s[];
 {

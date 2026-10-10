@@ -34,8 +34,15 @@ Changes (2026-10-07; docs/DESIGN.md D39; also made in the CoCoC tree):
 Changes (2026-10-08; docs/DESIGN.md D42):
   DCC   runs llink (our rlink fork, renamed) instead of rlink, so it never
         picks up the original rlink from PATH or /dd/CMDS
+Changes (2026-10-09, step 14; docs/DESIGN.md D43):
+  CC09  a result in X (long, float, double) with 2 bytes to pop: "puls d",
+        not "leas 2,s" (xmodstk, codgen.c; doreturn, tranexp), since dco68
+        turns "leas 2,s / puls u,pc" into "puls x,u,pc"; room for it from
+        storerr/ptrmis/indir (misc.c), one copy of three repeated messages
+  COpt  level1.patterns: "puls d / puls u,pc" -> "puls d,u,pc"; the Linux
+        build reads its patterns from this directory, not ~/.dcc
 
 The 6809 build (../native/GNUmakefile) compiles dcc68 with -s and
 without -DPROF so it stays at most 48,384 bytes (6 blocks ending by $FD00);
-it is 48,355 now.
+it is 48,367 now.
 Design and roadmap: ../docs/DESIGN.md

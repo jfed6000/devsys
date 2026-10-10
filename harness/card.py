@@ -127,7 +127,7 @@ def check(dsk):
         bad += 1
 
     # 1. C
-    ref = native.host_hello()
+    ref = native.host_cc("hello", native.HELLO)
     out = os.path.join(WORK, "res", "hello")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     same = get(f"{r}/hello", out) and open(out, "rb").read() == open(ref, "rb").read()

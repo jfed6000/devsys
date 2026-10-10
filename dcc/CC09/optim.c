@@ -566,7 +566,7 @@ dblerr:         terror(node,"both must be integral");
                 if (isptr(rhs->type)) {
                     node->sux = xtype;
                     if (t != rhs->type || size != rhs->size)
-                        terror(node,"pointer mismatch");
+                        ptrmis(node);
                     else {
                         t = decref(t);
                         size = getsize(t,size,dptr);
@@ -651,7 +651,7 @@ asserr:
                 dptr = lhs->dimptr;
                 if (isptr(rhs->type)) {
                     if (t != rhs->type || lhs->size != rhs->size)
-                        terror(node,"pointer mismatch");
+                        ptrmis(node);
                     else dptr = NULL;
                 } else chknull(rhs);
             } else if (isptr(t = rhs->type)) {

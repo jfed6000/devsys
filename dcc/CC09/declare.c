@@ -54,7 +54,7 @@ extdef()
     switch (sclass = setclass()) {
         case REG:
         case AUTO:
-            error("storage error");
+            storerr();
         case 0:
             sclass = EXTDEF;
     }
@@ -211,7 +211,7 @@ blkdef()
 
     switch (sclass = setclass()) {
         case DIRECT:
-            error("storage error");
+            storerr();
             /* fall through to.. */
         case 0:
             sclass = AUTO;

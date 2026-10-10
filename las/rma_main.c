@@ -910,7 +910,11 @@ errexit (report)
     }
 
     bank_done ();
-    exit (errno);
+
+    /* errno is 0 unless a system call just failed: "bad -D value" and
+     * "symbol table overflow" exited 0, success to the shell (step 14) */
+
+    exit (errno ? errno : 1);
 }
 
 #ifdef _OSK

@@ -6,8 +6,9 @@
  * $Id::                                                        $   *
  * **************************************************************** */
 
-/* The "rma.tmp" file.  Macro definitions are held in a temporary file
- * in the current directory.  It is basically a text file, except for
+/* The "rmaPID.tmp" file (PID: las's process ID; RMA used "rma.tmp").
+ * Macro definitions are held in a temporary file in the current
+ * directory.  It is basically a text file, except for
  * null separators.
  * Structure of the file:
  * the macro name - (null-terminated)
@@ -103,6 +104,13 @@ createMac (ZILCH)    /* l3183 */
 
         if ( ! macfp1)
         {
+            /* One file per process: "rma.tmp" for all let two las runs
+             * in one directory overwrite each other's macros (step 14).
+             * Named here, not at start-up: the sizing trial is another
+             * process with its own (sizing.c) */
+
+            sprintf (TmpNam, "rma%d.tmp", getpid ());
+
             if ( ! (MacFile = macfp1 = fopen (TmpNam,
 #ifdef WIN32
                             "wb+"

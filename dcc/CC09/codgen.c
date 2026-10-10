@@ -697,7 +697,7 @@ dooff:
                         }
                         break;
                     default:
-                        error("storage error");
+                        storerr();
                         break;
                 }
             else od(offset);
@@ -805,6 +805,23 @@ on(s)
 char *s;
 {
     fprintf(code,"%s",s);
+}
+
+
+/* devsys: modstk() after a long or floating result, which is in X.
+ * dco68 turns "leas 2,s / puls u,pc" into "puls x,u,pc", 2 bytes
+ * shorter, and that loses X when the result is returned. A 2-byte pop
+ * goes into D instead: as short, and D is free here. dco68 merges
+ * "puls d / puls u,pc" into "puls d,u,pc". t: LONG 3, ULONG 6, FLOAT 7,
+ * DOUBLE 8; pointers and other types aren't in X */
+
+xmodstk(nsp,t)
+{
+    if (nsp - sp == 2 && (t == LONG || (t >= ULONG && t <= DOUBLE))) {
+        ol("puls d");
+        return nsp;
+    }
+    return modstk(nsp);
 }
 
 

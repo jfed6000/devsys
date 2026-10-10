@@ -232,35 +232,47 @@ def lwdiff_order(tool):
 
 
 HELLO = os.path.join(HERE, "native", "hello.c")
+# The cc suite's programs: source, and the line each must print. longret
+# checks long and double results returned in X (step 14, D43)
+CC_PROGS = [("hello", HELLO, "hello from dcc on the F256: 45"),
+            ("longret", os.path.join(HERE, "native", "longret.c"), "longret: all right")]
 
 
 def suite_cc(dsk):
-    """dcc on the F256 builds hello.c; the host passes build the reference."""
+    """dcc on the F256 builds each CC_PROGS program and runs it; the host
+    passes build the reference."""
     os9("makdir", f"{dsk},T/C", check=False)
-    put(HELLO, f"{dsk},T/C/hello.c", text=True)
     # every redirection needs a new file: the shell's > and >> create,
     # and creating an existing file fails (E$CEF, 218)
-    lines = ["chd /dd/T/C", "dcc hello.c -f=hello >out >>err", "hello >run >>runerr"]
+    lines = ["chd /dd/T/C"]
+    for name, src, _ in CC_PROGS:
+        put(src, f"{dsk},T/C/{name}.c", text=True)
+        lines += [f"dcc {name}.c -f={name} >{name}.out >>{name}.err",
+                  f"{name} >{name}.run >>{name}.rerr"]
 
     def check():
-        ref = host_hello()
-        out = os.path.join(WORK, "cc", "hello")
-        os.makedirs(os.path.dirname(out), exist_ok=True)
-        ok = get(f"{dsk},CMDS/hello", out)
-        same = ok and open(out, "rb").read() == open(ref, "rb").read()
-        printed = (os9_text(f"{dsk},T/C/run") or "").strip()
-        print("  hello printed: " + (printed or "(nothing)"))
-        same = same and printed == "hello from dcc on the F256: 45"
-        if not same:
-            print(f"  cc hello: {'differs' if ok else 'no output'}")
-            print("  " + (os9_text(f"{dsk},T/C/err") or "").strip().replace("\n", "\n  "))
-        print(f"cc: native dcc output {'identical to' if same else 'NOT identical to'} the host passes")
-        return same
+        good = 0
+        for name, src, want in CC_PROGS:
+            ref = host_cc(name, src)
+            out = os.path.join(WORK, "cc", name)
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            ok = get(f"{dsk},CMDS/{name}", out)
+            same = ok and open(out, "rb").read() == open(ref, "rb").read()
+            printed = (os9_text(f"{dsk},T/C/{name}.run") or "").strip()
+            print(f"  {name} printed: " + (printed or "(nothing)"))
+            same = same and printed == want
+            if not same:
+                print(f"  cc {name}: {'differs' if ok else 'no output'}")
+                print("  " + (os9_text(f"{dsk},T/C/{name}.err") or "").strip().replace("\n", "\n  "))
+            good += same
+        print(f"cc: {good} of {len(CC_PROGS)} programs built by native dcc identical to "
+              f"the host passes, and printed what they should")
+        return good == len(CC_PROGS)
     return lines, check
 
 
-def host_hello():
-    """hello.c through the host passes, the way dcc runs them natively."""
+def host_cc(name, src):
+    """One C program through the host passes, the way dcc runs them natively."""
     d = os.path.join(WORK, "cc-host")
     os.makedirs(d, exist_ok=True)
     env = lwdiff.clean_env()
@@ -272,16 +284,16 @@ def host_hello():
         if p.returncode:
             sys.exit(f"host {argv[0]}: {p.stderr.decode(errors='replace')}")
         return p
-    pre = run([os.path.join(dcc, "CPP/dcpp"), "-I=" + os.path.join(COCOC, "Defs"), HELLO])
-    open(os.path.join(d, "hello.i"), "wb").write(pre.stdout)
-    run([os.path.join(dcc, "CC09/dcc68"), "hello.i", "-o=hello.raw.a"])
-    with open(os.path.join(d, "hello.raw.a"), "rb") as fin:
+    pre = run([os.path.join(dcc, "CPP/dcpp"), "-I=" + os.path.join(COCOC, "Defs"), src])
+    open(os.path.join(d, name + ".i"), "wb").write(pre.stdout)
+    run([os.path.join(dcc, "CC09/dcc68"), name + ".i", f"-o={name}.raw.a"])
+    with open(os.path.join(d, name + ".raw.a"), "rb") as fin:
         opt = run([os.path.join(dcc, "COpt/dco68")], stdin=fin)
-    open(os.path.join(d, "hello.a"), "wb").write(opt.stdout)
-    run([os.path.join(DEVSYS, "las/build/unix/las"), "-o=hello.r", "hello.a"])
-    run([os.path.join(DEVSYS, "llink/llink"), "-o=hello", "-n=hello",
-         os.path.join(lib, "cstart.r"), "hello.r", "-l=" + os.path.join(lib, "clib.l")])
-    return os.path.join(d, "hello")
+    open(os.path.join(d, name + ".a"), "wb").write(opt.stdout)
+    run([os.path.join(DEVSYS, "las/build/unix/las"), f"-o={name}.r", name + ".a"])
+    run([os.path.join(DEVSYS, "llink/llink"), f"-o={name}", f"-n={name}",
+         os.path.join(lib, "cstart.r"), name + ".r", "-l=" + os.path.join(lib, "clib.l")])
+    return os.path.join(d, name)
 
 
 JOBS = os.path.join(HERE, "out", "l2-jr2", "jobs.json")

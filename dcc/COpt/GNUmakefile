@@ -1,4 +1,6 @@
-DCCDIR	= $(HOME)/.dcc
+# devsys: the patterns next to the source, not ~/.dcc (which CoCoC's
+# dco68 reads): a change to level?.patterns must reach devsys's dco68 only
+DCCDIR	= $(CURDIR)
 CFLAGS	= -g -mx32 -fsigned-char -DUNIX -DDEBUG -DCONFDIR=\"$(DCCDIR)\" \
 	-Wall -Wno-char-subscripts -Wno-incompatible-pointer-types \
 	-Wno-implicit-int -Wno-implicit-function-declaration -Wno-parentheses \
