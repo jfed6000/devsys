@@ -32,7 +32,7 @@ struct regstrct
 
 struct regstrct RegCode[] = {
     {{'A', '\0'}, 0x02}, {{'B', '\0'}, 0x04}, {{'C', 'C'}, 0x01},
-    {{'D', 'P'}, 0x08}, {{'\xfe', '\0'}, 0}, {{'\xfe', '\0'}, 0},
+    {{'D', 'P'}, 0x08}, {{'0' & 0xdf, '\0'}, 0}, {{'\xfe', '\0'}, 0},
     {{'E', '\0'}, 0x00}, {{'F', '\0'}, 0x00},
     {{'D', '\0'}, 0x06}, {{'X', '\0'}, 0x10}, {{'Y', '\0'}, 0x20},
     {{'U', '\0'}, 0x40}, {{'S', '\0'}, 0x40}, {{'P', 'C'}, 0x80},
@@ -144,7 +144,11 @@ getreg (PshPul)
 
             ++SrcChar;
 
-            if ((regptr == 4) || (regptr == 5))
+            /* lwasm: "0" is the 6309's zero register (code $C) in
+             * tfr/exg, also for a 6809 ("tfr 0,dp" in grfdrv256). The
+             * table holds it as _toupper leaves it: '0' & 0xdf */
+
+            if ((regptr == 5) || ((regptr == 4) && ( ! LwasmMode || PshPul)))
             {
                 return 0;       /* Blank areas */
             }
@@ -661,7 +665,7 @@ genreflist ()
     int _refdest;
     int rtyp;
 
-    if (Pass2 && (OptBPtr > d0791))
+    if (Pass2 && ! Settle && (OptBPtr > d0791))
     {
         if (S_Addrs == 0)
         {

@@ -314,6 +314,10 @@ def classify(job, ref_ok, ref_out, ref_msg, lasr):
     rc = lasr["rc"]
     errors = parse_las_errors(lasr["stdout"])
     r["errors"] = errors
+    # A failed sizing trial still assembles, with long ,pcr offsets: it
+    # shows only as a size difference, so say it (D46)
+    if "sizing trial failed" in (lasr["stderr"] or ""):
+        r["sizing_failed"] = True
     if rc is None:
         r["status"] = "TIMEOUT"
         r["detail"] = "las took longer than %ds" % TIMEOUT
@@ -584,6 +588,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--verbose", action="store_true", help="print las output for each file")
     ap.add_argument("--no-report", action="store_true", help="don't write the report or history")
+    ap.add_argument("--work", help="work directory (default harness/out/RECIPE-PLATFORM, which "
+                    "native.py reads; another tree, e.g. --nitros9 for NitrOS9 main, needs its own)")
     args = ap.parse_args()
     args.nitros9 = os.path.abspath(args.nitros9)
     args.las = os.path.abspath(args.las)       # las runs in its own scratch directory
@@ -593,7 +599,9 @@ def main():
     if not os.path.exists(args.las):
         sys.exit(f"las not found at {args.las}; build it with: cd las/build/unix && make")
 
-    workdir = os.path.join(HERE, "out", f"{args.recipe}-{args.platform}")
+    workdir = os.path.abspath(args.work) if args.work else \
+        os.path.join(HERE, "out", f"{args.recipe}-{args.platform}")
+    os.makedirs(workdir, exist_ok=True)
     refdir, lasdir = os.path.join(workdir, "ref"), os.path.join(workdir, "las")
     for d in (refdir, lasdir):
         os.makedirs(d, exist_ok=True)
@@ -642,6 +650,10 @@ def main():
 
     counts = Counter(r["status"] for r in results)
     print("  ".join(f"{s} {counts[s]}" for s in STATUS_ORDER if counts[s]), file=sys.stderr)
+    szf = [r["id"] for r in results if r.get("sizing_failed")]
+    if szf:
+        print(f"sizing trial failed (long offsets) in {len(szf)}: {' '.join(szf[:10])}",
+              file=sys.stderr)
     if links:
         lc = Counter(r["status"] for r in links)
         print("links: " + "  ".join(f"{s} {lc[s]}" for s in LINK_ORDER if lc[s]), file=sys.stderr)

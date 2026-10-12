@@ -92,6 +92,20 @@ addbyte (parm)
     *(char *) (CmdCod + (NumBytes++)) = parm;
 }
 
+/* lwasm: a count or origin that uses a symbol pass 1 hasn't reached
+ * yet ("rmb G.TermMax*8" before "G.TermMax equ 9") moves every label
+ * after it in pass 2. Pass 1 notes it, and las settles the values
+ * before pass 2 (rma_main.c) */
+
+static void
+unsettled (ZILCH)
+{
+    if (PASS1 && (OptBPtr != d0791))
+    {
+        Unsettled = 1;
+    }
+}
+
 int
 l1723 (ZILCH)
 {
@@ -110,6 +124,7 @@ l1723 (ZILCH)
         if (LwasmMode)
         {
             pl_fix (d0791); /* org/rmb counts: value from --defs */
+            unsettled ();
         }
 
         rmcoderefs ();   /* Delete certain refs ? */
@@ -331,7 +346,7 @@ do_comon (ZILCH)
     l2069 (7);
     sym_setmsk (CurntLabel, sym_msk (CurntLabel) | (CODENT));
 
-    if (Pass2)
+    if (Pass2 && ! Settle)
     {
         ++comn_cnt;
     }
@@ -421,6 +436,7 @@ set_fill (ZILCH)
     }
 
     count = NmbrInt;
+    unsettled ();
     CmdCod = fillbuf;
     NumBytes = 0;
 

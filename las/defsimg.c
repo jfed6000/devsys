@@ -889,6 +889,20 @@ img_end (ZILCH)
     }
 }
 
+/* img_settle() - las settles values before pass 2 (rma_main.c): a
+ * loaded image is applied by the first settling pass and the defs read
+ * after that, as when pass 2 refuses an image; a recording can't follow
+ * more than one pass 2, so it is given up (the next run records) */
+
+void
+img_settle (ZILCH)
+{
+    if (State != LOADED)
+    {
+        img_bad ();
+    }
+}
+
 /* img_pass() - read_fil: a pass starts */
 
 void

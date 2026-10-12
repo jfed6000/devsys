@@ -467,6 +467,12 @@ l20a4 (address)
 static int
 phaserr (ZILCH)
 {
+    if (Settle)         /* a value moved: settle again (rma_main.c) */
+    {
+        Unsettled = 1;
+        return 0;
+    }
+
     return ( e_report ("phasing error") );
 }
 

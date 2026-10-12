@@ -21,6 +21,7 @@ char cmntlen[SYMLEN];   /* To hold " %1.xs val for comment length */
 static int AsmblLin (ZILCH);
 
 static void read_fil (ZILCH);
+static void settle (ZILCH);
 
 extern direct MACDSCR *NowMac;      /* part9.c */
 extern direct int d00d8, d00da;     /* part9.c */
@@ -82,7 +83,7 @@ main (argc, argv)
         sym_setrefs (LRefs_Code, 0);
         sym_setrefs (LRefs_DPD, 0);
         sym_setrefs (LRefs_NonDPdat, 0);
-        Pass2 = *_nam = _ttl[0] = '\0';
+        Pass2 = Unsettled = *_nam = _ttl[0] = '\0';
 
         /* lwasm sizes ",pcr" offsets itself: a trial pass 1 in a child
          * decides them first (sizing.c) */
@@ -101,6 +102,17 @@ main (argc, argv)
         if (SzTrial)
         {
             sz_finish ();       /* the trial ends here */
+        }
+
+        /* lwasm settles values over as many passes as it takes; RMA has
+         * two, so pass 2 must find what pass 1 left. When pass 1 met a
+         * count it couldn't know yet (directives.c), las runs pass 2's
+         * code without output, listing or errors, which corrects each
+         * value it reaches, until nothing moves */
+
+        if (Unsettled)
+        {
+            settle ();
         }
 
         /* Now pass 2 */
@@ -878,6 +890,11 @@ e_report (report)
      char *report;
 #endif
 {
+    if (Settle)         /* the real pass 2 will say it */
+    {
+        return 0;
+    }
+
     if (Pass2)
     {
         doList = 1;
@@ -895,6 +912,35 @@ e_report (report)
     return 0;
 }
 
+
+/* settle() - settling passes before pass 2 (see the call) */
+
+#define SETTLEMAX 8             /* then pass 2 reports what still moves */
+
+static void
+settle (ZILCH)
+{
+    FILE *out = OutFile;
+    char list = listON;
+    int n = 0;
+
+    img_settle ();
+    OutFile = 0;
+    listON = 0;
+    Pass2 = Settle = TRUE;
+
+    while (Unsettled && (n++ < SETTLEMAX))
+    {
+        Unsettled = 0;
+        rewind (SrcFile);
+        sz_pass ();
+        read_fil ();
+    }
+
+    Settle = 0;
+    OutFile = out;
+    listON = list;
+}
 
 void
 #ifdef __STDC__

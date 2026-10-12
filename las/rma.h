@@ -222,6 +222,8 @@ GLOBAL char SzTrial;        /* this is the sizing trial (sizing.c) */
 GLOBAL char StPre;          /* l1723 returns StSize: a struct instance */
 GLOBAL int StSize;          /* (lwstruct.c) */
 GLOBAL char SzNoImg;        /* OS-9 trial: don't load a defs image */
+GLOBAL char Settle,         /* a settling pass (rma_main.c) */
+            Unsettled;      /* a count used a symbol not yet defined */
 GLOBAL int ArgC;            /* main's arguments (sizing.c, OS-9) */
 GLOBAL char **ArgV;
 GLOBAL int CurSecId;        /* which lwasm section we are in (lwobj.c) */
