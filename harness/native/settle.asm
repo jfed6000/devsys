@@ -5,6 +5,7 @@
 *    NitrOS9 main's wildbits_vtio.d: las settles the values before pass 2
 *  - lwasm's zero register "0" in tfr/exg (grfdrv256's "tfr 0,dp")
 *  - ",pcr" sizing across the module
+*  - lwasm's zmb and bsz: zero-filled bytes (main's diag_hw.asm)
 * No flags: "mod" selects lwasm mode (D40); the build's pragmas are given.
 
 Prgrm    equ   $10
@@ -31,6 +32,8 @@ start    tfr   0,dp
          fcb   $06                 F$Exit
 msg      fcc   /settled/
          fcb   $0d
+         zmb   N-6                 3 zero bytes, N not yet defined
+         bsz   2
 N        equ   9
 
          emod

@@ -177,3 +177,4 @@ Then add a line to the changelog at the bottom of this file.
 - 2026-10-12 — Step 16 on the K2: ch 11 the fourth card's results; the K2 agrees with MAME on grep's numbering; ERROR #115 traced to alib's FGETS_NOCR restoring B over the error code (pshs/puls as a courtesy that breaks the error contract); ch 12 and footer.
 - 2026-10-12 — ch 11: the FGETS_NOCR fix (stb 1,s into the saved B), tried and kept out of the pristine main clone (docs/nitros9-fixes.md); NitrOS9's `lwar -c $@ $?` library rule (make's `$?`) re-creating a library from only the changed member.
 - 2026-10-12 — ch 11: make's dependency rule and why NitrOS9's makefiles miss a changed defs file (fixes list #4); clean rebuilds after a pull.
+- 2026-10-12 — ch 10: "A new source in main: one directive, three names" (zmb/bsz/rzb, D48; zero bytes in a module vs reserved space in bss).

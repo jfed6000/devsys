@@ -627,6 +627,24 @@ AsmblLin (ZILCH)
                             Cod_Ent = FindCmd (LabelName, CodTbBgn, CodTbEnd);
                         }
 
+                        /* lwasm: zmb and bsz are zero-filled bytes.  In a
+                         * section that is the section's rmb (zeros in code,
+                         * only reserved in bss, lwobj.c); elsewhere rzb */
+
+                        if ((Cod_Ent == 0) && LwasmMode &&
+                            FindCmd (LabelName, S_LwZero, SLwZeroEnd))
+                        {
+                            if (InSection)
+                            {
+                                Cod_Ent = FindCmd ("rmb", S_LwSect, SLwSectEnd);
+                                _modcmd = 3;
+                            }
+                            else
+                            {
+                                Cod_Ent = FindCmd ("rzb", CodTbBgn, CodTbEnd);
+                            }
+                        }
+
                         /* lwasm: a struct's name reserves an instance,
                          * as "rmb sizeof{name}" would here (lwstruct.c) */
 

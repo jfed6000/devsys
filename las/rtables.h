@@ -186,6 +186,15 @@ GLOBAL CODFORM S_LwSect[]
 }
 #endif
 ;
+/* lwasm's names for "rzb" (zero-filled bytes), lwasm mode only (rma_main.c) */
+GLOBAL CODFORM S_LwZero[]
+#ifdef MAIN
+= {
+    {"zmb",  0x00, 0},
+    {"bsz",  0x00, 0}
+}
+#endif
+;
 GLOBAL CODFORM S_Rmb[]
 #ifdef MAIN
 = {
@@ -341,6 +350,11 @@ GLOBAL direct CODFORM *PSecEnd
     *SLwSectEnd
 #ifdef MAIN
     = endof (S_LwSect)
+#endif
+    ,
+    *SLwZeroEnd
+#ifdef MAIN
+    = endof (S_LwZero)
 #endif
     ;
 
