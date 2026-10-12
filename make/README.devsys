@@ -1,0 +1,20 @@
+make - CoCoC's make (Tim Koonce's public-domain make for OS-9, see
+README), forked into devsys on 2026-10-11 from ~/projects/dcc/CoCoC
+(Source/Make, commit 68fdbf9). No upstream history kept.
+
+Build: ../native/GNUmakefile builds it for the 6809 with devsys's DCC
+(tool "make": native/bin/make). Install: make in /dd/CMDS, make.default
+in /dd/SYS (h.h, DEFN0). Test: harness/native.py make.
+
+Changes (step 15; docs/DESIGN.md D45):
+  files.c  includes <types.h> first: CoCoC's newer os9.h pulls in
+           sys/reg.h, which needs u_char
+  files.c  make's own time() is curtime() (h.h maps it to time() on
+           Unix): CoCoC's time.h now declares the C library's time()
+  make.c   calls curtime()
+  make.default  the devsys tools: CC and LINK = dcc, RMA = las; the link
+           rule uses -f= (dcc's -o means "don't optimize")
+
+The original's Makefile (CFLAGS -dOS9 -s, -e=19) is kept for reference;
+dcpp defines OS9 itself, and the native build compiles with -s.
+Design and roadmap: ../docs/DESIGN.md

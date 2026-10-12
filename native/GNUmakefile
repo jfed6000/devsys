@@ -80,7 +80,14 @@ dcc_DIR		:= $(DEVSYS)/dcc/DCC
 dcc_OBJS	:= dcc
 dcc_DEFS	:=
 
-TOOLS	:= las llink dcpp dcc68 dco68 dcc
+# make: CoCoC's make (Tim Koonce's), forked into devsys (step 15, D45).
+# dcpp defines OS9 itself; -s as its original OS-9 makefile had
+make_DIR	:= $(DEVSYS)/make
+make_OBJS	:= check input macro main make reader rules files
+make_DEFS	:=
+make_CC		:= -s
+
+TOOLS	:= las llink dcpp dcc68 dco68 dcc make
 
 all: $(TOOLS)
 

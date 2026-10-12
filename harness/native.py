@@ -73,7 +73,7 @@ NATIVE = os.path.join(DEVSYS, "native")
 IMAGE = os.path.join(DEVSYS, "boot/wildbits/l2/l2_wildbits_devsysjr2.dsk")
 WORK = os.path.join(HERE, "out", "native")
 PAD = 128 * 1024 * 1024         # 2^27 bytes: a block count MAME accepts
-TOOLS = ["las", "llink", "dcc", "dcpp", "dcc68", "dco68"]
+TOOLS = ["las", "llink", "dcc", "dcpp", "dcc68", "dco68", "make"]
 LINKABLE = TOOLS
 MARKER = "MARKER"
 
@@ -118,6 +118,10 @@ def make_image(src, dsk):
         os9("attr", "-q", "-pe", "-npw", "-pr", "-e", "-w", "-r", f"{dsk},CMDS/{t}")
     for d in ("LIB", "TMP", "T"):
         os9("makdir", f"{dsk},{d}", check=False)
+    # make's default rules (D45): /dd/sys/make.default
+    os9("makdir", f"{dsk},SYS", check=False)
+    os9("del", f"{dsk},SYS/make.default", check=False)
+    put(os.path.join(DEVSYS, "make", "make.default"), f"{dsk},SYS/make.default", text=True)
     for f in ("cstart.r", "clib.l", "sys.l"):
         put(os.path.join(COCOC, "Lib", f), f"{dsk},LIB/{f}")
     for f in ("level1.patterns", "level2.patterns"):
@@ -283,6 +287,51 @@ def suite_cc(dsk):
         print(f"cc: dcc -w through /nil {'works' if wok else 'FAILS'}; "
               f"a pipe {'works' if pok else 'FAILS'}" + ("" if wok else f" ({werr[:120]!r})"))
         return good == len(CC_PROGS) and wok and pok
+    return lines, check
+
+
+MAKEDIR = os.path.join(HERE, "native", "make")
+
+
+def suite_make(dsk):
+    """Step 15 (D45): make builds a small C and assembly project with its
+    default rules, rebuilds only what changed, and stops at a failing
+    step. OS-9 dates are to the minute, so the steps are a minute apart
+    (sleep counts ticks, 60 a second)."""
+    os9("makdir", f"{dsk},T/M", check=False)
+    for f in ("main.c", "util.c", "utilbad.c", "dbl.a", "makefile"):
+        put(os.path.join(MAKEDIR, f), f"{dsk},T/M/{f}", text=True)
+    lines = ["chd /dd/T/M",
+             "make >m1.out >>m1.err", "prog >r1 >>r1.err",
+             "sleep 3700", "touch util.c",
+             "make >m2.out >>m2.err", "prog >r2 >>r2.err",
+             # copy keeps the source's date, older than util.r: touch it
+             "sleep 3700", "del util.c", "copy utilbad.c util.c", "touch util.c",
+             "make >m3.out >>m3.err", "echo after >m3.ok"]
+
+    def check():
+        def text(f):
+            return (os9_text(f"{dsk},T/M/{f}") or "").strip()
+        m1, m2, m3 = text("m1.out"), text("m2.out"), text("m3.out")
+        steps = [
+            ("first make builds everything",
+             all(w in m1 for w in ("main.c", "util.c", "dbl.a", "-f=prog")) and
+             text("r1") == "prog: 5 42"),
+            ("after touching util.c, make compiles only util.c and relinks",
+             "util.c" in m2 and "main.c" not in m2 and "dbl.a" not in m2 and
+             "-f=prog" in m2 and text("r2") == "prog: 5 42"),
+            ("a failing compile stops make before the link",
+             "util.c" in m3 and "-f=prog" not in m3 and
+             "***" in text("m3.err") and text("m3.ok") == "after"),
+        ]
+        for what, ok in steps:
+            print(f"  make: {'ok' if ok else 'FAILED'}: {what}")
+        if not all(ok for _, ok in steps):
+            for f in ("m1.out", "m1.err", "m2.out", "m2.err", "m3.out", "m3.err", "r1", "r2"):
+                print(f"  --- {f}\n  " + text(f).replace("\n", "\n  "))
+        good = sum(ok for _, ok in steps)
+        print(f"make: {good} of {len(steps)} steps right")
+        return good == len(steps)
     return lines, check
 
 
@@ -702,9 +751,10 @@ def suite_obj(dsk):
     return lines, check
 
 
-SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc, "lw": suite_lw,
+SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc, "make": suite_make,
+          "lw": suite_lw,
           "obj": suite_obj, "img": suite_img}
-DEFAULT = ["las", "link", "cc"]
+DEFAULT = ["las", "link", "cc", "make"]
 
 
 # ------------------------------------------------------------------ MAME

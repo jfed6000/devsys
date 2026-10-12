@@ -1219,6 +1219,19 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
 <p class="cap">Measure where the memory goes</p>
 <p>The last problem was plain size. Linking a program against <code>libwildbitsl2</code> made native rlink hold all 2,074 constant names, and <code>play</code>, the largest program, still ran out after that was fixed. Counting every allocation in the model showed where it went: 19K went to <code>malloc</code> for the table rlink uses to choose library members, and was freed before linking. But rlink's own allocator used <code>sbrk</code>, which takes fresh memory from the top and can't reuse what <code>malloc</code> has freed. Switching rlink to <code>malloc</code> lets the link reuse it, and <code>play</code> now peaks at 24.5K. The same measurement showed the member table reserving room for 512 modules (13K) when the link has 77; it now grows as needed.</p>
 
+<h3>A make for the F256</h3>
+<p>A program built from several files needs something to remember which file is made from which, and to redo only what an edit affected. That is <strong>make</strong>. A <em>makefile</em> lists targets and what each depends on; make compares the files' dates and runs the commands for every target older than one of its inputs. This is the one the F256 now has, a test project from <code>harness/native/make</code>:</p>
+<pre><code>OBJS = main.r util.r dbl.r
+
+prog: $(OBJS)
+    $(LINK) $(OBJS) -f=prog</code></pre>
+<p>The makefile never says how to make <code>main.r</code> from <code>main.c</code>, or <code>dbl.r</code> from the assembly source <code>dbl.a</code>. Those are <strong>default rules</strong>, in a text file make reads first, <code>/dd/SYS/make.default</code>. That file is why we chose CoCoC's make, Tim Koonce's public-domain one, over Microware's own: NitrOS9 also has Microware's make (as a disassembly, <code>nitros9-languages/ccompiler/make_dis.asm</code>), but its rules are built into the program. Ours were edited to say <code>dcc</code> and <code>las</code>:</p>
+<pre><code>.c.r:;$(CC) $(CFLAGS) -r=$(RDIR) $&lt;
+.a.r:;$(RMA) $(RFLAGS) $&lt; -o=$(RDIR/)$@</code></pre>
+<p>In MAME the F256 builds the project, runs it ("prog: 5 42"), and after <code>touch util.c</code> recompiles only <code>util.c</code> and relinks. With a syntax error in <code>util.c</code> it stops before the link, which works only because the tools now report failure honestly (step 14).</p>
+<p><strong>Dates to the minute.</strong> OS-9 records a file's date to the minute, not the second. Make rebuilds a target that is <em>not newer</em> than its input, so a tie counts as "out of date". Something built in the same minute as its inputs is therefore rebuilt by the next make in that minute. That's wasted work, never a wrong result; the other way round, treating a tie as "up to date", could skip a change made in that minute. The test waits a minute between steps (<code>sleep 3700</code>: OS-9's <code>sleep</code> counts ticks, 60 a second).</p>
+<p>The test also found an OS-9 habit worth knowing: <code>copy</code> gives the new file the <em>original's</em> date. Copying an old version of a source over a new one makes it look older than its <code>.r</code>, and make skips it. <code>touch</code> after copying sets the date to now.</p>
+
 <h3>Taking it to the real machine</h3>
 <p>Everything so far ran in MAME, on the Jr2 image. MAME proves the outputs are right. It can't prove the hardware behaves the same: real block-switch timing, the SD card, the RAM a running system leaves free. Your machine is a K2, and the Wildbits MAME only emulates the Jr2. So the card goes through a fixed loop, the same one your port guide uses for games:</p>
 <ol>
@@ -1350,6 +1363,7 @@ OutFile  base=$0897  end=$0997   (inside InFile's claimed range)</code></pre>
   <dt>location counter</dt><dd>The address where the assembler will put the next byte. Inside an OS-9 module there are two: <code>*</code> for code, <code>.</code> for data.</dd>
   <dt>LWOBJ</dt><dd>lwasm's object file format, read by lwlink.</dd>
   <dt>mainline</dt><dd>In rlink and <code>llink</code>, the one object file that is the program itself, as opposed to library members. It supplies the module type and entry point, and <code>llink</code> picks its layout from it.</dd>
+  <dt>make</dt><dd>A program that rebuilds only what an edit affected: a makefile lists targets and what each is made from, and make runs the commands for every target not newer than an input. On the F256, CoCoC's make with rules in <code>/dd/SYS/make.default</code>.</dd>
   <dt>MMU</dt><dd>Hardware that maps 8K blocks of physical RAM into the 6809's 64K address space.</dd>
   <dt>mod</dt><dd>Starts a module-format source and supplies the header fields.</dd>
   <dt>module</dt><dd>OS-9's unit of executable code: header, body, name, CRC.</dd>

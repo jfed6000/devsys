@@ -1,0 +1,7 @@
+* twice(n): 2 * n (an RMA-style source, for make's .a.r rule)
+ psect dbl_a,0,0,0,0,0
+twice: ldd 2,s
+ aslb
+ rola
+ rts
+ endsect

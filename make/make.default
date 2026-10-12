@@ -1,0 +1,43 @@
+* Default rules for "make" on the devsys toolchain (D45).  This file is
+* read before the "makefile"; it belongs in /dd/sys/make.default.
+*
+* Compiler name and flags.  dcc runs dcpp, dcc68, dco68, las and llink;
+* dcpp defines OS9 itself.
+CC = dcc
+CFLAGS =
+* Linker name and flags: dcc again, which adds cstart.r and the C library
+LINK = dcc
+LFLAGS =
+* Assembler name and flags.  las picks RMA or lwasm from the source
+* (psect: RMA; section or mod: lwasm).  The name RMA is kept so old
+* makefiles that set it still work.
+RMA = las
+RFLAGS =
+* Directories to use for executables and .r files.
+* Note: ODIR is relative to current exec dir; RDIR is  relative to data dir
+ODIR =
+RDIR =
+
+* When trying to find implicit source files, Make will append each suffix
+*   in turn until it finds a source file that exists, and for which
+*   there is a rule defined below.
+.SUFFIXES: .r .a .c
+
+* .c specifies how to build a no-extension file from a .c file
+* .c.r specifies how to compile .c files into .r files.
+* dcc's output path is -f= (its -o means "don't optimize")
+.c:;$(CC) $(CFLAGS) $(LFLAGS) $< -f=$(ODIR/)$@
+.r:;$(LINK) $(LFLAGS) $< -f=$(ODIR/)$@
+.c.r:;$(CC) $(CFLAGS) -r=$(RDIR) $<
+.a.r:;$(RMA) $(RFLAGS) $< -o=$(RDIR/)$@
+
+* Notes: RDIR support here is a bit of a hack.  A macro such as
+*   $(RDIR/) will expand the same as $(RDIR), except that a trailing
+*   slash will be added, but only if RDIR is not null.  So,
+*   If RDIR = RELS, then $(RDIR/) will be "RELS/", but if RDIR =
+*   then $(RDIR/) will be null.
+*
+* OS-9 file dates are kept to the minute, and a target counts as out of
+* date when it is not newer than what it depends on.  So a target built
+* in the same minute as its inputs is built again by the next make in
+* that minute: never wrong, sometimes redundant.
