@@ -30,7 +30,7 @@
 
 struct pldef
 {
-    unsigned next;              /* handle of the next in the bucket */
+    BANKH next;                 /* handle of the next in the bucket */
     int value;
     char name[1];               /* allocated at the name's length */
 };

@@ -99,8 +99,8 @@ struct szitem
     int tconst;                 /* ",pcr": constant added to the target */
     int tabs;                   /* ",pcr": absolute target (module);
                                  * sz_decide puts tsym's value here */
-    SYMH tsym;                  /* ",pcr": target label, or 0 */
-    SYMH osym[4];               /* K_OTHER: the operand's symbols */
+    BANKH tsym;                 /* ",pcr": target label, or 0 */
+    BANKH osym[4];              /* K_OTHER: the operand's symbols */
     char len8;                  /* ",pcr": length of the 8-bit form */
     char sec;                   /* lwasm section of the line */
     char nosym;                 /* K_OTHER: how many in osym */
@@ -112,7 +112,7 @@ struct szitem
 
 struct szlabel                  /* K&R: member names must be unique */
 {
-    SYMH lsym;
+    BANKH lsym;
     char lsec;
 };
 
@@ -204,8 +204,14 @@ sz_pass (ZILCH)
 
 /* ******************************************************************** *
  * sz_label() - trial: a label defined in the code counter, with its    *
- *              lwasm section (do_label)                                *
+ *              lwasm section (do_label). The symbol's type gets        *
+ *              SZ_CODE, which nothing else uses; only labels inside a  *
+ *              section are listed, with the section. The defs' struct  *
+ *              offsets alone are 2,500 labels in NitrOS9 main's krnp2, *
+ *              and a list of them all overflowed the trial's blocks.   *
  * ******************************************************************** */
+
+#define SZ_CODE 0x80            /* in the type: a code label */
 
 void
 #ifdef __STDC__
@@ -221,6 +227,13 @@ sz_label (sym)
     if ( ! SzTrial)
     {
         return;
+    }
+
+    sym_settyp (sym, sym_typ (sym) | SZ_CODE);
+
+    if ( ! CurSecId)
+    {
+        return;                 /* outside any section: section 0 */
     }
 
     if ((NLabels & (LCHUNK - 1)) == 0)
@@ -364,6 +377,11 @@ label_sec (sym)
         SzRetry = 1;
     }
 
+    if ( ! (sym_typ (sym) & SZ_CODE))
+    {
+        return -1;              /* not a code label */
+    }
+
     for (c = (NLabels - 1) >> LSHIFT; c >= 0; --c)
     {
         n = NLabels - (c << LSHIFT);
@@ -384,7 +402,7 @@ label_sec (sym)
         }
     }
 
-    return -1;
+    return 0;
 }
 
 /* Would lwasm know this symbol as a number while assembling? A code

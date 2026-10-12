@@ -7,7 +7,8 @@ reports every instruction whose encoding has a different length, with the
 addressing form and whether its label operand is defined before or after
 the instruction (a forward reference).
 
-Usage: python3 harness/sizediff.py [id ...] [--summary]
+Usage: python3 harness/sizediff.py [id ...] [--summary] [--work DIR]
+(--work: the lwdiff work directory, as given to lwdiff.py --work)
 """
 import collections
 import json
@@ -114,7 +115,13 @@ def analyse(job):
 
 
 def main():
-    ids = [a for a in sys.argv[1:] if not a.startswith("--")]
+    global WORK
+    args = sys.argv[1:]
+    if "--work" in args:
+        k = args.index("--work")
+        WORK = os.path.abspath(args[k + 1])
+        del args[k:k + 2]
+    ids = [a for a in args if not a.startswith("--")]
     jobs = {j["id"]: j for j in json.load(open(os.path.join(WORK, "jobs.json")))}
     if not ids:
         ids = [r["id"] for r in json.load(open(os.path.join(WORK, "results.json")))

@@ -524,7 +524,9 @@ tfr_exg (ZILCH)
 
         if ( (rg1 = getreg (0)) )
         {
-            if (((rg0 ^ rg1) & 8) == 0)
+            /* the zero register goes with either size (lwasm) */
+
+            if ((((rg0 ^ rg1) & 8) == 0) || (rg0 == 0x0c) || (rg1 == 0x0c))
             {
                 opr_ptr[0] = (rg0 << 4 | rg1);
                 return 1;

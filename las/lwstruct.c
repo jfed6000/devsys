@@ -127,7 +127,7 @@ st_sym (name, val, like)
 
     if (like)
     {
-        sym_settyp (s, sym_typ (like));
+        sym_settyp (s, sym_typ (like) & 0x7f);    /* not sizing's SZ_CODE */
         sym_setmsk (s, (sym_msk (s) & LOC1BYT) |
                        (sym_msk (like) & ~(LOC1BYT | CODENT | NEGMASK)));
         sym_setval (s, sym_val (like) + val);

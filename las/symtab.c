@@ -39,9 +39,9 @@ struct symblstr
     char smbltyp,               /* Symbol type flag                     */
          locmsk;
     SVAL s_ofst;                /* Offset into code or value for sbl def*/
-    SYMH left,                  /* Next entry, alphabet < this          */
-         right;                 /* Next entry, alphabet > this          */
-    REFH reftbl;                /* Last ref in the chained list of all
+    BANKH left,                 /* Next entry, alphabet < this          */
+          right;                /* Next entry, alphabet > this          */
+    BANKH reftbl;                /* Last ref in the chained list of all
                                  * refs to this symbol                  */
     char symblnam[1];           /* Symbol Name. Must stay the last
                                  * member: sym_add() allocates each
@@ -56,7 +56,7 @@ struct ref_xtrnal
     char RfTyp;
     int r_offset;       /* Offset in the module, unless "set" or "equ":
                          * then it's the SYMH of the symbol referred to */
-    REFH NxtRef;        /* Actually, previous entry */
+    BANKH NxtRef;       /* Actually, previous entry */
 };
 
 /* Handle to pointer. Entries live in banked blocks (bank.c), and on

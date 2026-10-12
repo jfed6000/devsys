@@ -68,6 +68,11 @@ typedef int (*JMPTBL) (void);
 typedef unsigned SYMH;          /* a symbol */
 typedef unsigned REFH;          /* a reference record */
 
+/* A handle stored inside a banked record: 16 bits, as on the 6809, so
+ * the records take the same room on Linux, and the host las runs out
+ * of blocks where native las would (the harnesses compare the two) */
+typedef _ushort BANKH;
+
 #ifdef COCO
 typedef long SVAL;              /* a symbol's value (s_ofst) */
 #else

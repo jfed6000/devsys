@@ -171,8 +171,27 @@ def suite_las(dsk):
             lines.append(f"las -o={b}.r {b}.a >{b}.lst >>{b}.err")
             files.append((t, b))
 
+    # lwasm-mode features the corpus lacks (D46): settling, the zero register
+    os9("makdir", f"{dsk},T/AS", check=False)
+    put(SETTLE, f"{dsk},T/AS/settle.asm", text=True)
+    # options in a file: the OS-9 shell splits arguments at commas
+    argf = os.path.join(WORK, "settle.args")
+    with open(argf, "w") as f:
+        f.write(f"--pragma={SETTLE_PRAGMAS}\n-o=settle\n")
+    put(argf, f"{dsk},T/AS/args", text=True)
+    lines += ["chd /dd/T/AS", "las settle.asm --args=args >lst >>err"]
+
     def check():
         bad = 0
+        out = os.path.join(WORK, "las", "settle")
+        ref = out + ".ref"
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        subprocess.run([REF, SETTLE, "--pragma=" + SETTLE_PRAGMAS, "-o=" + ref],
+                       env=lwdiff.clean_env(), capture_output=True)
+        if not (get(f"{dsk},T/AS/settle", out) and os.path.exists(ref)
+                and open(out, "rb").read() == open(ref, "rb").read()):
+            bad += 1
+            print(f"  las settle.asm: differs or missing {(os9_text(f'{dsk},T/AS/err') or '').strip()[:200]}")
         for t, b in files:
             out = os.path.join(WORK, "las", t, b + ".r")
             os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -183,7 +202,8 @@ def suite_las(dsk):
             bad += 1
             err = os9_text(f"{dsk},T/A{t}/{b}.err") or ""
             print(f"  las {t}/{b}: {'differs' if ok else 'no output'} {err.strip()[:200]}")
-        print(f"las: {len(files) - bad} of {len(files)} ROF files identical to host las")
+        print(f"las: {len(files) + 1 - bad} of {len(files) + 1} ROF files and settle.asm "
+              f"identical to host las")
         return bad == 0
     return lines, check
 
@@ -238,6 +258,8 @@ def lwdiff_order(tool):
 
 
 HELLO = os.path.join(HERE, "native", "hello.c")
+SETTLE = os.path.join(HERE, "native", "settle.asm")
+SETTLE_PRAGMAS = "pcaspcr,nosymbolcase,condundefzero,undefextern,dollarnotlocal,noforwardrefmax"
 # The cc suite's programs: source, and the line each must print. longret
 # checks long and double results returned in X (step 14, D43)
 CC_PROGS = [("hello", HELLO, "hello from dcc on the F256: 45"),
