@@ -41,8 +41,9 @@ DEFAULT_LLINK = os.path.join(DEVSYS, "llink/llink")
 
 # lwar/lwlink commands seen by the last collect(), in build order
 LINK_CMDS = []
+GEN_CMDS = []                   # recipe steps that write an include file (collect)
 
-TIMEOUT = 30  # seconds per assembly
+TIMEOUT = 300  # seconds per assembly (lwasm takes 65 s for main's diag)
 
 
 def clean_env():
@@ -107,6 +108,7 @@ def collect(nitros9, recipe, platform, workdir):
     seen = set()
     dirs = [recipe_dir]
     del LINK_CMDS[:]
+    del GEN_CMDS[:]
     for line in proc.stdout.splitlines():
         m = re.match(r"make\[\d+\]: (Entering|Leaving) directory '(.*)'", line)
         if m:
@@ -114,6 +116,12 @@ def collect(nitros9, recipe, platform, workdir):
                 dirs.append(m.group(2))
             elif len(dirs) > 1:
                 dirs.pop()
+            continue
+        # A step that writes an include file (diag's diagfont.inc,
+        # diagpal.inc: sed over a source, "> .obj/NAME.inc")
+        m = re.match(r"(.*\S)\s*>\s*(\S+\.inc)$", line)
+        if m and not line.startswith(("lwasm", "lwar", "lwlink")):
+            GEN_CMDS.append({"cwd": dirs[-1], "cmd": m.group(1), "name": os.path.basename(m.group(2))})
             continue
         # A line can hold several commands joined by ; or &&
         for part in re.split(r"\s*(?:&&|;)\s*", line):
@@ -199,6 +207,11 @@ def make_generated(workdir):
     # wildbits.mak writes buildinfo (date, commit, branch) for init.asm
     with open(os.path.join(gen, "buildinfo"), "w") as f:
         f.write(" fcc !lwdiff harness build!\n")
+    # include files the recipe generates, written here instead of the
+    # recipe's $(OBJDIR), so nothing is written into the NitrOS9 tree
+    for g in GEN_CMDS:
+        with open(os.path.join(gen, g["name"]), "w") as f:
+            subprocess.run(g["cmd"], shell=True, cwd=g["cwd"], stdout=f, env=clean_env())
     return gen
 
 
@@ -608,8 +621,8 @@ def main():
 
     corpus = corpus_state(args.nitros9)
     check_lock(corpus)
-    gen = make_generated(workdir)
     jobs = collect(args.nitros9, args.recipe, args.platform, workdir)
+    gen = make_generated(workdir)          # after collect: runs its generator steps
     with open(os.path.join(workdir, "jobs.json"), "w") as f:
         json.dump(jobs, f, indent=1)
     if args.only:

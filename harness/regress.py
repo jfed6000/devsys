@@ -153,9 +153,10 @@ def lwdiff_inputs():
     nitros9 = lwdiff.DEFAULT_NITROS9
     workdir = os.path.join(WORK, "lwdiff")
     os.makedirs(workdir, exist_ok=True)
-    gen = lwdiff.make_generated(workdir)
+    collected = lwdiff.collect(nitros9, "l2", "jr2", workdir)
+    gen = lwdiff.make_generated(workdir)   # after collect: runs its generator steps
     jobs = []
-    for job in lwdiff.collect(nitros9, "l2", "jr2", workdir):
+    for job in collected:
         args = [job["source"], "--lwasm"] + [f"-D{d}" for d in job["defines"]]
         if job["pragmas"]:
             args.append("--pragma=" + ",".join(job["pragmas"]))
