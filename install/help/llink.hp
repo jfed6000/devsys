@@ -1,0 +1,10 @@
+@LLINK
+Syntax: llink <file>... [<opts>]
+Usage : devsys linker: ROF objects and libraries into an OS-9 module
+Opts  : -o=<path>   output module (a bare name goes to /dd/cmds)
+        -l=<file>   library (.l: objects one after another)
+        -n=<name>   module name      -e=<n>  edition
+        -M=<size>   extra data memory (pages, or K with K)
+        -m          linkage map      -s      symbol table
+        --lwlink, --mw  force lwlink's or Microware's module layout
+                    (normally chosen from the objects)

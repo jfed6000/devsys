@@ -1,0 +1,56 @@
+devsys: build NitrOS9 Level 2 programs on the F256 itself
+
+The tools (in /dd/CMDS; "help NAME" describes each):
+  las     the assembler: lwasm's syntax (NitrOS9's sources) and RMA's
+  llink   the linker: ROF objects and libraries into a module
+  dcc     the C compiler (runs dcpp, dcc68, dco68, las and llink)
+  make    rebuilds what changed (rules in /dd/SYS/make.default)
+
+Where things are:
+  /dd/DEFS            C headers (stdio.h ...)
+  /dd/DEFS/NITROS9    NitrOS9 main's assembler defs: defsfile, os9.d,
+                      wildbits.d ...
+  /dd/LIB             C libraries (clib.l, sys.l, cstart.r) and
+                      NitrOS9 main's alib.l, net.l, wildbitsl2.l
+  /dd/SYS/n9mod.opt   las options for a NitrOS9 module source
+  /dd/SYS/n9obj.opt   las options for a NitrOS9 object source (section)
+  /dd/DEVSYS/EX       the examples below
+
+A NitrOS9 module ("mod", "use defsfile"):
+  chd /dd/devsys/ex
+  las hello.asm --args=/dd/sys/n9mod.opt -o=hello
+  attr hello e pe
+  /dd/devsys/ex/hello      (a bare name runs from /dd/CMDS)
+
+An object program linked with NitrOS9's libraries (grep, from main):
+  las grep.as --args=/dd/sys/n9obj.opt -o=grep.o
+  llink grep.o -l=/dd/lib/wildbitsl2.l -l=/dd/lib/net.l -l=/dd/lib/alib.l -o=/dd/devsys/ex/grep
+  /dd/devsys/ex/grep -n "las" /dd/devsys/README
+
+A C program:
+  dcc hello.c -f=/dd/devsys/ex/hi
+  /dd/devsys/ex/hi
+  dcc hello.c -w             (only checks for errors)
+
+make (C and assembly, see EX/M/makefile):
+  chd /dd/devsys/ex/m
+  make
+  mkdemo
+
+Good to know:
+- An options file holds NitrOS9 main's -D settings and pragmas, the
+  defs directory and a defs image. Add your own options after it.
+- The defs image (/dd/SYS/n9mod.img, n9obj.img) is recorded by the
+  first assembly that uses it and makes the next ones about twice as
+  fast. It is used when nothing is defined before "use defsfile" and
+  the options are the same; otherwise las reads the defs as usual.
+  After a defs file changes, the next assembly records it again.
+- las writes its output to the current directory; llink and dcc -f=
+  write a bare name to the execution directory (/dd/CMDS), so give
+  them a full path to put the program somewhere else.
+- OS-9 will not redirect into a file that exists: delete it first.
+- NitrOS9's grep (and one built from grep.as) ends with an error
+  number such as ERROR #115 even when it worked: a bug in main's
+  alib (FGETS_NOCR loses the end-of-file code), not in the build.
+- /dd/DEVSYS/selftest checks the whole disk (results in
+  /dd/DEVSYS/R). It runs once per card write.

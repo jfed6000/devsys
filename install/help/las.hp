@@ -1,0 +1,16 @@
+@LAS
+Syntax: las <file> [<opts>]
+Usage : devsys assembler: NitrOS9's sources (lwasm syntax) and RMA's
+        mod or section: lwasm syntax; psect: RMA syntax
+Opts  : -o=<path>    write the module or ROF object to path
+        -l           print a listing      -s  print the symbol table
+        -i=<dir>     look for "use" files in dir as well
+        -D<sym>[=val] define sym
+        --pragma=<list>  lwasm pragmas, as in NitrOS9's makefiles
+        --args=<file>    read more options from file
+        --defs=<file>    constants from a ROF object or library
+        --defsimg=<file> precompiled defs (recorded on first use)
+        --lwasm, --rma   force a syntax
+NitrOS9 settings: --args=/dd/sys/n9mod.opt (modules)
+                  --args=/dd/sys/n9obj.opt (objects)
+See /dd/devsys/README

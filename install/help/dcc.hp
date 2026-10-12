@@ -1,0 +1,10 @@
+@DCC
+Syntax: dcc [<opts>] <file>...
+Usage : C compiler: dcpp, dcc68, dco68, las and llink
+Opts  : -f=<path>  output program (a bare name goes to /dd/cmds)
+        -r         stop at the .r object    -a  stop at assembly
+        -w         check for errors only
+        -dSYM[=v]  define SYM               -o  don't optimize
+        -l=<file>  library                  -ls sys.l
+        -n=<name>  module name              -s  no stack checks
+        -T=<dir>   temporary files (default /dd/tmp)

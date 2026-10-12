@@ -106,7 +106,7 @@ def os9_text(path):
         return f.read().replace(b"\r", b"\n").decode("latin-1")
 
 
-def make_image(src, dsk):
+def make_image(src, dsk, dirs=("LIB", "TMP", "T")):
     shutil.copyfile(src, dsk)
     if os.path.getsize(dsk) > PAD:
         sys.exit(f"{src} is larger than {PAD} bytes")
@@ -116,7 +116,7 @@ def make_image(src, dsk):
         os9("del", f"{dsk},CMDS/{t}", check=False)
         put(os.path.join(NATIVE, "bin", t), f"{dsk},CMDS/{t}")
         os9("attr", "-q", "-pe", "-npw", "-pr", "-e", "-w", "-r", f"{dsk},CMDS/{t}")
-    for d in ("LIB", "TMP", "T"):
+    for d in dirs:
         os9("makdir", f"{dsk},{d}", check=False)
     # make's default rules (D45): /dd/sys/make.default
     os9("makdir", f"{dsk},SYS", check=False)
