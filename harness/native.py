@@ -68,7 +68,9 @@ MAME = os.path.join(HOME, "projects/wild/mame/mame")
 OS9 = os.path.join(HOME, "projects/coco-shelf/bin/os9")
 COCOC = os.path.join(HOME, "projects/dcc/CoCoC")
 NATIVE = os.path.join(DEVSYS, "native")
-IMAGE = os.path.join(HOME, "projects/wild/netrek/nitros9/recipes/wildbits/l2/l2_wildbitsjr2.dsk")
+# The devsys boot disk (boot/wildbits/l2: NitrOS9 main plus pipes and /nil,
+# D44); build it with "make" there
+IMAGE = os.path.join(DEVSYS, "boot/wildbits/l2/l2_wildbits_devsysjr2.dsk")
 WORK = os.path.join(HERE, "out", "native")
 PAD = 128 * 1024 * 1024         # 2^27 bytes: a block count MAME accepts
 TOOLS = ["las", "llink", "dcc", "dcpp", "dcc68", "dco68"]
@@ -249,6 +251,10 @@ def suite_cc(dsk):
         put(src, f"{dsk},T/C/{name}.c", text=True)
         lines += [f"dcc {name}.c -f={name} >{name}.out >>{name}.err",
                   f"{name} >{name}.run >>{name}.rerr"]
+    # The devsys disk's pipes and /nil (D44): dcc -w sends dcc68's output
+    # to /nil; a shell pipeline needs PipeMan, Piper and Pipe
+    lines += ["dcc hello.c -w >w.out >>w.err", "echo w done >w.ok",
+              "echo through a pipe ! tee pipe.tee >pipe.out"]
 
     def check():
         good = 0
@@ -267,7 +273,16 @@ def suite_cc(dsk):
             good += same
         print(f"cc: {good} of {len(CC_PROGS)} programs built by native dcc identical to "
               f"the host passes, and printed what they should")
-        return good == len(CC_PROGS)
+        werr = (os9_text(f"{dsk},T/C/w.err") or "").strip()
+        # success: dcc68's line is the last thing dcc -w printed (on a disk
+        # without /nil, "can't open /nil" follows it)
+        wlast = werr.splitlines()[-1] if werr else ""
+        wok = wlast.strip().startswith("dcc68:") and "-o=/nil" in wlast
+        piped = (os9_text(f"{dsk},T/C/pipe.tee") or "").strip()
+        pok = piped == "through a pipe"
+        print(f"cc: dcc -w through /nil {'works' if wok else 'FAILS'}; "
+              f"a pipe {'works' if pok else 'FAILS'}" + ("" if wok else f" ({werr[:120]!r})"))
+        return good == len(CC_PROGS) and wok and pok
     return lines, check
 
 

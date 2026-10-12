@@ -2,7 +2,7 @@
 """card - put the native toolchain on a real F256's SD card, and check it.
 
   card.py build [--image FILE] [--out FILE]
-      A copy of the K2 boot image (default l2_wildbitsk2.dsk) with the six
+      A copy of the K2 boot image (default boot/wildbits/l2/l2_wildbits_devsysk2.dsk) with the six
       tools in /dd/CMDS, CoCoC's C libraries in /dd/LIB, its headers in
       /dd/DEFS, /dd/TMP, and /dd/DEVSYS: test sources and the procedure
       file `selftest`. Write it to the card with dd (check the device with
@@ -40,9 +40,9 @@ import lwdiff  # noqa: E402
 import native  # noqa: E402
 
 DEVSYS = native.DEVSYS
-L2 = os.path.expanduser("~/projects/wild/netrek/nitros9/recipes/wildbits/l2")
-K2 = os.path.join(L2, "l2_wildbitsk2.dsk")
-JR2 = os.path.join(L2, "l2_wildbitsjr2.dsk")
+L2 = os.path.join(DEVSYS, "boot", "wildbits", "l2")     # D44: make PLATFORM=k2 / jr2 there
+K2 = os.path.join(L2, "l2_wildbits_devsysk2.dsk")
+JR2 = os.path.join(L2, "l2_wildbits_devsysjr2.dsk")
 WORK = os.path.join(HERE, "out", "card")
 SRCDIR = "level1/cmds"
 CMDS = ["echo", "date", "attr", "copy", "dir", "list", "free", "dump"]

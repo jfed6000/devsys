@@ -1,0 +1,3 @@
+# NitrOS9 build outputs in the recipe folder
+wildbits/l2/*
+!wildbits/l2/makefile
