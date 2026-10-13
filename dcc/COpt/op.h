@@ -17,11 +17,9 @@
 #define MNEM        2
 #define ARGS        3
 #define BRALIM     36	/* used to calculate branch distance somehow */
-#ifdef _OS9
-#define MAXINS    300
-#else
+/* devsys: the whole file on both machines (bank.c); it was 300 on OS-9,
+ * all that fitted in 64K, so the F256's output differed from Linux's */
 #define MAXINS    32767
-#endif
 
 /* instruction type flags */
 #define SUBR        0x0001
@@ -65,59 +63,97 @@
 # endif
 #endif
 
+/* devsys: the instructions, labels, reference cells and operand texts
+ * dco68 holds live in 8K blocks of extra RAM (bank.c), so that a whole
+ * file fits on the F256 as it does on Linux (the window used to be 300
+ * instructions there, MAXINS). Each record is named by a 16-bit handle
+ * (H, 0 = none) and reached through bank_ptr(), whose pointer is good
+ * only until the next bank_ptr() of a handle in another block. So: no
+ * statement may use a pointer from one record after mapping another
+ * (a = b's field, with both mapped, goes through a local), and no call
+ * takes pointers into two records (copy one first). The BANKWIN build
+ * (Linux) emulates the one window and catches a stale pointer. */
+
+#ifdef _OS9
+typedef unsigned H;
+typedef int SHORT;
+#else
+typedef unsigned short H;
+typedef short SHORT;
+#endif
+
+/* a list cell: list heads (ilist, the label buckets), reference cells
+ * (succ: the next cell, pred: the instruction that refers), free lists */
 typedef struct chstruct {
-    struct chstruct *succ,*pred;
+    H succ, pred;
 } chain;
 
 typedef struct lstruct {
-    struct lstruct *succ,*pred;
-#ifdef HAVE_C11
-    struct istruct *dest;
-#else
-    union istruct *dest;
-#endif
-    chain *rlist;
-    struct lstruct *nextl;
-    int lflags;
+    H succ, pred;           /* the bucket's list (ltable) */
+    H dest;                 /* the instruction it labels, 0 if none */
+    H rlist;                /* reference cells of the branches to it */
+    H nextl;                /* the next label on the same instruction */
+    SHORT lflags;
     char lname[LABELSIZE+1];
 } label;
 
-#ifdef HAVE_C11
 typedef struct istruct {
-    struct istruct *succ,*pred;
-    struct lstruct *llist;
-    int itype;
+    H succ, pred;           /* ilist */
+    H llist;                /* its labels */
+    SHORT itype;
     char mnem[MNEMSIZE+1];
-    union {
-        char *args;
-        struct lstruct *lab;
-    };
+    H arg;                  /* BRANCH with DESTPTR: the label; else the
+                             * operand text (ARG) */
 } instruction;
+
+#define INS(h)  ((instruction *) bank_ptr (h))
+#define LAB(h)  ((label *) bank_ptr (h))
+#define CHN(h)  ((chain *) bank_ptr (h))
+#define ARG(h)  ((char *) bank_ptr (h))
+
+/* Reading a 2-byte field. On the 6809 each is a call to an assembly
+ * accessor named by the field's offset (bank.c), 4 bytes shorter at
+ * every read than bank_ptr + ldd n,x; the offsets are the 6809 layout
+ * of the records above (no padding) and must follow any change there */
+#ifdef _OS9
+#define I_SUCC(h)   bkget0(h)
+#define I_PRED(h)   bkget2(h)
+#define I_LLIST(h)  bkget4(h)
+#define I_ITYPE(h)  bkget6(h)
+#define I_ARG(h)    bkget19(h)
+#define L_SUCC(h)   bkget0(h)
+#define L_DEST(h)   bkget4(h)
+#define L_RLIST(h)  bkget6(h)
+#define L_NEXTL(h)  bkget8(h)
+#define L_LFLAGS(h) bkget10(h)
+#define C_SUCC(h)   bkget0(h)
+#define C_PRED(h)   bkget2(h)
+extern H bkget0(), bkget2(), bkget4(), bkget6(), bkget8(), bkget10(), bkget19();
 #else
-typedef union istruct {
-    struct {
-        union istruct *succ,*pred;
-        struct lstruct *llist;
-        int itype;
-        char mnem[MNEMSIZE+1];
-        char *args;
-    } instyp1;
-    struct {
-        union istruct *succ,*pred;
-        struct lstruct *llist;
-        int itype;
-        char mnem[MNEMSIZE+1];
-        struct lstruct *lab;
-    } instyp2;
-} instruction;
+#define I_SUCC(h)   (INS(h)->succ)
+#define I_PRED(h)   (INS(h)->pred)
+#define I_LLIST(h)  (INS(h)->llist)
+#define I_ITYPE(h)  (INS(h)->itype)
+#define I_ARG(h)    (INS(h)->arg)
+#define L_SUCC(h)   (LAB(h)->succ)
+#define L_DEST(h)   (LAB(h)->dest)
+#define L_RLIST(h)  (LAB(h)->rlist)
+#define L_NEXTL(h)  (LAB(h)->nextl)
+#define L_LFLAGS(h) (LAB(h)->lflags)
+#define C_SUCC(h)   (CHN(h)->succ)
+#define C_PRED(h)   (CHN(h)->pred)
 #endif
 
-extern direct chain ilist;
-extern chain ltable[],*newchain();
-extern char *newarg(),*grab();
-extern label *inslabel(),*newlabel(),*findlabel();
-extern direct label *lfree;
-extern instruction *insins(),*newins();
+extern char *bank_ptr ();
+extern H bank_alloc (), bank_static ();
+
+extern direct H ilist;          /* the list head: a chain record */
+extern H ltable[];              /* the label buckets' heads */
+extern H newchain(), newarg(), inslabel(), newlabel(), findlabel();
+extern H insins(), newins();
+extern char *argcopy();
+extern char *grab();
+extern direct H lfree;
 extern direct int inscount;
 extern FILE *in,*out,*datfile;
 extern direct int lbf,lbdone,opsdone;

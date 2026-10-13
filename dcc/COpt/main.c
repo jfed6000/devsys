@@ -102,7 +102,14 @@ char **argv;
         totbytes = estimate(inserts);
         fprintf(stderr,"        total bytes  :  %5d, %5d, %3d%%\n",
                 totbytes,bytes,percent(bytes,totbytes));
+        fprintf(stderr,"   memory: %d blocks of 8K",bank_blocks());
+#if defined(_OS9) || defined(BANKWIN)
+        { extern long Switches;
+          fprintf(stderr,", %ld switches",Switches); }
+#endif
+        putc('\n',stderr);
     }
+    bank_done();
 }
 
 int estimate(n)
@@ -124,11 +131,11 @@ optimise()
 {
     char line[LINESIZE];
     char lab[LABELSIZE+1],mnem[MNEMSIZE+1],args[ARGSIZE+1];
-    label *l,*lp1,*lp2;
+    H l,lp1,lp2,t;
     char *p;
     int dpflag,globflag;
 
-    l = NULL;
+    l = 0;
     datflag = endflag = FALSE;
     inlcnt = 0;
 
@@ -202,18 +209,18 @@ put:                fprintf(out,"%s\n",line);
         if (datflag) fprintf(datfile,"%s\n",line);
         else {
             if (*lab) {
-                if ((lp1 = findlabel(lab)) == NULL)
+                if ((lp1 = findlabel(lab)) == 0)
                     lp1 = inslabel(lab);
-                if (globflag) lp1->lflags |= GLOBAL;
-                for (lp2 = lp1; lp2->nextl; lp2 = lp2->nextl);
-                lp2->nextl = l;
+                if (globflag) LAB(lp1)->lflags |= GLOBAL;
+                for (lp2 = lp1; (t = L_NEXTL(lp2)) != 0; lp2 = t);
+                LAB(lp2)->nextl = l;
                 l = lp1;
             }
             if (*mnem) {
                 parse(ARGS,args,p);
-                if (insins(&ilist,mnem,args,&l)) {
-                    optim(ilist.pred);
-                    finddupl(ilist.pred);
+                if (insins(ilist,mnem,args,&l)) {
+                    optim(I_PRED(ilist));
+                    finddupl(I_PRED(ilist));
                 }
                 ++inserts;
                 if (inscount >= insmax) delete();
@@ -221,7 +228,11 @@ put:                fprintf(out,"%s\n",line);
         }
     }
 
-    if (l) insins(&ilist,"nop","",&l);
+    if (l) {
+        char nop[1];
+        nop[0] = '\0';
+        insins(ilist,"nop",nop,&l);
+    }
     endsect();
     while (inscount) delete();
 }

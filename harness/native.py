@@ -22,6 +22,10 @@ Suites (default: all):
         of its headers made by dcc -H (dcc68w) on the F256; each must equal
         the cross-built object. Then make's 8 sources are compiled without
         and with an image (dcc -h), timed. Not in the default set
+  self  step 17: every tool built on the F256 by make (dcc with header
+        images for las, llink and dcc; native llink); each object must equal
+        the host passes', each module the cross-built one (native/bin).
+        --only TOOL for some. Not in the default set
   lw    native las assembles NitrOS9 module sources from the Level 2
         build (lwdiff's jobs.json; run harness/lwdiff.py first). Each
         module must equal the host las's (with ,pcr sizing, D38)
@@ -788,14 +792,14 @@ def native_var(name):
     return p.stdout.split()
 
 
-def host_ref(tool, o, defs, cc):
+def host_ref(tool, o, defs, cc, srcdir=None):
     """One C file of a devsys tool through the host passes as native dcc
-    runs them, with dco68's window at the F256's 300 instructions (MAXINS;
-    the host's is 32,767, which optimizes some files further): the .r, in
-    WORK/pchref/TOOL."""
+    runs them: the .r, in WORK/pchref/TOOL. srcdir: the sources (default
+    DEVSYS/TOOL). (Until D51 the F256's dco68 held 300 instructions and
+    the host's the whole file, so this ran dco68 -i300.)"""
     d = os.path.join(WORK, "pchref", tool)
     os.makedirs(d, exist_ok=True)
-    src = os.path.join(DEVSYS, tool, o + ".c")
+    src = os.path.join(srcdir or os.path.join(DEVSYS, tool), o + ".c")
     env = lwdiff.clean_env()
     dcc = os.path.join(DEVSYS, "dcc")
     pre = subprocess.run([os.path.join(dcc, "CPP/dcpp")] + defs +
@@ -806,7 +810,7 @@ def host_ref(tool, o, defs, cc):
                    cwd=d, env=env, capture_output=True)
     with open(os.path.join(d, o + ".raw.a"), "rb") as fin, \
             open(os.path.join(d, o + ".a"), "wb") as fout:
-        subprocess.run([os.path.join(dcc, "COpt/dco68"), "-2", "-i300"], stdin=fin,
+        subprocess.run([os.path.join(dcc, "COpt/dco68"), "-2"], stdin=fin,
                        stdout=fout, env=env)
     subprocess.run([os.path.join(DEVSYS, "las/build/unix/las"), f"-o={o}.r", o + ".a"],
                    cwd=d, env=env, capture_output=True)
@@ -931,8 +935,145 @@ def suite_pch(dsk):
     return lines, check
 
 
+# Step 17: the header images the self suite makes on the F256, per tool:
+# (image, the headers-only source it is made from, files compiled without
+# an image). Tools not listed fit dcc68 without one (D51)
+SELF_IMAGES = {
+    "las": ("las.img", PCH_LASIMG, []),
+    "llink": ("llink.img", '#include "rlink.h"\n', ["globals"]),
+    "dcc": ("dcc.img", "#include <stdio.h>\n#include <errno.h>\n#include <fcntl.h>\n"
+            "#include <stdlib.h>\n#include <sys/stat.h>\n#include <string.h>\n", []),
+}
+
+
+def self_flags(tool, o):
+    """A source's defines and dcc68 flags, as native/GNUmakefile has them."""
+    defs = native_var(f"{tool}_DEFS")
+    cc = native_var(f"{tool}_CC")
+    if o in native_var(f"{tool}_NOCHECK") and "-s" not in cc:
+        cc = cc + ["-s"]
+    return defs, cc
+
+
+def host_link(tool, rels, out):
+    """The host llink's module from the given objects, linked as
+    native/GNUmakefile links TOOL."""
+    mem = native_var(f"{tool}_MEM")
+    lib = os.path.join(COCOC, "Lib")
+    p = subprocess.run([os.path.join(DEVSYS, "llink/llink"), f"-o={out}", f"-n={tool}"]
+                       + ([f"-M={mem[0]}"] if mem else [])
+                       + [os.path.join(lib, "cstart.r")] + rels
+                       + [f"-l={lib}/sys.l", f"-l={lib}/clib.l"],
+                       env=lwdiff.clean_env(), capture_output=True)
+    return p.returncode == 0 and os.path.exists(out)
+
+
+def suite_self(dsk):
+    """Step 17, self-hosting: every devsys tool (--only TOOL for some) built
+    on the F256 by make with the native tools: dcc compiles each source
+    (las, llink and dcc with a header image made there, SELF_IMAGES), the
+    native llink links the module. Each object must equal the host passes'
+    (host_ref), each module the host llink's link of those objects, and
+    the cross-built one (native/bin): the F256 builds its own tools
+    byte for byte (step 17's goal; D51 made dco68 hold the whole file
+    natively, as on Linux)."""
+    tools = [t for t in TOOLS if not ONLY or t in ONLY]
+    os9("makdir", f"{dsk},T/S", check=False)
+    lines = []
+    for tool in tools:
+        src = native_var(f"{tool}_DIR")[0]
+        objs = native_var(f"{tool}_OBJS")
+        mem = native_var(f"{tool}_MEM")
+        d = f"T/S/{tool}"
+        os9("makdir", f"{dsk},{d}", check=False)
+        for f in os.listdir(src):
+            if f.endswith((".c", ".h")):
+                put(os.path.join(src, f), f"{dsk},{d}/{f}", text=True)
+        img, imgsrc, noimg = SELF_IMAGES.get(tool, (None, None, []))
+        mk = [f"* native.py's self suite: {tool} built on the F256", ""]
+        targets = (["base.img"] if tool == "las" else []) + ([img] if img else [])
+        mk += [f"{tool}.mod: {' '.join(targets)} {' '.join(o + '.r' for o in objs)}",
+               f"    llink /dd/LIB/cstart.r -z=objs -l=/dd/LIB/sys.l -l=/dd/LIB/clib.l "
+               f"-o=/dd/{d}/{tool}.mod -n={tool}" + (f" -M={mem[0]}" if mem else "")
+               + f" -m >{tool}.map", ""]
+        if img:
+            open(os.path.join(WORK, "img.c"), "w").write(imgsrc)
+            put(os.path.join(WORK, "img.c"), f"{dsk},{d}/img.c", text=True)
+            defs, _ = self_flags(tool, objs[0])
+            hdrs = ("rma.h rmabase.h proto.h rstruct.h cocotype.h" if tool == "las" else
+                    " ".join(sorted(x for x in os.listdir(src) if x.endswith(".h"))))
+            mk += [f"{img}: img.c {hdrs}",
+                   f"    dcc -2 {' '.join('-d' + x[2:] for x in defs)} -H={img} img.c", ""]
+        if tool == "las":
+            open(os.path.join(WORK, "img.c"), "w").write(PCH_BASEIMG)
+            put(os.path.join(WORK, "img.c"), f"{dsk},{d}/baseimg.c", text=True)
+            mk += ["base.img: baseimg.c rmabase.h proto.h rstruct.h cocotype.h",
+                   "    dcc -2 -dCOCO -H=base.img baseimg.c", ""]
+        for o in objs:
+            defs, cc = self_flags(tool, o)
+            use = ("-h=base.img" if tool == "las" and o == "globals" else
+                   f"-h={img}" if img and o not in noimg else "")
+            mk += [f"{o}.r: {o}.c" + (f" {use[3:]}" if use else ""),
+                   f"    dcc -2 {' '.join('-d' + x[2:] for x in defs)} {' '.join(cc)} {use} "
+                   f"-r {o}.c", ""]
+        mkf = os.path.join(WORK, "self.makefile")
+        open(mkf, "w").write("\n".join(mk))
+        put(mkf, f"{dsk},{d}/makefile", text=True)
+        lst = os.path.join(WORK, "self.objs")
+        open(lst, "w").write("".join(o + ".r\n" for o in objs))
+        put(lst, f"{dsk},{d}/objs", text=True)
+        lines += [f"chd /dd/{d}", "date -t >t0", "make >make.out >>make.err", "date -t >t1"]
+
+    def check():
+        import datetime
+        ok_all = True
+        for tool in tools:
+            d = f"T/S/{tool}"
+            src = native_var(f"{tool}_DIR")[0]
+            objs = native_var(f"{tool}_OBJS")
+            err = (os9_text(f"{dsk},{d}/make.err") or "").strip()
+            good, refs = 0, []
+            for o in objs:
+                out = os.path.join(WORK, "self", tool, o + ".r")
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                ok = get(f"{dsk},{d}/{o}.r", out)
+                defs, cc = self_flags(tool, o)
+                ref = host_ref("self/" + tool, o, defs, cc, src)
+                refs.append(ref)
+                same = ok and rof_equal(open(out, "rb").read(), open(ref, "rb").read())
+                if not same:
+                    print(f"  {tool} {o}: {'DIFFERS' if ok else 'NO OUTPUT'}")
+                good += same
+            mod = os.path.join(WORK, "self", tool, tool + ".mod")
+            got = get(f"{dsk},{d}/{tool}.mod", mod)
+            ref = os.path.join(WORK, "pchref", "self", tool, tool + ".mod")
+            linked = host_link(tool, refs, ref)
+            same = got and linked and open(mod, "rb").read() == open(ref, "rb").read()
+            cross = got and open(mod, "rb").read() == open(os.path.join(NATIVE, "bin", tool), "rb").read()
+            t = None
+            try:
+                ts = [datetime.datetime.strptime((os9_text(f"{dsk},{d}/t{i}") or "").strip(),
+                                                 "%B %d, %Y  %H:%M:%S") for i in (0, 1)]
+                t = (ts[1] - ts[0]).total_seconds()
+            except ValueError:
+                pass
+            fell = err.count("compiled without")
+            print(f"self {tool}: {good} of {len(objs)} objects identical; module "
+                  + (f"{os.path.getsize(mod)} bytes, " if got else "")
+                  + ("identical to the host link" if same else "DIFFERS from the host link"
+                     if got else "NOT BUILT")
+                  + (f"; {'equal to' if cross else 'not equal to'} native/bin" if got else "")
+                  + (f"; {t:.0f} s emulated" if t is not None else "")
+                  + (f"; {fell} compiled without the image" if fell else ""))
+            if good != len(objs) or not same or not cross:
+                print("  --- make.err\n  " + err[-2500:].replace("\n", "\n  "))
+                ok_all = False
+        return ok_all
+    return lines, check
+
+
 SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc, "make": suite_make,
-          "pch": suite_pch, "lw": suite_lw,
+          "pch": suite_pch, "self": suite_self, "lw": suite_lw,
           "obj": suite_obj, "img": suite_img}
 DEFAULT = ["las", "link", "cc", "make"]
 

@@ -4,6 +4,7 @@ LFLAGS	= -m32
 
 OBJS	= \
 	rlink_main.o \
+	globals.o \
 	rl_02.o \
 	rl_03.o \
 	misc.o \

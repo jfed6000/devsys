@@ -396,11 +396,20 @@ class Process:
         elif code == 0x4F:                                 # F$MapBlk (1 block)
             if c.b != 1 or c.x not in RAM:
                 raise OS9Error(241)                        # E$IBA
+            # NitrOS9 counts every slot the module's blocks don't fill as
+            # free, the top one too when the module ends below $E000
+            modtop = (self.modbase + self.codesize + 0x1FFF) & ~0x1FFF
             free = [sl for sl in range(8) if sl * 0x2000 >= self.memtop
-                    and sl * 0x2000 < self.modbase and sl not in self.mapped]
+                    and not self.modbase <= sl * 0x2000 < modtop
+                    and sl not in self.mapped]
             if not free:
                 raise OS9Error(E_MEMFUL)
             sl = max(free)                                 # F$FreeHB: the highest
+            if sl == 7:
+                # on the F256 that covers the system's page at $FE00
+                # (vectors): the real machine hangs (DESIGN.md D51)
+                sys.exit("os9run: F$MapBlk mapped a block at $E000, over the "
+                         "system's page at $FE00: the F256 would hang")
             m[sl * 0x2000:(sl + 1) * 0x2000] = RAM[c.x][0]
             self.mapped[sl] = c.x
             self.mapblks += 1

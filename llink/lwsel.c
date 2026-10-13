@@ -28,7 +28,6 @@
  * **************************************************************** */
 
 #include "rlink.h"
-#include <stdlib.h>
 #ifndef _OS9
 #include <unistd.h>
 #endif

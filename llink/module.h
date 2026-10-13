@@ -15,7 +15,9 @@
 #endif
 
 /* Module sync bytes */
+#ifndef MODSYNC		/* devsys: rlink.h, included first, sets the host's order */
 #define MODSYNC	0x87CD		/* Module header sync bytes */
+#endif
 #define CRCCON	0x800063	/* CRC polynomial constant */
 
 /* Module Type values */

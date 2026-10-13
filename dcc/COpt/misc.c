@@ -22,6 +22,7 @@ char *s1,*s2,*s3,*s4;
     fprintf(stderr,"error: ");
     fprintf(stderr,s1,s2,s3,s4);
     putc('\n',stderr);
+    bank_done();        /* devsys: give the RAM blocks back */
     exit(1);
 }
 
@@ -33,17 +34,26 @@ char *fmt,*s1,*s2,*s3,*s4;
 }
 
 prtins(i)
-instruction *i;
+H i;
 {
-    register label *l;
+    H l, a;
+    int t;
 
     if (dbflag) {
-        fprintf(stderr,"@%p ",i);
-        for (l = i->llist; l; l = l->nextl)
-            fprintf(stderr,"%s%s",l->lname,l->nextl ? "/" : "");
-		if (i && i->lab && i->lab->lname)
-	        fprintf(stderr," %s %s\n",i->mnem,
-                (i->itype & BRANCH ? i->lab->lname : i->args));
+        fprintf(stderr,"@%04x ",i);
+        for (l = I_LLIST(i); l; l = L_NEXTL(l))
+            fprintf(stderr,"%s%s",LAB(l)->lname,L_NEXTL(l) ? "/" : "");
+        if (i == ilist)
+            fprintf(stderr," (list head)\n");
+        else {
+            t = I_ITYPE(i);
+            fprintf(stderr," %s ",INS(i)->mnem);
+            a = I_ARG(i);
+            if (a == 0)         /* a branch whose label isn't set yet */
+                putc('\n',stderr);
+            else
+                fprintf(stderr,"%s\n",(t & BRANCH ? LAB(a)->lname : ARG(a)));
+        }
     }
 }
 #endif

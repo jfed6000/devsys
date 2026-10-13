@@ -52,7 +52,7 @@ las_MEM		:= 8
 las_NOCHECK	:= symtab bank defsimg module preload
 
 llink_DIR	:= $(DEVSYS)/llink
-llink_OBJS	:= rlink_main rl_02 rl_03 misc rl_05 util lwsel
+llink_OBJS	:= rlink_main globals rl_02 rl_03 misc rl_05 util lwsel
 llink_DEFS	:= -DCOCO
 llink_MEM	:= 10
 
@@ -82,8 +82,10 @@ dcc68w_MEM	:= 10
 dcc68w_CC	:= -s
 
 dco68_DIR	:= $(DEVSYS)/dcc/COpt
-dco68_OBJS	:= main parse labels inst optim match misc ctype
+dco68_OBJS	:= main parse labels inst optim match misc ctype bank
 dco68_DEFS	:=
+# no stack checks in the bank accessor (called for every record access)
+dco68_NOCHECK	:= bank
 dco68_MEM	:= 10
 
 dcc_DIR		:= $(DEVSYS)/dcc/DCC
