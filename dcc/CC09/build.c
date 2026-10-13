@@ -49,14 +49,14 @@ int priority;
                     if (temp = parsexp(LEV_3)) {
                         rhs = newnode(COLON,rhs,temp,LEV_3,lno,errpnt);
                     } else {
-                        error("third expression missing");
+                        error(M_THIRD_EXPRESSION_MISSING);
                         reltree(rhs);
                         goto exit;
                     }
                 }
             }
             lhs = newnode(op,lhs,rhs,priop,lno,errpnt);
-        } else error("operand expected");
+        } else error(M_OPERAND_EXPECTED);
     }
 
 exit:
@@ -116,7 +116,7 @@ noexp:
             getsym();
             if (prim = primary())
                 nodep = newnode(op,prim,0,LEV_14,lno,errpnt);
-            else error("primary expected");
+            else error(M_PRIMARY_EXPECTED);
             break;
         case SIZEOF:
             lno=symline;
@@ -218,7 +218,7 @@ int p;
     if ((ptr = optim(parsexp(p))) && ptr->op == CONST) v = ptr->val.num;
     else {
         v = 0;
-        error("constant required");
+        error(M_CONSTANT_REQUIRED);
     }
     if (ptr) reltree(ptr);
     return v;
@@ -294,7 +294,7 @@ constop(op,r,l)
                     default:        return rp > lp;
                 }
             }
-        default:        error("constant operator");
+        default:        error(M_CONSTANT_OPERATOR);
                         return 0;
     }
 }
@@ -311,12 +311,12 @@ getcast()
     errpnt = symptr;
     type = settype(&size,&dptr,&dummy);
     if (type == USTRUCT) {
-        error("undefined struct");
+        error(M_UNDEFINED_STRUCT);
         ptr = NULL;
     } else {
         type = declarator(&ptr,&dptr,type);
         clear(&arglist);
-        if (ptr) error("name in a cast");
+        if (ptr) error(M_NAME_IN_A_CAST);
         ptr = newnode(CAST,0,0,0,lno,errpnt);
         ptr->type = type;
         sizeup(ptr,dptr,size);
@@ -350,7 +350,7 @@ char *errpnt;
 
 experr()
 {
-    error("expression missing");
+    error(M_EXPRESSION_MISSING);
 }
 
 

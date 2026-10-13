@@ -4,13 +4,14 @@
   card.py build [--image FILE] [--out FILE] [--platform k2|jr2]
       A copy of the boot image (default boot/wildbits/l2/l2_wildbits_devsysk2.dsk,
       D44) with devsys installed (D47):
-        /dd/CMDS        las, llink, dcc, dcpp, dcc68, dco68, make
+        /dd/CMDS        las, llink, dcc, dcpp, dcc68, dcc68w, dco68, make
         /dd/LIB         CoCoC's C libraries; NitrOS9 main's alib.l, net.l
                         and wildbitsl2.l (assembled by the host las)
         /dd/DEFS        CoCoC's C headers
         /dd/DEFS/NITROS9  NitrOS9 main's defs/ and its recipe's defsfile
-        /dd/SYS         make.default; n9mod.opt and n9obj.opt (las
-                        options for NitrOS9 sources); help entries in helpmsg
+        /dd/SYS         make.default; dcc68.msg (dcc68's messages);
+                        n9mod.opt and n9obj.opt (las options for NitrOS9
+                        sources); help entries in helpmsg
         /dd/DEVSYS      README, EX (examples), G (selftest's sources), selftest
       Write it to the card with dd (check the device with lsblk first).
       On the F256 type:   /dd/DEVSYS/selftest

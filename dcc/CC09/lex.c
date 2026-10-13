@@ -58,7 +58,7 @@ getsym()
     symptr=lptr-1;
     symline=lineno;
     while(!(sym=chartab[cc])) {
-        error("bad character");
+        error(M_BAD_CHARACTER);
         getch();
         symptr=lptr;
     }
@@ -114,7 +114,7 @@ donum:
                     break;
 #endif
                 default:
-                    error("constant overflow");
+                    error(M_CONSTANT_OVERFLOW);
                     symval = 1;
                     sym = CONST;
                     break;
@@ -435,6 +435,11 @@ char name[];
     /* prepare for release to free list by 'clear()' */
     nptr->downptr = (symnode *) tptr;
 
+#ifndef MKIMG
+    /* a header image may declare it (pch.c) */
+    if (pchfp) pchload(nptr,name);
+#endif
+
     return nptr;
 }
 
@@ -475,7 +480,7 @@ int size;
 {
     char *oldptr;
 
-    if ((oldptr = ALLOCATE(size)) == (char *) -1) fatal("out of memory");
+    if ((oldptr = ALLOCATE(size)) == (char *) -1) fatal(M_OUT_OF_MEMORY);
 
     if (!lobrk) lobrk = oldptr;
     hibrk = oldptr+size;
@@ -706,7 +711,7 @@ pstr()
         }
 
         if (cc!='\'')
-                error("unterminated character constant");
+                error(M_UNTERMINATED_CHARACTER_CONSTA);
         else
                 getch();
 }
@@ -725,7 +730,7 @@ qstr()
 #else
                                 if(!(strfile = fdopen(mkstemp(strname),"w+")))
 #endif
-                                        fatal("can't open strings file");
+                                        fatal(M_CANT_OPEN_STRINGS_FILE);
                         }
                         sfile = strfile;
                         break;
@@ -750,7 +755,7 @@ qstr()
 fillstr:
         while(cc!='"') {
                 if ((lptr-line)==0) {
-                        error("unterminated string");
+                        error(M_UNTERMINATED_STRING);
                         break;
                 }
 

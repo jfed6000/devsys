@@ -160,6 +160,9 @@ char **argv;
 				case 'o':
 					if (*++p == '=') outfname = p + 1;
 					goto done;
+				case 'h':	/* -h=image: headers' declarations are in it */
+					if (*++p == '=') hfile = p + 1;
+					goto done;
 				default:
 					fprintf(stderr, "cpp: unknown option -%c\n", *p);
 					errexit(FAILURE);
@@ -206,6 +209,8 @@ done: ;
 		errexit(FAILURE);
 	}
 
+	if (hfile) readhdrs(hfile);
+
 	strcpy(filename, fname);             /* current file name */
 	strcpy(modname, makename(filename)); /* current module name */
 	putesc(PSECT, modname, pedit);        /* new psect */
@@ -216,6 +221,8 @@ done: ;
 
 	/* read (and expand) a line */
 	while (getline1() != EOF) {
+		if (hfile && inclptr && hdrline(line))
+			continue;	/* a header's text: dcc68 has the image */
 		if (nxtlno != lineno - 1) {     /*   if line number changed */
 			nxtlno = lineno - 1;        /*   tell the compiler */
 			putesc(NEWLINO, nxtlno);
@@ -230,6 +237,9 @@ done: ;
 	if (iftop) {
 		fatal("missing #endif");
 	}
+
+	if (hfile)
+		hdrcheck();
 
 #if defined(OSK)
 	if (devptr) {

@@ -243,7 +243,7 @@ register expnode *node;
 
 diverr()
 {
-    error("divide by zero");
+    error(M_DIVIDE_BY_ZERO);
 }
 
 
@@ -281,7 +281,7 @@ expnode *node;
         case NAME:
             sptr = node->val.sp;
             if (sptr->storage == TYPEDEF) {
-                terror(node,"typedef - not a variable");
+                terror(node,M_TYPEDEF_NOT_A_VARIABLE);
                 makedummy(node);
                 break;
             }
@@ -335,7 +335,7 @@ expnode *node;
         case CAST:
             chkdecl(lhs);
             if (isftn(t = node->type) || isary(t)) {
-                terror(node,"cannot cast");
+                terror(node,M_CANNOT_CAST);
                 t = incref(t);
             }
             if (isptr(t)) cvt(lhs,INT);
@@ -353,7 +353,7 @@ expnode *node;
 #else
             if (lhs->op == UREG) {
 #endif
-                terror(node,"can't take address");
+                terror(node,M_CANT_TAKE_ADDRESS);
                 makedummy(lhs);
             }
             xtype = lhs->sux;
@@ -373,7 +373,7 @@ expnode *node;
                     dptr = dptr ? dptr->dptr : 0;
                 } else node->val.num = 0;
             } else {
-                terror(lhs,"pointer required");
+                terror(lhs,M_POINTER_REQUIRED);
                 makedummy(lhs);
                 lhs->type = POINTER | INT;
                 t = INT;
@@ -411,7 +411,7 @@ expnode *node;
             size = needmos(rhs,&t,&mosar);
             dptr = rhs->dimptr;
             if ((tl = lhs->type) != INT && isptr(tl) == 0) {
-                terror(lhs,"pointer or integer required");
+                terror(lhs,M_POINTER_OR_INTEGER_REQUIRED);
                 lhs->op = CONST;
                 lhs->val.num = 0;
                 lhs->sux = 0;
@@ -444,7 +444,7 @@ strcommon:
                 move(sptr,lhs,6);
                 t = INT;
             } else {
-                terror(lhs,"not a function");
+                terror(lhs,M_NOT_A_FUNCTION);
                 t = btype(t);
             }
             dptr = lhs->dimptr;
@@ -518,7 +518,7 @@ strcommon:
         case SHR:
 #ifdef  DOFLOATS
             if ((t = usual(lhs)) == DOUBLE || usual(rhs) == DOUBLE) {
-dblerr:         terror(node,"both must be integral");
+dblerr:         terror(node,M_BOTH_MUST_BE_INTEGRAL);
                 makedummy(node);
                 break;
             }
@@ -642,7 +642,7 @@ asscommon:
             dptr = lhs->dimptr;
             break;
 asserr:
-            terror(node,"type mismatch");
+            terror(node,M_TYPE_MISMATCH);
             break;
         case COLON:
             if (isptr(t = lhs->type)) {
@@ -668,7 +668,7 @@ asserr:
             break;
         default:
             if (op >= ASSPLUS) goto chass;
-            comperr(node,"type check");
+            comperr(node,M_TYPE_CHECK);
     }
     node->type = t;
     node->size = size;
@@ -687,7 +687,7 @@ chknull(node)
 register expnode *node;
 {
     if (node->op != CONST || node->val.num != 0) {
-        terror(node,"should be NULL");
+        terror(node,M_SHOULD_BE_NULL);
         node->op = CONST;
         node->val.num = 0;
     }
@@ -711,7 +711,7 @@ register expnode *node;
         case ULONG:
         case INT:
         case UNSIGN: break;
-        default: terror(node,"type error");
+        default: terror(node,M_TYPE_ERROR);
             t = INT;
    }
    return (node->type = t);
@@ -971,7 +971,7 @@ register expnode *node;
         if (flag || (isary(node->type)==0 && node->type!=STRUCT))
             return;
     }
-    terror(node,"lvalue required");
+    terror(node,M_LVALUE_REQUIRED);
     makedummy(node);
 }
 
@@ -980,7 +980,7 @@ chkdecl(node)
 register expnode *node;
 {
     if (node->op == NAME && node->type == UNDECL) {
-        terror(node,"undeclared variable");
+        terror(node,M_UNDECLARED_VARIABLE);
         makedummy(node);
     }
 }
@@ -1012,7 +1012,7 @@ int *t,*mosar;
         return sptr->size;
     }
 err:
-    terror(node,"struct member required");
+    terror(node,M_STRUCT_MEMBER_REQUIRED);
     makedummy(node);
     node->op = CONST;
     node->val.num = 0;
@@ -1026,7 +1026,7 @@ chkstrct(node)
 register expnode *node;
 {
     if ((node->type) == STRUCT || node->type == UNION) {
-        terror(node,"structure or union inappropriate");
+        terror(node,M_STRUCTURE_OR_UNION_INAPPROPRI);
         makedummy(node);
     }
     return node->type;
@@ -1063,5 +1063,5 @@ isint(t)
 
 integerr(node)
 {
-    terror(node,"must be integral");
+    terror(node,M_MUST_BE_INTEGRAL);
 }

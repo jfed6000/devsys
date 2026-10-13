@@ -178,7 +178,7 @@ dumpstrings()
      if(strfile) {
           fclose(strfile);
           if((strfile=fopen(strname,"r")) == NULL)
-               fatal("can't read strings file");
+               fatal(M_CANT_READ_STRINGS_FILE);
           while((c = getc(strfile)) != EOF)
                putc(c,code);
           fclose(strfile);
@@ -194,7 +194,7 @@ dumpstrings()
           rewind(strfile);
           while((c = getc(strfile)) != EOF)
                putc(c,code);
-          if(ferror(strfile)) fatal("dumpstrings");
+          if(ferror(strfile)) fatal(M_DUMPSTRINGS);
           fclose(strfile);
           unlink(strname);
      }

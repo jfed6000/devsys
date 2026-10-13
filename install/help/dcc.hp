@@ -8,3 +8,5 @@ Opts  : -f=<path>  output program (a bare name goes to /dd/cmds)
         -l=<file>  library                  -ls sys.l
         -n=<name>  module name              -s  no stack checks
         -T=<dir>   temporary files (default /dd/tmp)
+        -H=<img>   make a header image from a file of #includes
+        -h=<img>   take header declarations from an image

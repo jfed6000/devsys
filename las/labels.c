@@ -4,10 +4,13 @@
  * $Id::                                                        $   *
  * **************************************************************** */
 
-#include <stdlib.h>
-
+/* rma.h before stdlib.h: rma.h redefines void and const for what
+ * follows, so this order makes stdlib.h read as it does in las's header
+ * image (dcc -h, step 17), and the image fits this file too */
 #define NEED_CTYPE
 #include "rma.h"
+
+#include <stdlib.h>
 
 #ifdef COCO
 void * getmem ();

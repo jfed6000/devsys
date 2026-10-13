@@ -541,6 +541,8 @@ global direct char  *symptr,    /* start of current symbol */
 
 global direct FILE  *strfile;   /* strings output file */
 
+global direct FILE  *pchfp;     /* header image in use (pch.c), or NULL */
+
 extern char     chartab[128],   /* character translater table */
                 valtab[128];    /* operator precedence table */
 
@@ -582,8 +584,14 @@ typedef struct {
 } labstruc;
 
 
+#include "msgs.h"
+
+#ifndef MSGFILE
+# define MSGFILE "/dd/SYS/dcc68.msg"
+#endif
+
 /*  function type definitions  */
-char *grab();
+char *grab(), *msg();
 
 extern  expnode *parsexp(), *primary(), *explist(), *getcast(),
                 *newnode(), *optim(), *fold(), *chtype(), *fixup(),

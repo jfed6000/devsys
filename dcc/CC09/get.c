@@ -82,6 +82,9 @@ getlin()
                                 fprintf(code,"%s\n",line);
                                 continue;
                         case NEWFNAME:
+#ifdef MKIMG
+                                pchname(line);  /* the image's headers */
+#endif
                                 strncpy (filename, line, sizeof (filename) - 1);
                                 filename[sizeof (filename) - 1] = '\0';
 #ifdef SPLIT
@@ -142,6 +145,9 @@ getlin()
                         }
                 }
                 else {
+#ifdef MKIMG
+                        pchline(line);  /* a header's text: its checksum */
+#endif
 #ifdef  SPLIT
 /*
                         p2line(++lineno,soffset);
@@ -214,6 +220,6 @@ cgets()                 /* Function to input a line of source.
         /* if we get here, lp == max; i.e. too far */
         symline = ++lineno;             /* fix up for 'error' */
         symptr = line;
-        fatal("input line too long");   /* NO RETURN ! */
+        fatal(M_INPUT_LINE_TOO_LONG);   /* NO RETURN ! */
 }
 

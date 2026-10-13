@@ -41,8 +41,23 @@ Changes (2026-10-09, step 14; docs/DESIGN.md D43):
         storerr/ptrmis/indir (misc.c), one copy of three repeated messages
   COpt  level1.patterns: "puls d / puls u,pc" -> "puls d,u,pc"; the Linux
         build reads its patterns from this directory, not ~/.dcc
+Changes (2026-10-13, step 17: header images; docs/DESIGN.md D50):
+  CC09  -h=IMAGE: when lookup() makes a new symbol, pch.c loads its
+        declaration from a header image if the image has the name (a
+        filter in memory, then hash chains on disk); names a file never
+        uses are never loaded. Built with -DMKIMG it is dcc68w, which
+        writes an image (-w=IMAGE) of a headers-only file; native, it is
+        the parser alone (nogen.c stands in for the rest), 4 blocks
+  CC09  messages: each is a 2-byte code (msgs.h, where the texts are
+        comments); msg() reads its text from /dd/SYS/dcc68.msg (on Linux
+        CC09/dcc68.msg, made from msgs.h), so the texts cost no room
+  CPP   -h=IMAGE: headers the image holds are read (their #defines count)
+        but not passed on; each one's text must have the image's checksum,
+        else dcpp exits 2. Headers the image doesn't hold pass as usual
+  DCC   -H=IMAGE FILE.c makes an image (dcpp, dcc68w); -h=IMAGE uses one,
+        and compiles a file without it when dcpp exits 2, saying so
 
 The 6809 build (../native/GNUmakefile) compiles dcc68 with -s and
 without -DPROF so it stays at most 48,384 bytes (6 blocks ending by $FD00);
-it is 48,367 now.
+it is 48,341 now.
 Design and roadmap: ../docs/DESIGN.md

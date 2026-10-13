@@ -218,7 +218,7 @@ register expnode *tree;
                     assop(tree,op);
                     break;
                 }
-                comperr(tree,"translation");
+                comperr(tree,M_TRANSLATION);
                 printf("%x\n",op);
         }
 #ifdef DEBUG
@@ -361,7 +361,7 @@ rest:       loadexp(lhs);
             break;
 
         default:
-            comperr(node,"binary op.");
+            comperr(node,M_BINARY_OP);
     }
 
 out: shiftflag = 0;
@@ -1146,7 +1146,7 @@ expnode *node;
                             newop = lhs->op;
                             break;
                         default:
-                            comperr(lhs,"x translate");
+                            comperr(lhs,M_X_TRANSLATE);
                     }
 #ifdef REGCONTS
                 }

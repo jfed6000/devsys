@@ -290,7 +290,7 @@ leaexit:
                     nl();
                     return;
                 default:
-                    error("LEA arg");
+                    error(M_LEA_ARG);
                     break;
             }
             return;
@@ -369,7 +369,7 @@ int *arg;
         case LCONST:    getcon(arg,LONGSIZE/2,FALSE); break;
 
         default:
-            error("codgen - longs");
+            error(M_CODGEN_LONGS);
             os(unkopr);
             od(op);
             nl();
@@ -421,7 +421,7 @@ register int arg;
         case DTOL:      fcall("_dtol"); break;
         case DTOI:      fcall("_dtoi"); break;
         default:
-            error("codgen - floats");
+            error(M_CODGEN_FLOATS);
             os(unkopr);
             od(op);
             nl();
@@ -474,7 +474,7 @@ int n, f;
                 break;
             case 2: /* float */
             default:
-                error("codgen - float conv");
+                error(M_CODGEN_FLOAT_CONV);
         }
 
 # ifdef DEBUG
@@ -613,7 +613,7 @@ register expnode *val;
             sp += 2;	/* s++, explicitly 2 bytes */
             break;
         default:
-            error("compiler trouble");
+            error(M_COMPILER_TROUBLE);
             break;
     }
 }
@@ -717,7 +717,7 @@ dooff:
             os(spind); os("++"); sp += 2;	/* ++, explicitly 2 bytes */
             break;
         default:
-            error("dereference");
+            error(M_DEREFERENCE);
     }
 
     if(arg & INDIRECT) ob(']');
@@ -728,7 +728,7 @@ char *
 getrel(op)
 {
     switch (op) {
-        default:    error("rel op");
+        default:    error(M_REL_OP);
         case EQ:    return "eq ";
         case NEQ:   return "ne ";
         case LEQ:   return "le ";
