@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include "rlink.h"
 
 #ifdef _OS9

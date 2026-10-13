@@ -1,4 +1,10 @@
 
+/* rlink.h - llink's one header. Every .c file includes it first, so the
+ * header text is the same in each and one header image (dcc -H, D50)
+ * serves them all; globals.c defines the variables (MAIN) */
+
+#include <stdlib.h>
+
 #ifdef MAIN
 #   define GLOBAL
 #else
@@ -140,12 +146,7 @@ GLOBAL direct OBFILES  *FirstMod;
 GLOBAL direct OBFILES  *D003f;
 GLOBAL direct SYMDAT   *commnsyms;
 
-GLOBAL
-/* Do following to match original */
-#ifdef MAIN
-direct
-#endif
-char                  *RofFil;
+GLOBAL direct char    *RofFil;
 GLOBAL direct UINT     rofcount;    /* D0045 */
 GLOBAL direct UINT     dup_find;
 GLOBAL direct int      CurntFil;

@@ -1,9 +1,9 @@
+#include "rlink.h"
 #include "module.h"
 #ifndef _OS9
 #include <unistd.h>
 #include <sys/types.h>
 #endif
-#include "rlink.h"
 
 char      idpdBuf[256];
 char      _Crc[3] = { '\xff', '\xff', '\xff' };

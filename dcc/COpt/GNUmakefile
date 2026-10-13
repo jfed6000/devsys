@@ -9,7 +9,7 @@ CFLAGS	= -g -mx32 -fsigned-char -DUNIX -DDEBUG -DCONFDIR=\"$(DCCDIR)\" \
 LDFLAGS = -mx32
 
 BINARY	= dco68
-OBJS    = main.o parse.o labels.o inst.o optim.o match.o misc.o ctype.o
+OBJS    = main.o parse.o labels.o inst.o optim.o match.o misc.o ctype.o bank.o
 CONFS=	level1.patterns level2.patterns
 
 $(BINARY):	$(OBJS)

@@ -1,11 +1,10 @@
+#include "rlink.h"
 #include <ctype.h>
-#include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 #ifndef _OS9
 #   include <unistd.h>
 #endif
-#include "rlink.h"
 
 direct struct ext_ref *ExtStart;
 

@@ -1,8 +1,5 @@
 /* rlink_main.c - mainline routine to build llink (devsys fork of rlink) */
 
-#define MAIN
-
-#include <stdlib.h>
 #include "rlink.h"
 
 int tidy();

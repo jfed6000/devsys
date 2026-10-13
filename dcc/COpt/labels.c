@@ -1,53 +1,62 @@
 #include "op.h"
 
-chain ltable[128];
-direct label *lfree;
+/* devsys: labels are banked records (op.h); each bucket's list head is
+ * a banked chain record, ltable holds their handles */
+
+H ltable[128];
+direct H lfree;
 
 labelinit()
 {
     register int i;
     register chain *p;
+    H h;
 
-    for(p = ltable,i = 0; i < 128; i++) {
-        p->succ = p->pred = p;
-        p++;
+    for (i = 0; i < 128; i++) {
+        ltable[i] = h = bank_static(sizeof(chain));
+        p = CHN(h);
+        p->succ = p->pred = h;
     }
 }
 
-label *inslabel(s)
+/* s is in ordinary memory */
+H
+inslabel(s)
 char *s;
 {
-    register chain *l;
-    register label *p;
+    register label *lb;
+    H l, p, t;
 
     p = newlabel();
 
-    l = &ltable[hash(s)];
-    strcpy(p->lname,s);
+    l = ltable[hash(s)];
+    strcpy(LAB(p)->lname,s);
 
     /* put at back of list */
-    p->succ = l;
-    p->pred = l->pred;
-    l->pred->succ = p;
-    l->pred = p;
+    t = C_PRED(l);
+    lb = LAB(p);
+    lb->succ = l;
+    lb->pred = t;
+    CHN(t)->succ = p;
+    CHN(l)->pred = p;
 
     return p;
 }
 
-label *findlabel(s)
+/* s is in ordinary memory */
+H
+findlabel(s)
 char *s;
 {
-    label *p;
-    chain *l;
+    H p, l;
 
-    l = &ltable[hash(s)];
+    l = ltable[hash(s)];
 
-    /* Fix: Cast l to label* for comparison */
-    for(p = (label*)l->succ; p != (label*)l; p = (label*)p->succ) {
-        if(strcmp(s,p->lname) == 0)
+    for (p = C_SUCC(l); p != l; p = L_SUCC(p)) {
+        if (strcmp(s,LAB(p)->lname) == 0)
             return p;
     }
-    return NULL;
+    return 0;
 }
 
 hash(s)
@@ -61,32 +70,39 @@ register char *s;
     return i & 127;
 }
 
-label *
+H
 newlabel()
 {
-    register label *p;
+    register label *lb;
+    H p;
 
-    if(p = lfree) {
-        lfree = (label*)p->succ;
-        /* Fix: Handle lflags separately since it's likely an int */
-        p->dest = NULL;
-        p->rlist = NULL; 
-        p->nextl = NULL;
-        p->lflags = 0;  /* Assuming lflags is an int - use 0 instead of NULL */
-    } else p = grab(sizeof(*p));
+    if (p = lfree) {
+        lb = LAB(p);
+        lfree = lb->succ;
+        lb->dest = 0;
+        lb->rlist = 0;
+        lb->nextl = 0;
+        lb->lflags = 0;
+    } else p = bank_alloc(sizeof(label));
 
     return p;
 }
 
 freelabel(p)
-register label *p;
+H p;
 {
-    if (p->dest == NULL && p->rlist == NULL) {
+    register label *lb;
+    H s, pr;
+
+    lb = LAB(p);
+    if (lb->dest == 0 && lb->rlist == 0) {
         /* remove from ltable */
-        p->pred->succ = p->succ;
-        p->succ->pred = p->pred;
+        s = lb->succ;
+        pr = lb->pred;
+        CHN(pr)->succ = s;
+        CHN(s)->pred = pr;
         /* add to free list */
-        p->succ = (chain*)lfree;
+        LAB(p)->succ = lfree;
         lfree = p;
     }
 }
