@@ -16,7 +16,7 @@
 
 #include "cj.h"
 
-static double normaliz();
+static DBLETYPE normaliz();
 
 #define     isdigit(c)  (chartab[c]==DIGIT)
 
@@ -30,7 +30,7 @@ typedef union {
 } numptrs;
 
 #ifdef  DOFLOATS
-extern double atoftbl[];
+extern DBLETYPE atoftbl[];
 #endif
 direct int stringlen;
 
@@ -107,7 +107,7 @@ donum:
                     break;
 #ifdef  DOFLOATS
                 case DOUBLE:
-                    dblp = (double *) grab(sizeof(double));
+                    dblp = (DBLETYPE *) grab(sizeof(DBLETYPE));
                     *dblp = *np.dp;
                     symval = (int) dblp;
                     sym = FCONST;
@@ -494,12 +494,16 @@ number(type,np)
 register numptrs np;
 {
     long i;
-    double n, scale(), normaliz();
+    DBLETYPE n, scale(), normaliz();
     int exp, esign, digcount = 0;
     register char *cp;
 
     i = 0;
+#ifdef FP6809
+    *(int64_t *) &n = 0;
+#else
     n = 0;
+#endif
     cp = (char *) &n;
 
     if (type == DOUBLE) goto fraction;
@@ -621,7 +625,9 @@ longint:
 # endif	/* DEBUG */
         *np.lp = *((long*)&n+1);
         return LONG;
-    } else if (*((short*)&n+2)) {
+    } else if (*((short*)&n+2) || *((short*)&n+3) < 0) {
+        /* devsys: and 32768..65535, as on Linux (K&R: a decimal constant
+         * too big for an int is long; 65535 was the int -1) */
         goto longint;   /* too big for int */
     } else {
         *np.ip = *((short*)&n+3);
@@ -892,16 +898,29 @@ char c;
 }
 
 
-static double
+static DBLETYPE
 normaliz(n)
 #ifdef _LIL_END
 int64_t *n;
 {
-    return (double)(*n);
+    DBLETYPE d;
+
+    fp_normaliz(&d, (uint64_t) *n);  /* fp6809.c: as the 6809 does it */
+    return d;
 }
 #else /* big endian */
 long n[];
 {
+    register char *p;
+
+    /* devsys: n[1] is the low 32 bits, but a long is signed: with its
+     * top bit set it reads as n[1] - 2^32, so the high part gets one
+     * more 2^32 (4294967295.0 came out as 3865470565). Added a byte at
+     * a time: addin never sets byte 0, so the carry stops there */
+    p = (char *) n + 3;
+    if (p[1] & 0x80)
+        while (!++*p--)
+            ;
     return n[0] * 4294967296. + n[1];
 }
 #endif
@@ -953,7 +972,7 @@ char c;
     val = val * 10 + (c - '0');
 
     *n = val;
-    if (val < 0)    /* we wrapped around */
+    if (val >> 56)  /* devsys: 7 bytes, as the 6809's addin */
         return 1;
 
     return 0; /* assume we didn't wrap around */

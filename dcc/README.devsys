@@ -57,7 +57,19 @@ Changes (2026-10-13, step 17: header images; docs/DESIGN.md D50):
   DCC   -H=IMAGE FILE.c makes an image (dcpp, dcc68w); -h=IMAGE uses one,
         and compiles a file without it when dcpp exits 2, saying so
 
+Changes (2026-10-13, step 18: float constants; docs/DESIGN.md D52):
+  CC09  on Linux a float or double constant is kept in the 6809's format
+        (DBLETYPE is a struct there) and built, negated and converted the
+        way the 6809's cfloats.a does it (fp6809.c, which replaces
+        fltconv.c's IEEE conversion; scale.c is the 6809's only); the
+        constant operations in optim.c, inits.c go through cj.h's D_
+        macros, which on the 6809 are the plain C they were
+  CC09  6809 fixes: normaliz() adds the digit sum's low word as unsigned
+        (4294967295.0 was 3865470565); scale() leaves zero alone (0.0 was
+        2^126); a decimal constant 32768..65535 is a long (65535 was the
+        int -1). On Linux addin() overflows at 2^56, as on the 6809
+
 The 6809 build (../native/GNUmakefile) compiles dcc68 with -s and
 without -DPROF so it stays at most 48,384 bytes (6 blocks ending by $FD00);
-it is 48,341 now.
+it is 48,381 now.
 Design and roadmap: ../docs/DESIGN.md

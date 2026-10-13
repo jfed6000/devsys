@@ -445,10 +445,6 @@ int *p;
     ol("puls x");
 }
 
-#ifdef IEEE_FLOATS
-double dadjust();
-#endif
-
 defcon(p,n,f)
 register int16_t *p;
 int n, f;
@@ -460,44 +456,17 @@ int n, f;
     else if (p == NULL) {
         for (i = 1; i++ < n; ) os("0,");
         ob('0');
-#ifdef IEEE_FLOATS
-    } else if (f == 1) { /* f = float format */
-        int16_t *temp = alloca(n * 2); /* n is in words, so we double it */
+#ifdef FP6809
+    } else if (f == 1) {
+        /* a float or double is in the 6809's format and byte order
+         * (fp6809.c): its words as they are */
+        register unsigned char *b = (unsigned char *) p;
 
-# ifdef DEBUG
-        fprintf(stderr, "converting float: %g (%016llx)\n", *(double *)p, *(int64_t *)p);
-# endif
-
-        switch (n) {
-            case 4: /* double */
-                *(double *)temp = dadjust(*(double *)p);
-                break;
-            case 2: /* float */
-            default:
-                error(M_CODGEN_FLOAT_CONV);
-        }
-
-# ifdef DEBUG
-        fprintf(stderr, "after conversion: %016llx\n", *(int64_t *)temp);
-# endif
-
-# ifdef _LIL_END
-        /*
-         * We're only swapping the order in which we output the words, the
-         * individual words will format correctly since they're native.
-         */
-        temp += (n - 1);
-        for (i = n; i > 0; --i){
-            od(*temp--);
-            if (i > 1) ob(',');
-        }
-# else	/* assume bigendian */
-        for (i = 0; i < n; ++i){
-            od(*temp++);
+        for (i = 0; i < n; ++i, b += 2) {
+            od((int16_t) ((b[0] << 8) | b[1]));
             if (i != n - 1) ob(',');
         }
-# endif /* ! _LIL_END */
-#endif /* IEEE_FLOATS */
+#endif /* FP6809 */
 	} else {
 # ifdef _LIL_END
         /*

@@ -38,13 +38,33 @@
 /*	Floating-point format
  *
  *	The native compiler uses a variant of PDP-11 D_floating format for
- *	'double'. The cross-compiler tries to convert the system's native double
- *	format into as close a form as possible. 'float' isn't really a problem
- *	until we have prototypes.
+ *	'double'. devsys: the cross-compiler keeps a float or double constant
+ *	in that format too, its bytes in the 6809's order, and does what the
+ *	compiler does with constants (build a literal, negate, convert) the
+ *	way the 6809's cfloats.a does it (fp6809.c). So both compilers write
+ *	the same bytes; the host's IEEE doubles lost 3 bits and made HUGE_VAL
+ *	0. A struct, so that host arithmetic on a constant doesn't compile.
+ *	The D_ macros are the plain C operations on the 6809.
  */
-#ifdef __STDC_IEC_559__
-# define IEEE_FLOATS
-#endif /* __STDC_IEC_559__ */
+#ifndef _OS9
+# define FP6809
+typedef struct { unsigned char b[8]; } dbl6809;
+typedef struct { unsigned char b[4]; } flt6809;
+# define D_NEG(p)	fp_neg (p)
+# define D_FROMI(p, i)	fp_ltod (p, (long) (i))
+# define D_FROML(p, l)	fp_ltod (p, l)
+# define D_TOI(p)	((int) (short) fp_dtol (p))
+# define D_TOL(p)	fp_dtol (p)
+# define D_TOF(f, d)	fp_dtof (f, d)
+long fp_dtol ();
+#else
+# define D_NEG(p)	(*(p) = -*(p))
+# define D_FROMI(p, i)	(*(p) = (i))
+# define D_FROML(p, l)	(*(p) = (l))
+# define D_TOI(p)	(*(p))
+# define D_TOL(p)	(*(p))
+# define D_TOF(f, d)	(*(f) = *(d))
+#endif
 
 /*	Endianness definitions.
  *
@@ -117,8 +137,8 @@
 # define register
 # define INTTYPE	short
 # define LONGTYPE	long
-# define FLOATYPE	float
-# define DBLETYPE	double
+# define FLOATYPE	flt6809
+# define DBLETYPE	dbl6809
 # define ALLOCATE	sbrk
 #endif
 

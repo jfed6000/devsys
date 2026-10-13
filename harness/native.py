@@ -75,6 +75,10 @@ import lwdiff  # noqa: E402
 MAME = os.path.join(HOME, "projects/wild/mame/mame")
 OS9 = os.path.join(HOME, "projects/coco-shelf/bin/os9")
 COCOC = os.path.join(HOME, "projects/dcc/CoCoC")
+# The C libraries devsys builds (step 18) and its os9defs.a (CoCoC's without
+# the unfinished CMOC blocks no RMA-syntax assembler takes)
+CLIB = os.path.join(DEVSYS, "clib", "lib")
+CLIBDEFS = os.path.join(DEVSYS, "clib", "defs")
 NATIVE = os.path.join(DEVSYS, "native")
 # The devsys boot disk (boot/wildbits/l2: NitrOS9 main plus pipes and /nil,
 # D44); build it with "make" there
@@ -134,7 +138,7 @@ def make_image(src, dsk, dirs=("LIB", "TMP", "T")):
     os9("del", f"{dsk},SYS/dcc68.msg", check=False)
     put(os.path.join(DEVSYS, "dcc", "CC09", "dcc68.msg"), f"{dsk},SYS/dcc68.msg", text=True)
     for f in ("cstart.r", "clib.l", "sys.l"):
-        put(os.path.join(COCOC, "Lib", f), f"{dsk},LIB/{f}")
+        put(os.path.join(CLIB, f), f"{dsk},LIB/{f}")
     for f in ("level1.patterns", "level2.patterns"):
         put(os.path.join(DEVSYS, "dcc/COpt", f), f"{dsk},LIB/{f}", text=True)
     defs = os.path.join(COCOC, "Defs")
@@ -144,7 +148,10 @@ def make_image(src, dsk, dirs=("LIB", "TMP", "T")):
         if rel != ".":
             os9("makdir", f"{dsk},{target}", check=False)
         for f in files:
-            put(os.path.join(root, f), f"{dsk},{target}/{f}", text=True)
+            src = os.path.join(root, f)
+            if rel == "." and os.path.exists(os.path.join(CLIBDEFS, f)):
+                src = os.path.join(CLIBDEFS, f)
+            put(src, f"{dsk},{target}/{f}", text=True)
 
 
 # ------------------------------------------------------------------ suites
@@ -272,9 +279,11 @@ HELLO = os.path.join(HERE, "native", "hello.c")
 SETTLE = os.path.join(HERE, "native", "settle.asm")
 SETTLE_PRAGMAS = "pcaspcr,nosymbolcase,condundefzero,undefextern,dollarnotlocal,noforwardrefmax"
 # The cc suite's programs: source, and the line each must print. longret
-# checks long and double results returned in X (step 14, D43)
+# checks long and double results returned in X (step 14, D43); clibtest
+# what step 18 fixed in the C library and in dcc68's constants (D52)
 CC_PROGS = [("hello", HELLO, "hello from dcc on the F256: 45"),
-            ("longret", os.path.join(HERE, "native", "longret.c"), "longret: all right")]
+            ("longret", os.path.join(HERE, "native", "longret.c"), "longret: all right"),
+            ("clibtest", os.path.join(HERE, "native", "clibtest.c"), "clibtest: all right")]
 
 
 def suite_cc(dsk):
@@ -374,7 +383,7 @@ def host_cc(name, src):
     os.makedirs(d, exist_ok=True)
     env = lwdiff.clean_env()
     dcc = os.path.join(DEVSYS, "dcc")
-    lib = os.path.join(COCOC, "Lib")
+    lib = CLIB
 
     def run(argv, **kw):
         p = subprocess.run(argv, cwd=d, env=env, capture_output=True, **kw)
@@ -959,7 +968,7 @@ def host_link(tool, rels, out):
     """The host llink's module from the given objects, linked as
     native/GNUmakefile links TOOL."""
     mem = native_var(f"{tool}_MEM")
-    lib = os.path.join(COCOC, "Lib")
+    lib = CLIB
     p = subprocess.run([os.path.join(DEVSYS, "llink/llink"), f"-o={out}", f"-n={tool}"]
                        + ([f"-M={mem[0]}"] if mem else [])
                        + [os.path.join(lib, "cstart.r")] + rels

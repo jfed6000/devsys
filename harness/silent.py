@@ -33,7 +33,7 @@ import lwdiff  # noqa: E402
 
 DEVSYS = os.path.dirname(HERE)
 COCOC = os.path.expanduser("~/projects/dcc/CoCoC")
-LIB = os.path.join(COCOC, "Lib")
+LIB = os.path.join(DEVSYS, "clib", "lib")   # step 18
 LAS = os.path.join(DEVSYS, "las/build/unix/las")
 LLINK = os.path.join(DEVSYS, "llink/llink")
 DCC = os.path.join(DEVSYS, "dcc")

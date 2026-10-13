@@ -38,5 +38,11 @@ DEVSYS_DCC=${DEVSYS_DCC:-$HOME/projects/devsys/dcc}
 "$DCC/CC09/dcc68" charcond.i -o=charcond.cococ.a
 "$DEVSYS_DCC/CC09/dcc68" charcond.i -o=charcond.a
 
+# Double constants (chapter 7, DESIGN.md D52): CoCoC's Linux dcc68 converts
+# from IEEE doubles; devsys's builds them as the 6809 does (fp6809.c)
+"$DCC/CPP/dcpp" "$EX/consts.c" > consts.i
+"$DCC/CC09/dcc68" consts.i -o=consts.cococ.a 2> consts.cococ.err
+"$DEVSYS_DCC/CC09/dcc68" consts.i -o=consts.a
+
 echo "Built into $OUT:"
 ls -l "$OUT"

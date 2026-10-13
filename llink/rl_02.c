@@ -372,7 +372,7 @@ L0937 (bp, do_vars)
         if (L1bcf (my_sym) && ! LwLink)
         {
             fprintf (stderr, "symbol already defined: %-8s in %s\n",
-                    my_sym, newobj);
+                    my_sym->sname, newobj->obname);
             ++dup_find;
         }
 

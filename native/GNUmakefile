@@ -2,7 +2,7 @@
 #
 # Builds las, llink and DCC (dcc, dcpp, dcc68, dco68) as OS-9 Level 2
 # modules, compiled on Linux by devsys's own DCC and linked by its own llink
-# against CoCoC's C library. The result is what goes onto the F256:
+# against devsys's C library (clib/, step 18). The result is what goes onto the F256:
 #
 #   make -f GNUmakefile          # everything into bin/
 #   make -f GNUmakefile las      # one tool
@@ -14,7 +14,8 @@
 
 DEVSYS	:= $(abspath ..)
 COCOC	?= $(HOME)/projects/dcc/CoCoC
-CLIB	:= $(COCOC)/Lib
+CLIB	:= $(DEVSYS)/clib/lib
+CLIBS	:= $(CLIB)/cstart.r $(CLIB)/sys.l $(CLIB)/clib.l
 
 DCPP	:= $(DEVSYS)/dcc/CPP/dcpp
 DCC68	:= $(DEVSYS)/dcc/CC09/dcc68
@@ -115,8 +116,8 @@ $(OBJ)/$(1)/%.r: $$($(1)_DIR)/%.c $$(wildcard $$($(1)_DIR)/*.h) $(HOSTTOOLS) | $
 	cd $(OBJ)/$(1) && $(DCO68) $(OPTFLAGS) <$$*.raw.a >$$*.a
 	cd $(OBJ)/$(1) && $(LAS) -l -s -o=$$*.r $$*.a >$$*.lst || { grep -B1 -A1 '\*\*\*' $$*.lst; exit 1; }
 
-$(BIN)/$(1): $$(patsubst %,$(OBJ)/$(1)/%.r,$$($(1)_OBJS)) | $(BIN)
-	$(LLINK) -o=$$@ -n=$(1) $(if $($(1)_MEM),-M=$($(1)_MEM)) -m -s $(CLIB)/cstart.r $$^ -l=$(CLIB)/sys.l -l=$(CLIB)/clib.l >$(OBJ)/$(1).map
+$(BIN)/$(1): $$(patsubst %,$(OBJ)/$(1)/%.r,$$($(1)_OBJS)) $(CLIBS) | $(BIN)
+	$(LLINK) -o=$$@ -n=$(1) $(if $($(1)_MEM),-M=$($(1)_MEM)) -m -s $(CLIB)/cstart.r $$(filter %.r,$$(filter-out $(CLIB)/%,$$^)) -l=$(CLIB)/sys.l -l=$(CLIB)/clib.l >$(OBJ)/$(1).map
 
 $(OBJ)/$(1):
 	mkdir -p $$@
@@ -126,6 +127,10 @@ $(foreach t,$(TOOLS),$(eval $(call TOOL,$(t))))
 
 $(BIN):
 	mkdir -p $@
+
+# The libraries: clib's own makefile, when a tool or a library source changed
+$(CLIBS) &: $(HOSTTOOLS) $(shell find $(DEVSYS)/clib/klibc $(DEVSYS)/clib/syslib $(DEVSYS)/clib/defs -type f) $(DEVSYS)/clib/GNUmakefile
+	$(MAKE) -C $(DEVSYS)/clib -f GNUmakefile
 
 # The object list of one tool, in link order, and its extra memory
 # (harness/native.py)

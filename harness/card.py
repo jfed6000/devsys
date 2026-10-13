@@ -5,9 +5,10 @@
       A copy of the boot image (default boot/wildbits/l2/l2_wildbits_devsysk2.dsk,
       D44) with devsys installed (D47):
         /dd/CMDS        las, llink, dcc, dcpp, dcc68, dcc68w, dco68, make
-        /dd/LIB         CoCoC's C libraries; NitrOS9 main's alib.l, net.l
-                        and wildbitsl2.l (assembled by the host las)
-        /dd/DEFS        CoCoC's C headers
+        /dd/LIB         devsys's C libraries (clib/, step 18); NitrOS9
+                        main's alib.l, net.l and wildbitsl2.l (assembled
+                        by the host las)
+        /dd/DEFS        CoCoC's C headers, devsys's os9defs.a
         /dd/DEFS/NITROS9  NitrOS9 main's defs/ and its recipe's defsfile
         /dd/SYS         make.default; dcc68.msg (dcc68's messages);
                         n9mod.opt and n9obj.opt (las options for NitrOS9

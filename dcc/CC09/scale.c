@@ -3,6 +3,9 @@
 /*
 	These functions are modified from the new version of the C library,
 	because the new version of the code is too big for the compiler.
+
+	devsys: for the 6809 only. The cross-compiler's scale() is in
+	fp6809.c: the same steps in the 6809's arithmetic.
 */
 #ifdef _OS9
 static int atoftbl[] = {
@@ -34,7 +37,6 @@ register int power;
 
 	return dtbl[power];
 }
-#endif
 
 
 static double
@@ -42,11 +44,7 @@ scale0 (d, cnt, pos)
 double	d;
 register int	cnt, pos;
 {
-#ifdef _OS9
 	return (pos ? (d * exp5 (cnt)) : (d / exp5 (cnt)));
-#else
-	return (pos ? (d * pow(5.0, (double) cnt)) : (d / pow (5.0, (double) cnt)));
-#endif
 }
 
 
@@ -55,10 +53,10 @@ scale(d, cnt, sign)
 double	d;
 int		cnt, sign;
 {
-#ifdef _OS9
 	register unsigned char *dx = &d;
 
-	if (cnt) {
+	/* devsys: not for zero (exponent byte 0): 0.0 came out as 2^126 */
+	if (cnt && dx[7]) {
 		d = scale0 (d, cnt, sign);
 
 		/* poor man's ldexp() */
@@ -67,9 +65,5 @@ int		cnt, sign;
 	}
 
 	return d;
-#else
-	if (!cnt) return d;
-
-	return ldexp (scale0 (d, cnt, sign), sign ? cnt : -cnt);
-#endif
 }
+#endif /* _OS9 */

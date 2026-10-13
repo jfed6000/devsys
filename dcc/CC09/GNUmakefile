@@ -17,8 +17,7 @@ CKEYS	= ckeys
 DEPS	= cj.h msgs.h GNUmakefile $(wildcard local.make)
 OBJS	= bool.o build.o cmain.o codgen.o declare.o floats.o get.o inits.o \
 	lex.o local.o longs.o misc.o optim.o prtree.o regscont.o stats.o tb.o \
-	tranexp.o fltconv.o pch.o \
-	scale.c
+	tranexp.o fp6809.o pch.o
 
 $(BINARY):	$(OBJS) dcc68.msg
 	$(CC) -o $@ $(OBJS) $(LDFLAGS) 

@@ -1,0 +1,25 @@
+ psect clushr_a,0,0,1,0,0
+
+* devsys: _lushr (unsigned long >>) in its own member, not in
+* clshifts_a: programs that shift only signed longs (dcc68) don't
+* carry it. Its loop now repeats itself (it went on in _lshr's,
+* which gave the same result only because the first lsr clears
+* the top bit).
+
+_lushr: ldx 2,s
+ pshs b
+ lbsr _ltoacc
+ puls b
+ tstb
+ beq lushr2
+lushr1 lsr ,x
+ ror 1,x
+ ror 2,x
+ ror 3,x
+ decb
+ bne lushr1
+lushr2 puls b,a
+ std ,s
+ rts
+
+ endsect

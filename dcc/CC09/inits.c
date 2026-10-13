@@ -217,7 +217,7 @@ err:
     else switch (p->op) {
 #ifdef  DOFLOATS
             case FCONST:
-                if (type == FLOAT) *p->val.fp = *p->val.dp;
+                if (type == FLOAT) D_TOF(p->val.fp, p->val.dp);
 #endif
             case CONST:
                 datdef(p->val.num,type);

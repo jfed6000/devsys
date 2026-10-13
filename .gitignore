@@ -28,3 +28,7 @@ las/build/bankwin/las
 native/obj/
 native/bin/
 harness/in/
+
+# C libraries (rebuild with make -C clib -f GNUmakefile)
+clib/obj/
+clib/lib/

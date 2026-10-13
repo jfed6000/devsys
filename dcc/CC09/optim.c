@@ -206,10 +206,10 @@ doop:               tree->op=CONST;
                 }
 #ifdef DOFLOATS
                 else if (lhs->op == FCONST) {
-                    double *p;
+                    DBLETYPE *p;
 
                     if (p = lhs->val.dp)  /* don't bother if zero */
-                        *p = -*p;      /* can only be NEG */
+                        D_NEG(p);      /* can only be NEG */
                     release(tree);
                     tree = lhs;
                 }
@@ -783,7 +783,7 @@ fixl:
                 case DOUBLE:
                     if (node->op == CONST) {
                         dblptr = (DBLETYPE *) grab(DOUBLESIZE);
-                        *dblptr = node->val.num;
+                        D_FROMI(dblptr, node->val.num);
 fixf:
                         node->val.dp = dblptr;
                         node->op = FCONST;
@@ -840,7 +840,7 @@ fixint:
                 case DOUBLE:
                     if (node->op == LCONST) {
                         dblptr = grab(DOUBLESIZE);
-                        *dblptr = *node->val.lp;
+                        D_FROML(dblptr, *node->val.lp);
                         goto fixf;
                     }
                     op=LTOD;
@@ -872,7 +872,7 @@ fixint:
                 case UNSIGN:
                 case INT:
                     if (node->op==FCONST) {
-                        node->val.num = *(double *)(node->val.sp);
+                        node->val.num = D_TOI((DBLETYPE *)(node->val.sp));
                         goto fixint;
                     }
                     op=DTOI;
@@ -883,7 +883,7 @@ fixint:
 #ifdef DEBUG
 /*                        fprintf(stderr,"**cvt: dtol start\n");*/
 #endif
-                        *node->val.lp = *node->val.dp;
+                        *node->val.lp = D_TOL(node->val.dp);
 #ifdef DEBUG
 /*                        fprintf(stderr,"**cvt: dtol end\n");*/
 #endif

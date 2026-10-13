@@ -39,7 +39,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from cpu6809 import CPU6809, Halt, C  # noqa: E402
+from cpu6809 import CPU6809, Halt, C, E  # noqa: E402
 
 # OS-9 error codes used here
 E_EOF, E_PNNF, E_FNA, E_BPNUM, E_MNF, E_MEMFUL, E_UNKSVC, E_CEF, E_BMODE, E_SEEK = \
@@ -371,7 +371,25 @@ class Process:
             c.d = self.memtop
             c.y = self.memtop
         elif code == 0x09:                                 # F$Icpt
-            pass
+            self.icpt = (c.x, c.u)
+        elif code == 0x08:                                 # F$Send
+            # Only to itself (cfloats' _rpterr): the signal goes to the
+            # intercept routine with the registers stacked as for an
+            # interrupt, B the signal and U as F$Icpt gave it; with no
+            # intercept the process ends with the signal as its status.
+            # (dcc68's tidy() exits with errno, which _rpterr set.)
+            if c.a == self.pid:
+                handler = getattr(self, "icpt", None)
+                if not handler or not handler[0]:
+                    raise Exit(c.b)
+                sig = c.b
+                c.push16("s", c.pc)
+                for r in ("u", "y", "x"):
+                    c.push16("s", getattr(c, r))
+                for r in ("dp", "b", "a"):
+                    c.push8("s", getattr(c, r))
+                c.push8("s", c.cc | E)
+                c.pc, c.u, c.b = handler[0], handler[1], sig
         elif code == 0x0A:                                 # F$Sleep
             c.x = 0
         elif code == 0x0C:                                 # F$ID
