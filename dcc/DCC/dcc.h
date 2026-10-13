@@ -20,6 +20,7 @@
 #define PROGNAME	"dcc"
 #define PREPROC		"dcpp"
 #define COMPILER	"dcc68"
+#define IMGWRITER	"dcc68w"	/* devsys: dcc68 that writes header images */
 #define OPTIMIZER	"dco68"
 #define ASSEMBLER	"las"		/* devsys: our RMA fork (was "rma") */
 #define LINKER		"llink"		/* devsys: our rlink fork (was "rlink") */
@@ -84,6 +85,8 @@ char		*namarray[100],
 			suffarray[100],
 			*macarray[100],
 			ofn[60],
+			himage[64],	/* devsys: -h=IMAGE, as "-h=IMAGE" for dcpp and dcc68 */
+			wimage[64],	/* devsys: -H=IMAGE, as "-w=IMAGE" for dcc68w */
 			destfile[60],
 			srcfile[60],
 			objname[60],

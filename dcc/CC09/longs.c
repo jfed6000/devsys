@@ -197,7 +197,7 @@ shifts:
                 node->val.num = 0;
                 break;
             }
-            comperr(node,"longs");
+            comperr(node,M_LONGS);
     }
 
 #ifdef REGCONTS

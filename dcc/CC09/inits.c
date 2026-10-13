@@ -55,7 +55,7 @@ register symnode *ptr;
             dimp = ptr->dimptr;
             if (dimp->dim == 0) dimp->dim = stringlen;
             else if ((count = dimp->dim - stringlen) >= 0) oz(count);
-            else error("too long");
+            else error(M_TOO_LONG);
 
             getsym();
             goto out;
@@ -110,14 +110,14 @@ out:
             if(sym == COMMA) getsym();
             if(sym == RBRACE) getsym();
             else {
-                error("too many elements");
+                error(M_TOO_MANY_ELEMENTS);
                 iskip();
             }
         }
         return 1;
     } else if (type == STRUCT) {
         if ((e = (elem *) list) == 0) {
-            error("unions not allowed");
+            error(M_UNIONS_NOT_ALLOWED);
             iskip();
             return 0;
         }
@@ -139,7 +139,7 @@ out:
         if (flag) need(RBRACE);
         return 1;
     }
-    error("constant expression required");
+    error(M_CONSTANT_EXPRESSION_REQUIRED);
     iskip();
     return 0;
 }
@@ -269,7 +269,7 @@ register int *p;
 
 initerr()
 {
-    error("cannot initialize");
+    error(M_CANNOT_INITIALIZE);
     iskip();
 }
 

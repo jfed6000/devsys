@@ -37,7 +37,7 @@ BIN	:= bin
 # with 16 pages it stops early without an error. dcpp itself defines OS9
 # and _OS9, as the native cc does. See docs/DESIGN.md D20 and D25.
 las_DIR		:= $(DEVSYS)/las
-las_OBJS	:= rma_main findcmd part3 registers directives labels numeric \
+las_OBJS	:= rma_main globals findcmd part3 registers directives labels numeric \
 		   file_io macros symtab bank module lwobj preload sizing defsimg \
 		   lwstruct
 las_DEFS	:= -DCOCO
@@ -63,13 +63,23 @@ dcpp_MEM	:= 135
 
 dcc68_DIR	:= $(DEVSYS)/dcc/CC09
 dcc68_OBJS	:= cmain misc build optim stats longs floats inits get codgen \
-		   local lex tranexp regscont declare bool scale
+		   local lex tranexp regscont declare bool scale pch
 # dcc68 must stay at most 48,384 bytes (6 blocks ending by $FD00, D25):
 # no -DPROF (no "dcc -p" natively), -s (no stack checks, as natively).
 # It starts small (F$Fork won't fill all 8 slots) and grows with sbrk.
 dcc68_DEFS	:= -DREGCONTS
 dcc68_MEM	:= 10
 dcc68_CC	:= -s
+
+# dcc68w: dcc68 that writes header images (-DMKIMG, dcc/CC09/pch.c). It
+# only parses declarations, so the code generator, statements, initialisers
+# and data output are left out (nogen.c stands in): four blocks of code,
+# leaving 32K for a whole header set's symbols (las's needs over 24K).
+dcc68w_DIR	:= $(DEVSYS)/dcc/CC09
+dcc68w_OBJS	:= cmain misc build optim get lex declare pch nogen
+dcc68w_DEFS	:= -DREGCONTS -DMKIMG
+dcc68w_MEM	:= 10
+dcc68w_CC	:= -s
 
 dco68_DIR	:= $(DEVSYS)/dcc/COpt
 dco68_OBJS	:= main parse labels inst optim match misc ctype
@@ -87,7 +97,7 @@ make_OBJS	:= check input macro main make reader rules files
 make_DEFS	:=
 make_CC		:= -s
 
-TOOLS	:= las llink dcpp dcc68 dco68 dcc make
+TOOLS	:= las llink dcpp dcc68 dcc68w dco68 dcc make
 
 all: $(TOOLS)
 

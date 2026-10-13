@@ -39,12 +39,12 @@ extdef()
     elem *eptr;
 
     while (sym == RBRACE) {
-        error("too many brackets");
+        error(M_TOO_MANY_BRACKETS);
         getsym();
     }
 
     if (sym == LBRACE) {
-        error("function header missing");
+        error(M_FUNCTION_HEADER_MISSING);
         block(0);
         clear(&labelist);
         getsym();
@@ -121,7 +121,7 @@ onlist:
             temp = decref(temp);
             if (isary(temp) || isftn(temp)
                             || temp == STRUCT || temp == UNION) {
-                error("function type error");
+                error(M_FUNCTION_TYPE_ERROR);
                 ptr->type = INT | FUNCTION;
                 temp = INT;
             }
@@ -149,7 +149,7 @@ argdef()
     elem *eptr;
 
     switch (sclass = setclass()) {
-        default:    error("argument storage");
+        default:    error(M_ARGUMENT_STORAGE);
         case 0:     sclass = AUTO;
         case REG:   break;
     }
@@ -161,7 +161,7 @@ argdef()
         ptr = ptemp;        /* decl ptr to register */
 
         if (isftn(temp) || temp == STRUCT || temp == USTRUCT) {
-            error("argument error");
+            error(M_ARGUMENT_ERROR);
             goto next;
         } else if (isary(temp)) {
             temp = incref(decref(temp));
@@ -188,7 +188,7 @@ argdef()
                 multidef();
                 break;
             default:
-                error("not an argument");
+                error(M_NOT_AN_ARGUMENT);
         }
 next:
         if (sym == ASSIGN) initerr();
@@ -303,7 +303,7 @@ register elem *eptr;
 {
      if (ptr->type != type
                 || (type == STRUCT && ptr->x.elems != eptr)) {
-          error("declaration mismatch");
+          error(M_DECLARATION_MISMATCH);
           return TRUE;
      }
      return FALSE;
@@ -412,7 +412,7 @@ symnode *fptr;
                         if (p1->type == CHAR || p1->type == UCHAR) p1->offset += 1;
                         break;
                     default:
-                        error("argument type in \"newfunc\"");
+                        error(M_ARGUMENT_TYPE_IN_NEWFUNC);
                 }
                 p1 = p1->snext;
         }
@@ -486,7 +486,7 @@ symnode *fptr;
     endfunc();
 
     blklev = 0;
-    if (sym == EOF) error("function unfinished");
+    if (sym == EOF) error(M_FUNCTION_UNFINISHED);
     getsym();
 }
 
@@ -551,7 +551,7 @@ register symnode **list;
         if (sym == RPAREN) break;
         if (sym == NAME) {
             ptr = (symnode *) symval;
-            if (ptr->storage == ARG) error("named twice");
+            if (ptr->storage == ARG) error(M_NAMED_TWICE);
             else if (ptr->type != UNDECL) pushdown(ptr);
             ptr->type = INT;
             ptr->storage = ARG;
@@ -669,7 +669,7 @@ done:
     *size = tsize;
     return type;
 err:
-    error ("bad type");
+    error (M_BAD_TYPE);
     return 0;
 }
 
@@ -727,7 +727,7 @@ default:
                         tagptr->type=USTRUCT;
                         tagptr->storage=STRTAG;
                     } else if (tagptr->storage!=STRTAG)
-                        error("name clash");
+                        error(M_NAME_CLASH);
                     getsym();
                     if (sym != LBRACE) {
                         if(tagptr->type==STRUCT) {
@@ -739,7 +739,7 @@ default:
                         return USTRUCT;
                     } else if(tagptr->type==STRUCT) multidef();
                 }
-                if (sym!=LBRACE) error("struct syntax");
+                if (sym!=LBRACE) error(M_STRUCT_SYNTAX);
                 else {
                     ++mosflg;	/* go into special "struct" lexer mode */
                     do {
@@ -768,11 +768,11 @@ default:
                                     if (ptr->type != dtype
                                                 || ptr->storage != MOS
                                                 || ptr->offset != offset)
-                                        error("struct member mismatch");
+                                        error(M_STRUCT_MEMBER_MISMATCH);
                                 } else pushdown(ptr);
                             }
                             if (dtype == USTRUCT)
-                                    error("undefined structure");
+                                    error(M_UNDEFINED_STRUCTURE);
                             ptr->type = dtype;
                             ptr->storage = MOS;
                             ptr->offset = offset;
@@ -970,7 +970,7 @@ symnode **list;
             }
 */
             if(!(this->x.labflg & DEFINED)) {
-                error(strncat(strcpy(err,"label undefined : "),
+                error(strncat(strcpy(err,msg(M_LABEL_UNDEFINED)),
                                 this->sname,NAMESIZE));
             }
         }
@@ -1004,12 +1004,12 @@ symnode **list;
 
 sizerr()
 {
-    error("cannot evaluate size");
+    error(M_CANNOT_EVALUATE_SIZE);
 }
 
 
 identerr()
 {
-    error("identifier missing");
+    error(M_IDENTIFIER_MISSING);
 }
 

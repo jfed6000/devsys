@@ -5,7 +5,7 @@ vpath %.h ../..
 
 RDIR = RELS
 ODIR = .
-OBJS = rma_main.o findcmd.o part3.o registers.o directives.o labels.o \
+OBJS = rma_main.o globals.o findcmd.o part3.o registers.o directives.o labels.o \
    numeric.o file_io.o macros.o symtab.o bank.o module.o lwobj.o preload.o sizing.o defsimg.o lwstruct.o
 
 PROTOS = rma_main.c findcmd.c part3.c registers.c directives.c labels.c \
@@ -21,7 +21,8 @@ LFLAGS = -m32
 
 all: $(OBJS) las
 
-rma_main.o: rma.h rtables.h
+rma_main.o: rma.h rmabase.h
+globals.o: rma.h rmabase.h rtables.h
 
 las: $(OBJS) rma.h
 	$(CC) $(LFLAGS) $(OBJS) -o las

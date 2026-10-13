@@ -63,7 +63,7 @@ char *errstr;
 
 multidef()
 {
-    error("multiple definition");
+    error(M_MULTIPLE_DEFINITION);
 }
 
 
@@ -72,21 +72,21 @@ multidef()
 
 storerr()
 {
-    error("storage error");
+    error(M_STORAGE_ERROR);
 }
 
 
 ptrmis(node)
 expnode *node;
 {
-    terror(node,"pointer mismatch");
+    terror(node,M_POINTER_MISMATCH);
 }
 
 
 indir(node)
 expnode *node;
 {
-    comperr(node,"indirection");
+    comperr(node,M_INDIRECTION);
 }
 
 
@@ -110,8 +110,8 @@ char *errstr;
 {
     char newstr[50];
 
-    strcpy(newstr,"compiler error - ");
-    strcat(newstr,errstr);
+    strcpy(newstr,msg(M_COMPILER_ERROR));
+    strcat(newstr,msg(errstr));
     terror(node,newstr);
 }
 
@@ -128,7 +128,7 @@ dowarn(n,wstr,lno)
 register int n;
 char wstr[];
 {
-    eprintf("%s:%d: *** warning: %s ***\n", filename, lno, wstr);
+    eprintf("%s:%d: *** warning: %s ***\n", filename, lno, msg(wstr));
     if (lno == lineno) {
         eputs(line);
         goto dopoint;
@@ -145,7 +145,7 @@ doerr(n,errstr,lno)
 register int n;
 char errstr[];
 {
-    eprintf("%s:%d: *** %s ***\n", filename, lno, errstr);
+    eprintf("%s:%d: *** %s ***\n", filename, lno, msg(errstr));
     if (lno == lineno) {
         eputs(line);
         goto dopoint;
@@ -163,10 +163,48 @@ dopoint:
 }
 
 
-eprintf(msg,s1,s2,s3,s4)
-char *msg;
+eprintf(fmt,s1,s2,s3,s4)
+char *fmt;
 {
-    fprintf(stderr,msg,s1,s2,s3,s4);
+    fprintf(stderr,fmt,s1,s2,s3,s4);
+}
+
+
+/* A message's text: s itself, or for a message from msgs.h ("\2NN") line
+ * NN of MSGFILE. Read a byte at a time with no stdio buffer, so it works
+ * when memory has run out; without the file, "message NN". */
+char *
+msg(s)
+char *s;
+{
+    static char text[60];
+    register char *p;
+    register int n;
+    int fd;
+    char c;
+
+    if (!(*s & 0x80)) return s;
+    n = *s & 0x7f;
+    p = text;
+    if ((fd = open(MSGFILE,0)) != -1) {
+        while (read(fd,&c,1) == 1) {
+            if (c == '\n' || c == '\r') {
+                if (--n == 0) break;
+            } else if (n == 1 && p < text + sizeof text - 1) *p++ = c;
+        }
+        close(fd);
+        if (n == 1 && p > text) n = 0;     /* the last line, unended */
+    }
+    if (n) {
+        strcpy(text,"message ");
+        p = text + 8;
+        n = *s & 0x7f;
+        if (n >= 100) *p++ = '0' + n / 100;
+        if (n >= 10) *p++ = '0' + n / 10 % 10;
+        *p++ = '0' + n % 10;
+    }
+    *p = '\0';
+    return text;
 }
 
 

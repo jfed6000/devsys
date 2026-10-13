@@ -3,7 +3,8 @@ devsys: build NitrOS9 Level 2 programs on the F256 itself
 The tools (in /dd/CMDS; "help NAME" describes each):
   las     the assembler: lwasm's syntax (NitrOS9's sources) and RMA's
   llink   the linker: ROF objects and libraries into a module
-  dcc     the C compiler (runs dcpp, dcc68, dco68, las and llink)
+  dcc     the C compiler (runs dcpp, dcc68, dco68, las and llink;
+          dcc68w makes header images, dcc -H)
   make    rebuilds what changed (rules in /dd/SYS/make.default)
 
 Where things are:
@@ -12,6 +13,7 @@ Where things are:
                       wildbits.d ...
   /dd/LIB             C libraries (clib.l, sys.l, cstart.r) and
                       NitrOS9 main's alib.l, net.l, wildbitsl2.l
+  /dd/SYS/dcc68.msg   the C compiler's error messages
   /dd/SYS/n9mod.opt   las options for a NitrOS9 module source
   /dd/SYS/n9obj.opt   las options for a NitrOS9 object source (section)
   /dd/DEVSYS/EX       the examples below
@@ -31,6 +33,13 @@ A C program:
   dcc hello.c -f=/dd/devsys/ex/hi
   /dd/devsys/ex/hi
   dcc hello.c -w             (only checks for errors)
+
+A C program whose headers are big (a header image, made once):
+  dcc -H=my.img myhdrs.c     (myhdrs.c: just the #includes the files
+                              start with)
+  dcc -h=my.img -r part1.c   (reads the declarations it uses from my.img)
+  If a file's headers don't read as they did for the image, dcc says so
+  and compiles that file without it.
 
 make (C and assembly, see EX/M/makefile):
   chd /dd/devsys/ex/m

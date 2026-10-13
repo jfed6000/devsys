@@ -51,7 +51,7 @@ int argc;
 char **argv;
 {
 	char          **emp;
-	int           suffix, j, m, deltmpflg;
+	int           suffix, j, m, deltmpflg, useimg;
 	register char *p;
 
 	j = 0;
@@ -86,6 +86,18 @@ char **argv;
 					case 'e':                          /* set edition number */
 						emp = &edition;
 						goto emcommon;
+
+					case 'h':  /* -h=IMAGE: header declarations from an image */
+						if (*++p != '=' || !p[1])
+							error ("-h needs an image: -h=<path>");
+						sprintf (himage, "-h=%s", p + 1);
+						goto saver;
+
+					case 'H':        /* -H=IMAGE: make a header image (C) */
+						if (*++p != '=' || !p[1])
+							error ("-H needs an image: -H=<path>");
+						sprintf (wimage, "-w=%s", p + 1);
+						goto saver;
 
 					case 'f':                        /* set outfile path (L) */
 						if (*++p != '=')
@@ -287,6 +299,8 @@ saver:
 		fprintf (stderr, "'%s'\n", namarray[j]);
 
 		if (suffarray[j] == 'c') {
+			useimg = *himage != '\0';
+preproc:
 			deltmpflg = 1;               /* is C prog so prep and compile it */
 			strcpy (destfile, tmpname);
 			chgsuff (destfile, 'm');
@@ -304,6 +318,8 @@ saver:
 			for (m = 0; m < maccnt;) {
 				splcat (macarray[m++]);                 /* tack on "defines" */
 			}
+			if (useimg)
+				splcat (himage);	/* header text is in the image */
 			splcat (namarray[j]);                   /* and now the file name */
 			newopath = dup (1);
 			close (1);
@@ -313,16 +329,41 @@ saver:
 			trmcat ();
 			thisfilp = 0;
 			lasfilp = destfile;
-			runit (PREPROC, 1);
+			runit (PREPROC, useimg ? 2 : 1);
 			close (1);
 			dup (newopath);
 			close (newopath);
 			newopath = 0;
+			if (useimg && childstat == 2) {
+				/* dcpp: this file's headers don't match the image
+				 * (it said which); the image is only a shortcut */
+				fprintf (stderr, "dcc: '%s' compiled without %s\n",
+					namarray[j], himage + 3);
+				useimg = 0;
+				goto preproc;
+			}
 
 			/* now compile it */
 			strcpy (srcfile, destfile);
 			frkprmp = parmbuf;
 			thisfilp = srcfile;
+
+			if (*wimage) {
+				/* -H: the declarations it made go to an image, the
+				 * code nowhere; nothing else to do with this file */
+#ifdef MWOS
+				splcat ("-o=/nil");
+#else
+				splcat ("-o=/dev/null");
+#endif
+				splcat (wimage);
+				splcat (srcfile);
+				trmcat ();
+				lasfilp = 0;
+				runit (IMGWRITER, 0);
+				unlink (srcfile);
+				continue;
+			}
 
 			if (nullflag) {
 				/* waste the output. cc gave its one-pass c.comp -n
@@ -355,6 +396,9 @@ saver:
 
 			if (pflag)
 				splcat ("-p");          /* wants profiler code */
+
+			if (useimg)
+				splcat (himage);        /* declarations from the image */
 
 			splcat (srcfile);
 
@@ -436,7 +480,7 @@ saver:
 		}
 	}	/* end of "for each file" */
 
-	if (nullflag || aflag || rflag || o2flg)
+	if (nullflag || aflag || rflag || o2flg || *wimage)
 		exit (0);
 
 	/* now link all together*/
@@ -675,6 +719,8 @@ usage()
 		"   -c           Include C comments in assembly",
 		"   -dSYM[=val]  Define a preprocessor symbol",
 		"   -f=<path>    Output to path",
+		"   -h=<image>   Take header declarations from an image (dcc -H)",
+		"   -H=<image>   Make a header image from a file of #includes",
 		"   -k           Use maximum K&R compatibility mode",
 		"   -o           Do not run optimizer",
 		"   -O           Stop after optimizing assembly code",

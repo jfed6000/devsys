@@ -18,6 +18,9 @@ direct char *infile;
 direct int eflag;
 #endif
 
+#ifdef MKIMG
+char *imgname;
+#endif
 #ifndef PASS2
 /* pass1 only */
 direct  int     *inclptr;       /* include stack pointer */
@@ -57,6 +60,15 @@ char **argv;
 #endif
                             case 's':
                                 sflag = 1; break;
+#ifndef MKIMG
+                            case 'h':   /* -h=image: headers' declarations */
+                                if(*++p=='=') pchopen(++p);
+                                goto done;
+#else
+                            case 'w':   /* -w=image: write one */
+                                if(*++p=='=') imgname = ++p;
+                                goto done;
+#endif
 #ifdef  PTREE
                             case 'd':
                                 dflag = 1;
@@ -87,7 +99,7 @@ char **argv;
 #else
                         if((in = freopen(*argv,"r",stdin)) == NULL)
 #endif
-                                fatal("can't open input file");
+                                fatal(M_CANT_OPEN_INPUT_FILE);
 #       ifdef   SPLIT
                         infile = *argv;
 #       endif
@@ -106,9 +118,12 @@ char **argv;
                 extdef();          /* go do it!!! */
 
         epilogue();
+#ifdef MKIMG
+        if (imgname && !errcount) pchwrite(imgname);
+#endif
 
         if(ferror(code))
-                fatal("error writing assembly");
+                fatal(M_ERROR_WRITING_ASSEMBLY);
         fflush(stdout);
 
         if (errcount) {

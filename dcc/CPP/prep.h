@@ -21,6 +21,8 @@
 #else
 #define SUCCESS	0
 #define FAILURE	1
+#define IMGMISS	2	/* -h: the headers don't match the image; dcc then
+			 * compiles the file without it (dues.c) */
 extern int errno;
 #endif
 
@@ -142,6 +144,8 @@ global direct int
     lineno;                 /* current line number */
 
 global direct include *inclptr;           /* include file list ptr */
+
+global char *hfile;                       /* -h=image, or NULL (dues.c) */
 
 global macro *mactab[128];         /* macro name hash table */
 global direct macro

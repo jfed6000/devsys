@@ -4,7 +4,13 @@
  * $Id::                                                            $
  * **************************************************************** */
 
-#define MAIN
+/* las's globals are defined in globals.c */
+
+/* rma.h before stdlib.h: rma.h redefines void and const for what
+ * follows, so this order makes stdlib.h read as it does in las's header
+ * image (dcc -h, step 17), and the image fits this file too */
+#define NEED_CTYPE
+#include "rma.h"
 
 #include <stdlib.h>
 #include <errno.h>
@@ -12,9 +18,6 @@
 #ifndef COCO
 #   include <unistd.h>
 #endif
-
-#define NEED_CTYPE
-#include "rma.h"
 
 char cmntlen[SYMLEN];   /* To hold " %1.xs val for comment length */
 

@@ -70,7 +70,7 @@ contin:
                 case DO:        dodo();         break;
                 case GOTO:      dogoto();       break;
                 case ELSE:
-                    error("no 'if' for 'else'");
+                    error(M_NO_IF_FOR_ELSE);
                     getsym();
                     goto contin;
                 default:        goto what;
@@ -91,13 +91,13 @@ contin:
         default:
 what:
             if (issclass() || istype()) {
-                error("illegal declaration");
+                error(M_ILLEGAL_DECLARATION);
                 do {getsym();} while(sym!=SEMICOL);
                 break;
             } else {
 tryexp:
                 if (sidexp(0)==0) {
-                    error("syntax error");
+                    error(M_SYNTAX_ERROR);
                     junk();
                     return;
                 }
@@ -306,7 +306,7 @@ dodefault()
 {
     getsym();
     if (swflag == 0) swcherr();
-    if (deflabel) error("multiple defaults");
+    if (deflabel) error(M_MULTIPLE_DEFAULTS);
     else label(deflabel = getlabel());
     need(COLON);
 #ifdef REGCONTS
@@ -317,7 +317,7 @@ dodefault()
 
 static swcherr()
 {
-       error("no switch statement");
+       error(M_NO_SWITCH_STATEMENT);
 }
 
 
@@ -341,7 +341,7 @@ dodo()
     label(looptop=getlabel());
     statement();
 
-    if (sym != KEYWORD || symval != WHILE) error("while expected");
+    if (sym != KEYWORD || symval != WHILE) error(M_WHILE_EXPECTED);
     getsym();
     uselabel(&cnt);
     cnt.labnum = looptop;
@@ -477,7 +477,7 @@ common:
 dobreak()
 {
     if (breakptr) modnjmp(breakptr);
-    else error("break error");
+    else error(M_BREAK_ERROR);
     getsym();
     lastst=BREAK;
 }
@@ -486,7 +486,7 @@ dobreak()
 docont()
 {
     if (contptr) modnjmp(contptr);
-    else error("continue error");
+    else error(M_CONTINUE_ERROR);
     getsym();
     lastst=CONTIN;
 }
@@ -506,7 +506,7 @@ dogoto()
 
     getsym();
 
-    if (sym != NAME) error("label required");
+    if (sym != NAME) error(M_LABEL_REQUIRED);
     else {
         if (ptr = checklabel()) {
             gen(GOTO,ptr->offset,0);
@@ -549,7 +549,7 @@ checklabel()
 
     if (ptr->type != UNDECL) {
         if (ptr->blklev != 0) {
-            error("already a local variable");
+            error(M_ALREADY_A_LOCAL_VARIABLE);
             return NULL;
         }
         pushdown(ptr);
@@ -612,7 +612,7 @@ gettest()
     register expnode *ptr;
 
     if (ptr = optim(parsexp(LEV_0))) chkdecl(ptr);
-    else error("condition needed");
+    else error(M_CONDITION_NEEDED);
     return ptr;
 }
 
