@@ -29,7 +29,9 @@
  * the symbols from before the use are still as they were and no    *
  * defs symbol has changed since pass 1; else pass 2 reads the      *
  * files, which is always right: pass 1 left the state reading      *
- * would have left.                                                 *
+ * would have left. The same holds for each settling pass (pass 2's *
+ * code, rma_main.c): an image is applied in every one. A recording *
+ * records Z in the first, and the passes after read the defs.      *
  *                                                                  *
  * Recording gives up (and writes no image) on anything else in the *
  * defs: instructions, macros, sections, errors, references, a      *
@@ -61,9 +63,10 @@
 #  include <unistd.h>
 #endif
 
-/* The file starts "LASI", '0' ('1' once complete), the version (2) */
-#define MAGIC   "LASI0\002"
-#define DONE    "LASI1\002"
+/* The file starts "LASI", '0' ('1' once complete), the version (3:
+ * since D55 the symbols' types keep sizing's SZ_CODE) */
+#define MAGIC   "LASI0\003"
+#define DONE    "LASI1\003"
 #define DIFFMAX 64              /* symbols pass 2 may change */
 
 /* States */
@@ -261,7 +264,8 @@ getsym (ZILCH)
 }
 
 /* Is h the symbol just read? (A symbol from before the use has no
- * references: those come from code.) */
+ * references: those come from code.) Sizing's mark in the type isn't
+ * part of it: the trial (pass 1) sets it, its end clears it. */
 
 static int
 #ifdef __STDC__
@@ -271,7 +275,7 @@ same (h)
      SYMH h;
 #endif
 {
-    return h && ((sym_typ (h) & 0xff) == RTyp) &&
+    return h && (((sym_typ (h) ^ RTyp) & 0xff & ~SZ_CODE) == 0) &&
            ((sym_msk (h) & ~LOC1BYT & 0xff) == RMsk) &&
            (sym_val (h) == RVal);
 }
@@ -937,20 +941,6 @@ img_end (ZILCH)
     }
 }
 
-/* img_settle() - las settles values before pass 2 (rma_main.c): a
- * loaded image is applied by the first settling pass and the defs read
- * after that, as when pass 2 refuses an image; a recording can't follow
- * more than one pass 2, so it is given up (the next run records) */
-
-void
-img_settle (ZILCH)
-{
-    if ((State != LOADED) && ! Mem)
-    {
-        img_bad ();
-    }
-}
-
 /* img_pass() - read_fil: a pass starts */
 
 void
@@ -1056,7 +1046,8 @@ pass2 (ZILCH)
 
     if ( ! w)
     {
-        State = IDLE;
+        State = ok ? LOADED : IDLE;     /* again in the next pass */
+        ImgOn = ok;
         TRACE (ok ? "pass 2 loaded" : "pass 2 read");
         return ok;
     }
@@ -1096,25 +1087,6 @@ img_use (name)
         return 0;
     }
 
-#ifndef COCO
-    /* The sizing trial (a child, sizing.c) runs beside pass 1, which may
-     * be rewriting the image: it reads the defs, to the same effect */
-
-    if (SzTrial)
-    {
-        return 0;
-    }
-#else
-    /* On OS-9 the parent waits for the trial, which may load the image
-     * but never records one; it reads the defs if the parent asks
-     * (sizing.c: a defs label's section was needed) */
-
-    if (SzTrial && (SzNoImg || ! ImgName))
-    {
-        return 0;               /* (the trial has no pass 2) */
-    }
-#endif
-
     UseSeen = 1;
 
     if (Pass2)
@@ -1144,25 +1116,10 @@ img_use (name)
         return 1;
     }
 
-    if (r && ! SzTrial)
+    if (r)
     {
         record (name);
     }
 
     return 0;
-}
-
-/* ******************************************************************** *
- * img_made() - Did a loaded image create this symbol (sizing.c)?       *
- * ******************************************************************** */
-
-int
-#ifdef __STDC__
-img_made (SYMH h)
-#else
-img_made (h)
-     SYMH h;
-#endif
-{
-    return (State == LOADED) && (h >= Lo) && (h < Hi);
 }

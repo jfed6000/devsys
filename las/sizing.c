@@ -24,30 +24,21 @@
  *                                                                  *
  * las does the same in three steps:                                *
  *                                                                  *
- *  1. A trial pass 1, in a child process (sz_trial), assembles as  *
- *     RMA always has: every ",pcr" long. It records each ",pcr"    *
- *     site (sz_pcr), each line lwasm might leave unsettled         *
- *     (sz_other) and each code label's section (sz_label).         *
+ *  1. Pass 1 is the trial (sz_trial): it assembles as RMA always   *
+ *     has, every ",pcr" long, and records each ",pcr" site         *
+ *     (sz_pcr), each line lwasm might leave unsettled (sz_other)   *
+ *     and each code label's section (sz_label).                    *
  *  2. At its end, sz_finish() replays lwasm's rule on that record  *
- *     and sends one byte per ",pcr" site (1 = short) to the parent.*
- *  3. The parent, which did nothing meanwhile, assembles for real  *
- *     with those sizes (sz_pcr returns them), so every label and   *
- *     equate has its final value in pass 1, and pass 2's phase     *
- *     check still guards the result.                               *
+ *     and keeps one bit per ",pcr" site (1 = short).               *
+ *  3. If any site is short, every label after it is too far on:    *
+ *     las runs settling passes (rma_main.c, D46) with those sizes  *
+ *     until nothing moves, then pass 2, whose phase check still    *
+ *     guards the result.                                           *
  *                                                                  *
- * The child is made two ways:                                     *
- *                                                                  *
- *  - Unix: fork(). The child is a copy of the parent just before   *
- *    pass 1; the sizes come back through a pipe.                   *
- *  - OS-9: F$Fork starts a new las from the top, so the parent     *
- *    runs "las" with its own arguments plus a hidden --sztrial=N   *
- *    (sz_child). The child does everything the parent did up to    *
- *    pass 1, then the trial. OS-9 Level 2 programs are reentrant,  *
- *    so the child shares las's code in memory and costs only its   *
- *    own data and symbol blocks. The sizes come back in an 8K RAM  *
- *    block the parent allocated: N is its number, and the child    *
- *    maps it (F$MapBlk works on any block). The F256's boot has no *
- *    pipe modules. Only for a single source file (lwasm takes one).*
+ * Until D55 the trial was a child process (Unix fork(), OS-9       *
+ * F$Fork of las itself with a shared block for the answers) and    *
+ * the parent ran its own pass 1 with the sizes: three passes, and  *
+ * on OS-9 a second start-up. Settling corrects the values instead. *
  *                                                                  *
  * The trial's records (Items, Labels) live in banked memory        *
  * (bank.c), in chunks: on the 6809 las's own data is one 8K block  *
@@ -61,32 +52,15 @@
 
 #include "rma.h"
 
-#if (defined(__unix) || defined(__unix__) || defined(__linux__)) \
-    && !defined(NOSIZING)
-#  define SZ_FORK               /* fork(); sizes through a pipe */
-#  include <unistd.h>
-#  include <fcntl.h>
-#  include <sys/wait.h>
-#  include <stdlib.h>
-#endif
-
-#if defined(COCO) && !defined(NOSIZING)
-#  define SZ_OS9                /* F$Fork; sizes in a shared block */
-#endif
-
-#if defined(SZ_FORK) || defined(SZ_OS9)
+#ifndef NOSIZING
 #  define SZ_TRIAL
 #endif
 
 static int PcrSites;            /* ",pcr" sites seen in this pass */
-static char *SzDec;             /* the sizes: Unix a byte per site, */
-static int SzCount;             /* OS-9 a bit (1 = short) */
+static char *SzDec;             /* the sizes: a bit per site, */
+static int SzCount, SzCap;      /* 1 = short; SzCap bytes */
 
-#ifdef SZ_OS9
-#  define SZ_SHORT(n) (SzDec[(n) >> 3] & (1 << ((n) & 7)))
-#else
-#  define SZ_SHORT(n) SzDec[n]
-#endif
+#define SZ_SHORT(n) (SzDec[(n) >> 3] & (1 << ((n) & 7)))
 
 #ifdef SZ_TRIAL
 
@@ -130,9 +104,6 @@ struct szlabel                  /* K&R: member names must be unique */
 static unsigned IChunk[MAXCHUNK], LChunk[MAXCHUNK];
 static int NItems, NLabels;
 static char SzFull;             /* ran out of chunks: the trial fails */
-static char SzRetry;            /* OS-9: a defs label's section is
-                                 * unknown (image loaded): try again
-                                 * reading the defs */
 static struct szitem Spare;     /* where records go once SzFull */
 
 static struct szitem *
@@ -159,13 +130,15 @@ new_item (ZILCH)
             return &Spare;
         }
 
-        /* bank_alloc zeroes it */
-
-        IChunk[NItems >> ISHIFT] =
-            bank_alloc (ICHUNK * sizeof (struct szitem));
+        if ( ! IChunk[NItems >> ISHIFT])        /* kept for the next file */
+        {
+            IChunk[NItems >> ISHIFT] =
+                bank_alloc (ICHUNK * sizeof (struct szitem));
+        }
     }
 
-    return item (NItems++);
+    return (struct szitem *) memset ((char *) item (NItems++), 0,
+                                     sizeof (struct szitem));
 }
 
 /* Is the line being assembled a leax/leay/leas/leau? */
@@ -177,20 +150,6 @@ is_lea (ZILCH)
 }
 
 #endif /* SZ_TRIAL */
-
-#ifdef SZ_FORK
-static int SzFd = -1;           /* trial: where the sizes go */
-#endif
-
-#ifdef SZ_OS9
-#define SZHDR   4               /* block: "SZ", count, a byte per site */
-#define SZMAX   (8192 - SZHDR)
-
-static int SzBlk;               /* trial: the parent's block */
-
-extern int os9fork ();
-extern int wait ();
-#endif
 
 /* ******************************************************************** *
  * sz_pass() - start of a pass: count ",pcr" sites from the beginning   *
@@ -210,8 +169,6 @@ sz_pass (ZILCH)
  *              offsets alone are 2,500 labels in NitrOS9 main's krnp2, *
  *              and a list of them all overflowed the trial's blocks.   *
  * ******************************************************************** */
-
-#define SZ_CODE 0x80            /* in the type: a code label */
 
 void
 #ifdef __STDC__
@@ -244,8 +201,11 @@ sz_label (sym)
             return;
         }
 
-        LChunk[NLabels >> LSHIFT] =
-            bank_alloc (LCHUNK * sizeof (struct szlabel));
+        if ( ! LChunk[NLabels >> LSHIFT])
+        {
+            LChunk[NLabels >> LSHIFT] =
+                bank_alloc (LCHUNK * sizeof (struct szlabel));
+        }
     }
 
     lb = (struct szlabel *) bank_ptr (LChunk[NLabels >> LSHIFT]) +
@@ -369,13 +329,7 @@ label_sec (sym)
     register int i;
     int c, n;
 
-    /* A symbol a defs image made never passed sz_label: whether it is
-     * a code label isn't known (OS-9; sz_trial tries again) */
-
-    if (img_made (sym))
-    {
-        SzRetry = 1;
-    }
+    /* (a defs image recorded in a trial keeps SZ_CODE in the types) */
 
     if ( ! (sym_typ (sym) & SZ_CODE))
     {
@@ -650,372 +604,101 @@ item_short (i)
 
 #endif /* SZ_TRIAL */
 
-#ifdef SZ_FORK
+#ifdef SZ_TRIAL
 
 /* ******************************************************************** *
- * sz_trial() - Before pass 1 of a file in lwasm mode: fork. The child  *
- *          returns, runs the trial pass 1 with its output thrown away, *
- *          and ends in sz_finish(). The parent waits for the sizes and *
- *          then assembles the file for real.                           *
+ * sz_trial() - Before pass 1 of a file in lwasm mode: pass 1 is the    *
+ *              trial                                                   *
  * ******************************************************************** */
 
 void
 sz_trial (ZILCH)
 {
-    int fds[2], status, n, got;
-    pid_t pid;
+    SzTrial = 1;
+    SzCount = NItems = NLabels = SzFull = 0;
+}
 
-    SzCount = 0;
+/* Clear sizing's mark in a symbol's type: it would reach the ROF's
+ * reference types (registers.c) and the symbol table listing */
 
-    if (pipe (fds) < 0)
+static void
+#ifdef __STDC__
+unmark (SYMH sym)
+#else
+unmark (sym)
+     SYMH sym;
+#endif
+{
+    if (sym_typ (sym) & SZ_CODE)
     {
-        return;
-    }
-
-    fflush (NULL);
-
-    if ((pid = fork ()) < 0)
-    {
-        close (fds[0]);
-        close (fds[1]);
-        return;
-    }
-
-    if (pid == 0)               /* the trial */
-    {
-        int nul = open ("/dev/null", O_WRONLY);
-
-        close (fds[0]);
-        SzFd = fds[1];
-        SzTrial = 1;
-        NItems = NLabels = 0;
-
-        if (nul >= 0)
-        {
-            dup2 (nul, 1);
-            dup2 (nul, 2);
-        }
-
-        if (OutFile)
-        {
-            OutFile = fopen ("/dev/null", "w");
-        }
-
-        return;
-    }
-
-    close (fds[1]);
-
-    /* The sizes: a count, then one byte per site */
-
-    if (read (fds[0], &n, sizeof (n)) == sizeof (n) && (n > 0))
-    {
-        SzDec = (char *) realloc (SzDec, n);
-
-        for (got = 0; SzDec && (got < n); )
-        {
-            int r = read (fds[0], SzDec + got, n - got);
-
-            if (r <= 0)
-            {
-                break;
-            }
-
-            got += r;
-        }
-
-        if (SzDec && (got == n))
-        {
-            SzCount = n;
-        }
-    }
-
-    close (fds[0]);
-
-    if ((waitpid (pid, &status, 0) != pid) || ! WIFEXITED (status) ||
-            (WEXITSTATUS (status) != 0))
-    {
-        /* The trial failed: RMA's sizes (every ",pcr" long). The real
-         * pass 1 reports the same errors if the source is at fault. */
-
-        fprintf (stderr, "las: sizing trial failed; using long offsets\n");
-        SzCount = 0;
+        sym_settyp (sym, sym_typ (sym) & ~SZ_CODE);
     }
 }
 
 /* ******************************************************************** *
- * sz_finish() - The trial's end: decide, send the sizes, and exit.     *
+ * sz_finish() - The end of the trial pass 1: decide. Returns 1 if a    *
+ *               site is short, so the values must settle.              *
  * ******************************************************************** */
 
-void
+int
 sz_finish (ZILCH)
 {
-    int i, n, k = 0;
-    char *dec;
+    int i, k = 0, any = 0, need = (PcrSites >> 3) + 1;
+    char img = ImgOn;
 
     sz_decide ();
+
+    if (need > SzCap)
+    {
+        SzDec = (char *) getmem (need);     /* getmem maps no blocks */
+        SzCap = need;
+    }
+
+    memset (SzDec, 0, need);
 
     /* every ",pcr" site in order, including those lwasm can't reach
      * (all recorded with len8 set) */
 
-    n = PcrSites;
-    dec = (char *) malloc (n ? n : 1);
-
-    for (i = 0; i < NItems && dec; ++i)
+    for (i = 0; i < NItems; ++i)
     {
         if (item (i)->len8)
         {
-            dec[k++] = item_short (i);
-        }
-    }
-
-    if (SzFull || ! dec || (k != n) ||
-            (write (SzFd, &n, sizeof (n)) != sizeof (n)) ||
-            (write (SzFd, dec, n) != n))
-    {
-        _exit (1);
-    }
-
-    _exit (0);
-}
-
-void
-#ifdef __STDC__
-sz_child (char *arg)
-#else
-sz_child (arg)
-     char *arg;
-#endif
-{
-    errexit ("--sztrial is for OS-9");
-}
-
-#endif /* SZ_FORK */
-
-#ifdef SZ_OS9
-
-/* ******************************************************************** *
- * sz_child() - "--sztrial=N[,n]": this las is the trial, for a parent  *
- *              waiting with block N; ",n": don't load a defs image.    *
- * ******************************************************************** */
-
-void
-#ifdef __STDC__
-sz_child (char *arg)
-#else
-sz_child (arg)
-     char *arg;
-#endif
-{
-    SzTrial = 1;
-    SzBlk = atoi (arg);
-    SzNoImg = (strchr (arg, ',') != 0);
-}
-
-/* The child's parameters, in buf: the parent's own arguments and
- * "--sztrial=N". Returns the length, or 0 if too long: a parameter
- * area over 400 bytes would push las's data past one block (D37). */
-
-static int
-#ifdef __STDC__
-sz_params (char *buf, int blk, int noimg)
-#else
-sz_params (buf, blk, noimg)
-     char *buf;
-     int blk, noimg;
-#endif
-{
-    register char *p = buf;
-    int i, len;
-
-    for (i = 1; i < ArgC; ++i)
-    {
-        len = strlen (ArgV[i]);
-
-        if (p - buf + len > 360)
-        {
-            return 0;
-        }
-
-        strcpy (p, ArgV[i]);
-        p += len;
-        *p++ = ' ';
-    }
-
-    sprintf (p, "--sztrial=%d%s\n", blk, noimg ? ",n" : "");
-    return strlen (buf);
-}
-
-/* ******************************************************************** *
- * sz_trial() - Before pass 1 in lwasm mode: run the trial las and wait *
- *              for it. The block holds the child's parameters while    *
- *              F$Fork copies them, then the sizes the child writes.    *
- * ******************************************************************** */
-
-void
-sz_trial (ZILCH)
-{
-    static char warned;
-    register char *p;
-    int blk, len, n, i, tries, status = -1;
-
-    SzCount = 0;
-
-    if (SzTrial)
-    {
-        return;                 /* this is the trial */
-    }
-
-    if (LastSrc - SrcNam != 1)
-    {
-        if ( ! warned)
-        {
-            fprintf (stderr,
-                     "las: sizing needs one source file; using long offsets\n");
-            warned = 1;
-        }
-
-        return;
-    }
-
-    if ((blk = bank_share ()) == -1)
-    {
-        fprintf (stderr, "las: no RAM for sizing; using long offsets\n");
-        return;
-    }
-
-    /* A defs image may hide which defs symbols are code labels: then
-     * the child exits with 3 and runs again reading the defs */
-
-    for (tries = 0; tries < 2; ++tries)
-    {
-        p = bank_mapnum (blk);
-        p[0] = p[1] = 0;
-
-        if ( ! (len = sz_params (p + SZHDR, blk, tries)) ||
-                (os9fork ("las", len, p + SZHDR, 1, 1, 0) == -1))
-        {
-            status = -1;
-            break;
-        }
-
-        wait (&status);
-
-        if (status != 3)
-        {
-            break;
-        }
-    }
-
-    p = bank_mapnum (blk);
-
-    if ((status == 0) && (p[0] == 'S') && (p[1] == 'Z'))
-    {
-        n = *(int *) (p + 2);
-
-        /* getmem doesn't map blocks, so p stays good */
-
-        SzDec = (char *) getmem ((n >> 3) + 1);
-        memset (SzDec, 0, (n >> 3) + 1);
-
-        for (i = 0; i < n; ++i)
-        {
-            if (p[SZHDR + i])
+            if (item_short (i))
             {
-                SzDec[i >> 3] |= 1 << (i & 7);
+                SzDec[k >> 3] |= 1 << (k & 7);
+                any = 1;
             }
-        }
 
-        SzCount = n;
+            ++k;
+        }
     }
-    else
+
+    if (SzFull || (k != PcrSites))
     {
+        /* RMA's sizes, every ",pcr" long: pass 1's layout */
+
         fprintf (stderr, "las: sizing trial failed; using long offsets\n");
+        any = 0;
     }
 
-    bank_unshare (blk);
+    SzCount = any ? k : 0;
+    SzTrial = ImgOn = 0;        /* not a change the defs record sees */
+    sym_walk (unmark);
+    ImgOn = img;
+    return any;
 }
 
-/* ******************************************************************** *
- * sz_finish() - The trial's end: decide, put the sizes in the parent's *
- *               block, and exit (3: try again without a defs image).   *
- * ******************************************************************** */
-
-void
-sz_finish (ZILCH)
-{
-    char buf[32];
-    register char *p;
-    int i, k = 0, nb = 0;
-
-    sz_decide ();
-
-    if (SzRetry)
-    {
-        bank_done ();
-        exit (3);
-    }
-
-    /* every ",pcr" site in order, including those lwasm can't reach
-     * (all recorded with len8 set); 32 at a time, as the block and
-     * the items share the window */
-
-    for (i = 0; i <= NItems; ++i)
-    {
-        if ((i < NItems) && item (i)->len8)
-        {
-            buf[nb++] = item_short (i);
-        }
-
-        if ((nb == sizeof (buf)) || ((i == NItems) && nb))
-        {
-            if (k + nb <= SZMAX)
-            {
-                memcpy (bank_mapnum (SzBlk) + SZHDR + k, buf, nb);
-            }
-
-            k += nb;
-            nb = 0;
-        }
-    }
-
-    if (SzFull || (k != PcrSites) || (k > SZMAX))
-    {
-        bank_done ();
-        exit (1);
-    }
-
-    p = bank_mapnum (SzBlk);
-    *(int *) (p + 2) = k;
-    p[1] = 'Z';
-    p[0] = 'S';
-    bank_done ();               /* unmaps the block too */
-    exit (0);
-}
-
-#endif /* SZ_OS9 */
-
-#ifndef SZ_TRIAL
+#else /* ! SZ_TRIAL */
 
 void
 sz_trial (ZILCH)
 {
 }
 
-void
+int
 sz_finish (ZILCH)
 {
+    return 0;
 }
 
-void
-#ifdef __STDC__
-sz_child (char *arg)
-#else
-sz_child (arg)
-     char *arg;
-#endif
-{
-    errexit ("--sztrial: this las has no sizing");
-}
-
-#endif /* ! SZ_TRIAL */
+#endif /* SZ_TRIAL */

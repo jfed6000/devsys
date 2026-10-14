@@ -12,13 +12,6 @@
  *                          called for a handle in another block    *
  *      bank_done ()        give the blocks back (call before exit) *
  *                                                                  *
- * OS-9 only, for the sizing trial (sizing.c), a block shared with  *
- * another process by its number:                                   *
- *      bank_share ()       a new block: its number, or -1          *
- *      bank_mapnum (n)     block n in the window; any process may  *
- *                          map any block (F$MapBlk doesn't check)  *
- *      bank_unshare (n)    give block n back                       *
- *                                                                  *
  * A handle is 16 bits: block number + 1 in the top 4, the offset   *
  * in the block / 2 in the low 12 (storage is 2-byte aligned). So   *
  * there are at most 15 blocks (120K), and a handle is never 0.     *
@@ -55,7 +48,6 @@ static long Switches;           /* window changes (bank_stats) */
 #ifdef COCO
 static unsigned BlkNum[MAXBLK]; /* physical block numbers */
 static char *Window;            /* where the window is, once mapped */
-static int Shared = -1;         /* bank_share's block */
 
 static int allram ();
 static char *mapblk ();
@@ -246,67 +238,10 @@ bank_done (ZILCH)
     {
         delram (BlkNum[b]);
     }
-
-    if (Shared != -1)
-    {
-        delram (Shared);
-        Shared = -1;
-    }
 #endif
     NBlk = 0;
     Cur = -1;
 }
-
-#ifdef COCO
-int
-bank_share (ZILCH)
-{
-    return Shared = allram ();
-}
-
-char *
-#ifdef __STDC__
-bank_mapnum (int n)
-#else
-bank_mapnum (n)
-     int n;
-#endif
-{
-    ++Switches;
-
-    if (Window)
-    {
-        clrblk (Window);
-    }
-
-    if ( ! (Window = mapblk (n)))
-    {
-        errexit ("can't map shared block");
-    }
-
-    Cur = -1;                   /* the next bank_ptr maps its block */
-    return Window;
-}
-
-void
-#ifdef __STDC__
-bank_unshare (int n)
-#else
-bank_unshare (n)
-     int n;
-#endif
-{
-    if (Window)
-    {
-        clrblk (Window);
-        Window = 0;
-        Cur = -1;
-    }
-
-    delram (n);
-    Shared = -1;
-}
-#endif
 
 #ifdef SYMSTATS
 /* Measurement build: blocks used and window changes, to stderr */

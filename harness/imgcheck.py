@@ -219,7 +219,7 @@ def main():
     print("how the image was used (record run | load run):")
     for k, v in outcome.most_common():
         print(f"  {v:4}  {k.strip(' |') or '(no top-level use)'}"
-              + (f"  ({', '.join(ids[k])})" if v <= 5 else ""))
+              + (f"  ({', '.join(ids[k])})" if v <= 8 else ""))
     return 1 if nbad else 0
 
 

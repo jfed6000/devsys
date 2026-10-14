@@ -65,7 +65,7 @@ main (argc, argv)
     sym_setmsk (LRefs_NonDPdat, DIRENT);
     NowMac = 0;
 
-    if (OFlg && ! SzTrial)     /* the OS-9 trial writes nothing */
+    if (OFlg)
     {
 #ifdef WIN32    /* Unix systems handle ".b" mode, but OSK, at least doesn't */
         OutFile = f_opn (O_Nam, "wb");
@@ -88,13 +88,13 @@ main (argc, argv)
         sym_setrefs (LRefs_NonDPdat, 0);
         Pass2 = Unsettled = *_nam = _ttl[0] = '\0';
 
-        /* lwasm sizes ",pcr" offsets itself: a trial pass 1 in a child
-         * decides them first (sizing.c) */
+        /* lwasm sizes ",pcr" offsets itself: pass 1 is a trial that
+         * gives each its long form and records what lwasm's rule needs
+         * (sizing.c) */
 
         if (LwasmMode)
         {
             sz_trial ();
-            rewind (SrcFile);   /* the trial moved the shared file offset */
         }
 
         /* Do pass 1 */
@@ -102,16 +102,17 @@ main (argc, argv)
         sz_pass ();
         read_fil ();
 
-        if (SzTrial)
+        if (SzTrial && sz_finish ())
         {
-            sz_finish ();       /* the trial ends here */
+            Unsettled = 1;      /* short sites: every label after moves */
         }
 
         /* lwasm settles values over as many passes as it takes; RMA has
          * two, so pass 2 must find what pass 1 left. When pass 1 met a
-         * count it couldn't know yet (directives.c), las runs pass 2's
-         * code without output, listing or errors, which corrects each
-         * value it reaches, until nothing moves */
+         * count it couldn't know yet (directives.c), or the sizing
+         * trial shortened a ",pcr", las runs pass 2's code without
+         * output, listing or errors, which corrects each value it
+         * reaches, until nothing moves */
 
         if (Unsettled)
         {
@@ -934,9 +935,73 @@ e_report (report)
 }
 
 
-/* settle() - settling passes before pass 2 (see the call) */
+/* Pass 1 marks a symbol used before its definition DIRLOC, and pass 2
+ * gives such a use the size pass 1 gave it (SetArow, labels.c), then
+ * clears the mark when it reaches the definition: later uses were
+ * backward in pass 1. Each pass after the first must start with pass
+ * 1's marks, so settle() lists the marked symbols and sets the marks
+ * again before every pass (in banked chunks of handles). */
+
+#define DLSHIFT 9               /* 512 handles a chunk */
+#define DLCHUNK (1 << DLSHIFT)
+#define DLMAX   16
+
+static unsigned DlChunk[DLMAX];
+static int NDl;
+
+static void
+#ifdef __STDC__
+dl_save (SYMH sym)
+#else
+dl_save (sym)
+     SYMH sym;
+#endif
+{
+    if ( ! (sym_msk (sym) & DIRLOC))
+    {
+        return;
+    }
+
+    if ((NDl >> DLSHIFT) == DLMAX)
+    {
+        errexit ("too many forward references to settle");
+    }
+
+    if ( ! DlChunk[NDl >> DLSHIFT])
+    {
+        DlChunk[NDl >> DLSHIFT] = bank_alloc (DLCHUNK * sizeof (BANKH));
+    }
+
+    ((BANKH *) bank_ptr (DlChunk[NDl >> DLSHIFT]))[NDl & (DLCHUNK - 1)] = sym;
+    ++NDl;
+}
+
+static void
+dl_restore (ZILCH)
+{
+    char img = ImgOn;
+    int i;
+    SYMH sym;
+
+    ImgOn = 0;                  /* pass 1's state, not a change */
+
+    for (i = 0; i < NDl; ++i)
+    {
+        sym = ((BANKH *) bank_ptr (DlChunk[i >> DLSHIFT]))[i & (DLCHUNK - 1)];
+        sym_setmsk (sym, sym_msk (sym) | DIRLOC);
+    }
+
+    ImgOn = img;
+}
+
+/* settle() - settling passes before pass 2 (see the call). Pass 2's
+ * first page header shows the nam and ttl pass 1 left (the first of
+ * each), and a settling pass leaves the last: they are kept aside in
+ * a banked chunk (las's own data has no room for 256 bytes, D37) */
 
 #define SETTLEMAX 8             /* then pass 2 reports what still moves */
+
+static unsigned Titles;
 
 static void
 settle (ZILCH)
@@ -945,19 +1010,38 @@ settle (ZILCH)
     char list = listON;
     int n = 0;
 
-    img_settle ();
     OutFile = 0;
     listON = 0;
     Pass2 = Settle = TRUE;
+    NDl = 0;
+    sym_walk (dl_save);
+
+    if ( ! Titles)
+    {
+        Titles = bank_alloc (sizeof (_nam) + sizeof (_ttl));
+    }
+
+    memcpy (bank_ptr (Titles), _nam, sizeof (_nam));
+    memcpy (bank_ptr (Titles) + sizeof (_nam), _ttl, sizeof (_ttl));
 
     while (Unsettled && (n++ < SETTLEMAX))
     {
         Unsettled = 0;
+        dl_restore ();
         rewind (SrcFile);
         sz_pass ();
         read_fil ();
     }
 
+    dl_restore ();              /* for pass 2 */
+    memcpy (_nam, bank_ptr (Titles), sizeof (_nam));
+    memcpy (_ttl, bank_ptr (Titles) + sizeof (_nam), sizeof (_ttl));
+#ifndef COCO
+    if (getenv ("LASSZ_TRACE"))         /* harness measurements */
+    {
+        fprintf (stderr, "settle: %d passes\n", n);
+    }
+#endif
     Settle = 0;
     OutFile = out;
     listON = list;
@@ -971,10 +1055,7 @@ errexit (report)
      char *report;
 #endif
 {
-    if ( ! SzTrial)             /* the parent will say it (sizing.c) */
-    {
-        fprintf (stderr, "asm: %s\n", report);
-    }
+    fprintf (stderr, "asm: %s\n", report);
 
     bank_done ();
 

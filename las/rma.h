@@ -155,10 +155,10 @@ GLOBAL char InDataDir;      /* evaluating an fcb/fdb value (numeric.c) */
 GLOBAL char IdxLitZero;     /* indexed offset written as "0" (registers.c) */
 GLOBAL char PlUsed;         /* the value used --defs constants (preload.c) */
 GLOBAL char ExplArrow;      /* operand had "<" or ">" (registers.c) */
-GLOBAL char SzTrial;        /* this is the sizing trial (sizing.c) */
+GLOBAL char SzTrial;        /* pass 1 is the sizing trial (sizing.c) */
+#define SZ_CODE 0x80        /* the trial's mark in a code label's type */
 GLOBAL char StPre;          /* l1723 returns StSize: a struct instance */
 GLOBAL int StSize;          /* (lwstruct.c) */
-GLOBAL char SzNoImg;        /* OS-9 trial: don't load a defs image */
 GLOBAL char Settle,         /* a settling pass (rma_main.c) */
             Unsettled;      /* a count used a symbol not yet defined */
 GLOBAL int ArgC;            /* main's arguments (sizing.c, OS-9) */
