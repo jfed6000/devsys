@@ -26,6 +26,11 @@ instruction counts).
                   (NAME+HEX: each time that address inside NAME is reached)
                   (needs --map; repeatable)
   --stats         print instructions executed and memory used at exit
+  --profile       with --map: instructions executed in each function (its
+                  own, not its callees'), per process, the 25 biggest
+  --mark NAME     with --map: each time NAME is entered, print the process
+                  and its instruction count so far (repeatable; splits a
+                  run into phases)
 
 Files are used as they are: text inputs must already have CR line ends,
 as on an OS-9 disk (native.py prepares them that way). Names match
@@ -203,6 +208,10 @@ def read_map(path):
 RAM = {}
 NEXTBLK = [0x40]
 
+PROFILE = False                     # --profile or --mark
+MARKS = set()                       # --mark names
+REPORT = False                      # --profile
+
 
 class Process:
     def __init__(self, disk, module, params, paths, mem_extra=0, trace=False, parent=None,
@@ -216,10 +225,13 @@ class Process:
         self.paths = paths                  # list: path number -> file object or None
         self.children = []                  # (id, status) of finished children
         self.instr = 0
+        self.prof = None                    # --profile: pc -> instructions
+        self.marks = {}                     # --mark: address -> name
         self.pid = (parent.pid + 1) if parent else 2
         m = self.cpu.mem
         if module[0:2] != b"\x87\xcd":
             raise SystemExit("not an OS-9 module")
+        self.module = module
         size = module[2] << 8 | module[3]
         exe = module[9] << 8 | module[10]
         datasz = module[11] << 8 | module[12]
@@ -252,12 +264,29 @@ class Process:
         c.pc = self.modbase + exe
         c.cc = 0x50
         self.codesize = size
+        if PROFILE:
+            self.prof = {}
         for off, n in self.syms:
+            if n in MARKS:
+                self.marks[self.modbase + off] = n
             if n in breaks:
                 self.breaks[self.modbase + off] = n
             for br in breaks:             # NAME+HEX: an address inside NAME
                 if "+" in br and br.split("+")[0] == n:
                     self.breaks[self.modbase + off + int(br.split("+")[1], 16)] = br
+
+    def report(self):
+        """--profile: the 25 functions that ran the most instructions"""
+        if not REPORT or not self.syms:
+            return
+        fn = {}
+        for pc, n in self.prof.items():
+            w = self.where(pc).split("+")[0]
+            fn[w] = fn.get(w, 0) + n
+        total = sum(fn.values())
+        print(f"profile [{self.pid}]: {total} instructions", file=sys.stderr)
+        for w, n in sorted(fn.items(), key=lambda x: -x[1])[:25]:
+            print(f"  {n:10d} {100 * n / total:5.1f}%  {w}", file=sys.stderr)
 
     def where(self, addr):
         """function+offset for a code address"""
@@ -338,6 +367,11 @@ class Process:
                     continue
                 if pc in self.breaks:
                     self.backtrace(self.breaks[pc])
+                if self.prof is not None:
+                    self.prof[pc] = self.prof.get(pc, 0) + 1
+                    if pc in self.marks:
+                        print(f"mark [{self.pid}] {self.marks[pc]} at {self.instr}",
+                              file=sys.stderr)
                 c.step()
                 self.instr += 1
                 if c.s < self.minsp:
@@ -604,7 +638,8 @@ class Process:
             if isinstance(f, HostFile):
                 f.refs += 1
         extra = max(0, c.b * 256 - (module[11] << 8 | module[12]))
-        child = Process(self.disk, module, params, child_paths, extra, self.trace, self)
+        child = Process(self.disk, module, params, child_paths, extra, self.trace, self,
+                        syms=self.syms if module == self.module else None)
         # A mapped block is shared RAM, but this model keeps a copy in the
         # slot: write the parent's copies back before the child runs and
         # read them again after (las's sizing trial shares a block, D38)
@@ -618,6 +653,8 @@ class Process:
             if f is not None:
                 f.close()
         self.instr += child.instr
+        if child.prof is not None:
+            child.report()
         self.children.append((child.pid, status))
         c.a = child.pid
 
@@ -635,6 +672,8 @@ def main():
     ap.add_argument("--mem", type=int, default=0)
     ap.add_argument("--trace", action="store_true")
     ap.add_argument("--stats", action="store_true")
+    ap.add_argument("--profile", action="store_true")
+    ap.add_argument("--mark", action="append", default=[])
     ap.add_argument("--map")
     ap.add_argument("--break", dest="breaks", action="append", default=[])
     a = ap.parse_args()
@@ -646,11 +685,16 @@ def main():
     module = open(a.module, "rb").read()
     params = " ".join(a.args).encode("latin-1")
     syms = read_map(a.map) if a.map else []
+    global PROFILE, REPORT
+    PROFILE, REPORT = a.profile or bool(a.mark), a.profile
+    MARKS.update(a.mark)
     try:
         p = Process(disk, module, params, paths, a.mem, a.trace, syms=syms, breaks=a.breaks)
     except OS9Error as e:
         raise SystemExit(f"os9run: F$Fork would fail: error {e.code}")
     status = p.run()
+    if a.profile:
+        p.report()
     if RAM:
         print(f"os9run: {len(RAM)} RAM blocks never given back (F$DelRAM)", file=sys.stderr)
         status = status or 1

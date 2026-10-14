@@ -35,6 +35,18 @@
  * defs: instructions, macros, sections, errors, references, a      *
  * change to a symbol defined before the use.                       *
  *                                                                  *
+ * Without --defsimg, in lwasm mode, the same recording is kept in   *
+ * memory for the run (Mem): lwasm mode reads the defs in every     *
+ * pass (ifp1 is always true), so pass 2 and any settling pass      *
+ * apply the record instead of reading them again. Only what those  *
+ * passes need: the counters (G), the last nam and ttl (T), and the *
+ * range of handles the defs created. Reading the defs in pass 2    *
+ * changes exactly one thing in that range: each defined symbol a   *
+ * line referenced before its definition loses DIRLOC (the Z        *
+ * records of every image, D54). The symbols before the use must    *
+ * not change after the record (img_touch), as P checks for a file. *
+ * Not when listing: pass 2 lists the defs' lines.                  *
+ *                                                                  *
  * File: "LASI", a byte '1' once complete, version, options, the    *
  * use's name, then tagged records: P, F and T (nam/ttl lines, done *
  * again on loading), G (counters, conditionals), S (the symbols    *
@@ -67,6 +79,9 @@ char ImgRec,                    /* recording pass 1 */
 FILE **ImgBase;                 /* use-file stack at the use (file_io.c) */
 
 static int State, UseSeen, Touched;
+static char Mem;                /* recording in memory, not a file */
+static unsigned MemT;           /* Mem: last nam and ttl (bank_alloc) */
+#define MEMT 128                /* bytes for each, as _nam and _ttl */
 static FILE *Fp;
 static SYMH Lo, Hi;             /* the defs' symbols: handles Lo..Hi-1 */
 static long PPos, FPos, CondPos, ZPos;  /* where records start */
@@ -625,16 +640,25 @@ record (use)
      char *use;
 #endif
 {
-    if ( ! (Fp = fopen (ImgName, "w")))
+    if ( ! ImgName)
+    {
+        Mem = 1;                /* nam/ttl seen: none yet */
+        *bank_ptr (MemT = bank_alloc (2 * MEMT)) = 0;
+        bank_ptr (MemT)[MEMT] = 0;
+    }
+    else if ( ! (Fp = fopen (ImgName, "w")))
     {
         return;
     }
+    else
+    {
+        wr (MAGIC, 6);
+        pc (options ());
+        puts0 (use);
+        mark (&PPos, 0);
+        sym_walk (pname);
+    }
 
-    wr (MAGIC, 6);
-    pc (options ());
-    puts0 (use);
-    mark (&PPos, 0);
-    sym_walk (pname);
     State = REC1;
     ImgRec = ImgOn = 1;
     ImgBase = ThisFile;
@@ -662,7 +686,7 @@ img_bad (ZILCH)
     }
 
     Fp = 0;
-    ImgRec = ImgOn = 0;
+    ImgRec = ImgOn = Mem = 0;
     ImgBase = 0;
     State = IDLE;
 }
@@ -686,6 +710,10 @@ img_touch (h)
         if ((State == REC1) || (State == REC2))
         {
             img_bad ();         /* the defs changed an older symbol */
+        }
+        else if (Mem && (h < Lo))
+        {
+            Touched = 1;        /* a symbol from before the use changed */
         }
 
         return;
@@ -737,16 +765,25 @@ img_op (op)
     *p = '\0';
     n = p - w;
 
-    for (p = Ops; *p && strncmp (p, w, n); ++p)
+    for (p = Ops; p[1] && strncmp (p, w, n); p = strchr (p + 1, ' '))
     {
     }
 
-    if (*op || ! *p)
+    if (*op || ! p[1])
     {
         img_bad ();
     }
     else if ((w[1] == 'n' && w[2] == 'a') || (w[1] == 't' && w[2] == 't'))
     {
+        if (Mem)                /* pass 2 leaves the last of each */
+        {
+            p = bank_ptr (MemT) + ((w[1] == 't') ? MEMT : 0);
+            *p = 1;
+            strncpy (p + 1, SrcChar, MEMT - 2);
+            p[MEMT - 1] = '\0';
+            return;
+        }
+
         pc ('T');               /* nam/ttl: the operand, as copy_to takes it */
         pc (w[1]);
         puts0 (SrcChar);
@@ -764,6 +801,11 @@ img_file (use)
 #endif
 {
     char st[9];
+
+    if (Mem)
+    {
+        return;                 /* the files don't change during a run */
+    }
 
     if ( ! stamp (UsePath, st))
     {
@@ -807,17 +849,20 @@ endrec1 (ZILCH)
         return;
     }
 
-    pc ('G');
-    wr ((char *) G, sizeof (G));
-
-    for (i = 0, c = 0; i < NCond; ++i)
+    if ( ! Mem)
     {
-        c |= cond_bit (Cond0 + i) << (i & 7);
+        pc ('G');
+        wr ((char *) G, sizeof (G));
 
-        if (((i & 7) == 7) || (i == NCond - 1))
+        for (i = 0, c = 0; i < NCond; ++i)
         {
-            pc (c);
-            c = 0;
+            c |= cond_bit (Cond0 + i) << (i & 7);
+
+            if (((i & 7) == 7) || (i == NCond - 1))
+            {
+                pc (c);
+                c = 0;
+            }
         }
     }
 
@@ -831,7 +876,10 @@ endrec1 (ZILCH)
             return;
         }
 
-        putsym ('S', h);
+        if ( ! Mem)
+        {
+            putsym ('S', h);
+        }
     }
 
     State = RECWAIT;
@@ -897,7 +945,7 @@ img_end (ZILCH)
 void
 img_settle (ZILCH)
 {
-    if (State != LOADED)
+    if ((State != LOADED) && ! Mem)
     {
         img_bad ();
     }
@@ -922,11 +970,61 @@ img_pass (ZILCH)
  *           reading the defs again changes.                            *
  * ******************************************************************** */
 
+/* mem2() - pass 2 with a record in memory: apply it if nothing it
+ * depends on changed (returns 1); then it stays for the next pass */
+
+static int
+mem2 (ZILCH)
+{
+    register char *p;
+    SYMH h;
+
+    ImgOn = 0;
+
+    if (Touched || ! placeok () || (AbsCtr != Abs0))
+    {
+        img_bad ();
+        TRACE ("pass 2 read");
+        return 0;
+    }
+
+    applyg ();
+
+    for (h = bank_after (Lo, 0); h < Hi; h = sym_after (h))
+    {
+        if ((sym_msk (h) & (RELATIVE | DIRLOC)) == (RELATIVE | DIRLOC))
+        {
+            sym_setmsk (h, sym_msk (h) & ~DIRLOC);
+        }
+    }
+
+    p = bank_ptr (MemT);
+
+    if (*p)
+    {
+        strcpy (_nam, p + 1);
+    }
+
+    if (p[MEMT])
+    {
+        strcpy (_ttl, p + MEMT + 1);
+    }
+
+    ImgOn = 1;
+    TRACE ("pass 2 applied the record");
+    return 1;
+}
+
 static int
 pass2 (ZILCH)
 {
     FILE *w = Fp;               /* the image being written, if recording */
     int ok;
+
+    if (Mem)
+    {
+        return mem2 ();
+    }
 
     if (w)
     {
@@ -992,8 +1090,8 @@ img_use (name)
 {
     int r;
 
-    if ( ! ImgName || ! LwasmMode || UseSeen || (ThisFile != FrstFil) ||
-        (LastSrc - SrcNam != 1) || preload_count ())
+    if ((! ImgName && (ListFlg > 0)) || ! LwasmMode || UseSeen ||
+        (ThisFile != FrstFil) || (LastSrc - SrcNam != 1) || preload_count ())
     {
         return 0;
     }
@@ -1011,9 +1109,9 @@ img_use (name)
      * but never records one; it reads the defs if the parent asks
      * (sizing.c: a defs label's section was needed) */
 
-    if (SzTrial && SzNoImg)
+    if (SzTrial && (SzNoImg || ! ImgName))
     {
-        return 0;
+        return 0;               /* (the trial has no pass 2) */
     }
 #endif
 
@@ -1026,6 +1124,12 @@ img_use (name)
 
     if ( ! placeok ())
     {
+        return 0;
+    }
+
+    if ( ! ImgName)
+    {
+        record (name);          /* in memory, for the passes after */
         return 0;
     }
 
