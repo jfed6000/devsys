@@ -280,10 +280,12 @@ SETTLE = os.path.join(HERE, "native", "settle.asm")
 SETTLE_PRAGMAS = "pcaspcr,nosymbolcase,condundefzero,undefextern,dollarnotlocal,noforwardrefmax"
 # The cc suite's programs: source, and the line each must print. longret
 # checks long and double results returned in X (step 14, D43); clibtest
-# what step 18 fixed in the C library and in dcc68's constants (D52)
+# what step 18 fixed in the C library and in dcc68's constants (D52);
+# regwidth that dcc68's register tracking keeps char and int apart (D53)
 CC_PROGS = [("hello", HELLO, "hello from dcc on the F256: 45"),
             ("longret", os.path.join(HERE, "native", "longret.c"), "longret: all right"),
-            ("clibtest", os.path.join(HERE, "native", "clibtest.c"), "clibtest: all right")]
+            ("clibtest", os.path.join(HERE, "native", "clibtest.c"), "clibtest: all right"),
+            ("regwidth", os.path.join(HERE, "native", "regwidth.c"), "regwidth: all right")]
 
 
 def suite_cc(dsk):

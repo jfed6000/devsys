@@ -2,6 +2,8 @@
 #include "cj.h"
 
 static wlktr();
+static sametree();
+static ischar();
 static fixnode();
 static graft();
 
@@ -97,7 +99,10 @@ register expnode *tree;
 }
 
 
-cmptrees(tree,cont)
+/* same expression in the same place (op, value and modifier at each
+ * node), whatever its width: what a store to TREE changes (subtree) */
+static
+sametree(tree,cont)
 register expnode *tree, *cont;
 {
     if (cont == NULL) return tree == NULL;
@@ -105,10 +110,29 @@ register expnode *tree, *cont;
     if (tree->op == cont->op
                && tree->val.num == cont->val.num
                && tree->modifier == cont->modifier) {
-        return cmptrees(tree->left,cont->left)
-                        && cmptrees(tree->right,cont->right);
+        return sametree(tree->left,cont->left)
+                        && sametree(tree->right,cont->right);
     }
     return 0;
+}
+
+
+/* a register holding CONT holds TREE: the same expression, and both a
+ * char or neither. After "ldb 12,s" D doesn't hold the int at 12,s, nor
+ * after "ldd 12,s" the char there (B holds the byte at 13,s) */
+cmptrees(tree,cont)
+register expnode *tree, *cont;
+{
+    return sametree(tree,cont)
+                && (tree == NULL || ischar(tree) == ischar(cont));
+}
+
+
+static
+ischar(t)
+register expnode *t;
+{
+    return t->type == CHAR || t->type == UCHAR;
 }
 
 
@@ -119,7 +143,7 @@ register expnode *tree,*cont;
     expnode *t;
 
     if (cont == NULL) return NULL;
-    if (cmptrees(tree,cont)) return cont;
+    if (sametree(tree,cont)) return cont;
     if (t = subtree(tree,cont->left)) return t;
     return subtree(tree,cont->right);
 }

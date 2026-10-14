@@ -17,6 +17,11 @@ proof for the native chain (native.py cc builds and runs longret.c).
   4. macros   two las runs in one directory don't share a macro file
               ("rma.tmp"): four at once, three times, each must equal a
               run on its own.
+  5. regwidth dcc68's register tracking doesn't take a char for an int
+              at the same place, or an int for a char (D53): it stored D
+              after "ldb" where "ldd" was needed. harness/native/
+              regwidth.c, built and run like longret: "regwidth: all
+              right", status 0.
 
   python3 harness/silent.py [--keep]
 """
@@ -59,26 +64,36 @@ def cr_copy(src, dst):
     open(dst, "wb").write(data)
 
 
-def check_longret():
-    d = os.path.join(WORK, "longret")
+def build_and_run(name):
+    """harness/native/NAME.c built with the devsys passes and run in the
+    model: it must print "NAME: all right" and exit 0."""
+    d = os.path.join(WORK, name)
     os.makedirs(os.path.join(d, "CMDS"))
-    src = os.path.join(HERE, "native", "longret.c")
+    src = os.path.join(HERE, "native", name + ".c")
     p = run([os.path.join(DCC, "CPP/dcpp"), "-I=" + os.path.join(COCOC, "Defs"), src], d)
-    open(os.path.join(d, "lr.i"), "wb").write(p.stdout)
-    run([os.path.join(DCC, "CC09/dcc68"), "lr.i", "-o=lr.raw.a"], d)
-    with open(os.path.join(d, "lr.raw.a"), "rb") as fin:
+    open(os.path.join(d, "x.i"), "wb").write(p.stdout)
+    run([os.path.join(DCC, "CC09/dcc68"), "x.i", "-o=x.raw.a"], d)
+    with open(os.path.join(d, "x.raw.a"), "rb") as fin:
         opt = subprocess.run([os.path.join(DCC, "COpt/dco68")], stdin=fin,
                              capture_output=True, env=lwdiff.clean_env())
-    open(os.path.join(d, "lr.a"), "wb").write(opt.stdout)
-    run([LAS, "lr.a", "-o=lr.r"], d)
-    run([LLINK, os.path.join(LIB, "cstart.r"), "lr.r", "-l=" + os.path.join(LIB, "clib.l"),
-         "-o=CMDS/longret", "-n=longret"], d)
+    open(os.path.join(d, "x.a"), "wb").write(opt.stdout)
+    run([LAS, "x.a", "-o=x.r"], d)
+    run([LLINK, os.path.join(LIB, "cstart.r"), "x.r", "-l=" + os.path.join(LIB, "clib.l"),
+         "-o=CMDS/" + name, "-n=" + name], d)
     out = os.path.join(d, "printed")
-    r = os9run(d, ".", os.path.join(d, "CMDS/longret"), [], out)
+    r = os9run(d, ".", os.path.join(d, "CMDS", name), [], out)
     printed = open(out, "rb").read().decode("latin-1").replace("\r", "\n").strip() \
         if os.path.exists(out) else ""
-    ok = r.returncode == 0 and printed == "longret: all right"
+    ok = r.returncode == 0 and printed == name + ": all right"
     return ok, f"status {r.returncode}, printed {printed!r}"
+
+
+def check_longret():
+    return build_and_run("longret")
+
+
+def check_regwidth():
+    return build_and_run("regwidth")
 
 
 def check_errexit():
@@ -152,7 +167,8 @@ def main():
     os.makedirs(WORK)
     results = []
     for name, check in (("longret", check_longret), ("errexit", check_errexit),
-                        ("dcpp", check_dcpp), ("macros", check_macros)):
+                        ("dcpp", check_dcpp), ("macros", check_macros),
+                        ("regwidth", check_regwidth)):
         ok, detail = check()
         results.append(ok)
         print(f"{'pass' if ok else 'FAIL'}  {name}: {detail}")

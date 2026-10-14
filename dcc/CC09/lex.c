@@ -311,50 +311,33 @@ char valtab[] = {
 /*                                  OR              COMPL */
 };
 
+/* the keywords' types, in the order they were once installed one call
+ * each, so the symbol table is unchanged; lexinit() has their names.
+ * Entries KWMOS to KWMOS+6 also go where struct members are looked up
+ * (mosflg). The names are a literal, so they stay in the code: only the
+ * types take data room */
+static char kwtypes[] = {
+    DOUBLE, FLOAT, TYPEDEF, STATIC, SIZEOF, INT, CHAR, SHORT, LONG, INT,
+    CHAR, SHORT, LONG, SIGN, UNSIGN, FLOAT, AUTO, EXTERN, DIRECT, REG,
+    GOTO, RETURN, IF, WHILE, ELSE, SWITCH, CASE, BREAK, CONTIN, DO,
+    DEFAULT, FOR, STRUCT, UNION, SIGN, UNSIGN
+};
+#define KWMOS   9
+
 lexinit()
 {
-#ifdef  DOFLOATS
-     install("double",DOUBLE);
-     install("float",FLOAT);
-#endif
-     install("typedef",TYPEDEF);
-     install("static",STATIC);
-     install("sizeof",SIZEOF);
-     install("int",INT);
-     install("char",CHAR);
-     install("short",SHORT);
-     install("long",LONG);
-     mosflg=1; /* These keywords may appear inside struct defs */
-     install("int",INT);
-     install("char",CHAR);
-     install("short",SHORT);
-     install("long",LONG);
-     install("signed", SIGN);
-     install("unsigned",UNSIGN);
-#ifdef DOFLOATS
-     install("float",FLOAT);
-#endif
-     mosflg=0; /* back out of struct member mode */
-     install("auto",AUTO);
-     install("extern",EXTERN);
-     install("direct",DIRECT);
-     install("register",REG);
-     install("goto",GOTO);
-     install("return",RETURN);
-     install("if",IF);
-     install("while",WHILE);
-     install("else",ELSE);
-     install("switch",SWITCH);
-     install("case",CASE);
-     install("break",BREAK);
-     install("continue",CONTIN);
-     install("do",DO);
-     install("default",DEFAULT);
-     install("for",FOR);
-     install("struct",STRUCT);
-     install("union",UNION);
-     install("signed", SIGN);
-     install("unsigned",UNSIGN);
+    register char *p;
+    register int i;
+
+    p = "double\0float\0typedef\0static\0sizeof\0int\0char\0short\0long\0int\0"
+        "char\0short\0long\0signed\0unsigned\0float\0auto\0extern\0direct\0"
+        "register\0goto\0return\0if\0while\0else\0switch\0case\0break\0"
+        "continue\0do\0default\0for\0struct\0union\0signed\0unsigned";
+    for (i = 0; i < sizeof kwtypes; ++i) {
+        mosflg = (i >= KWMOS && i < KWMOS + 7);
+        install(p,kwtypes[i]);
+        while (*p++) ;
+    }
 }
 
 

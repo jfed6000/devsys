@@ -44,5 +44,11 @@ DEVSYS_DCC=${DEVSYS_DCC:-$HOME/projects/devsys/dcc}
 "$DCC/CC09/dcc68" consts.i -o=consts.cococ.a 2> consts.cococ.err
 "$DEVSYS_DCC/CC09/dcc68" consts.i -o=consts.a
 
+# Register reuse (chapter 7, DESIGN.md D53): CoCoC's dcc68 takes D, loaded
+# with the char p->c[0], for the int p->i too; devsys's loads it
+"$DCC/CPP/dcpp" "$EX/regreuse.c" > regreuse.i
+"$DCC/CC09/dcc68" regreuse.i -o=regreuse.cococ.a
+"$DEVSYS_DCC/CC09/dcc68" regreuse.i -o=regreuse.a
+
 echo "Built into $OUT:"
 ls -l "$OUT"
