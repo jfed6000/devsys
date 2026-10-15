@@ -7,6 +7,8 @@ action *acslots[128];
 
 static char empty[1] = {'\0'};	/* the empty string */
 
+#define NPOS    8   /* optim's positions: patterns are at most NPOS - 1 long */
+
 extern char *bratab[];
 
 #ifdef DEBUG
@@ -52,7 +54,7 @@ char *line;
 	instr *i = grab(sizeof(instr));
 	register char *c = line;
 	char *idx, *mnem, *oper;
-	int count;
+	int count, len = 1;
 
 	i->nxtins = NULL;
 	while (*c) {
@@ -133,7 +135,11 @@ char *line;
 		if (strlen(c) < 2) { /* we're at the end */
 			return i;
 		} else {	/* make another instruction to fill */
-			instr *i2 = grab (sizeof (instr));
+			instr *i2;
+
+			if (++len > NPOS - 1)	/* optim's positions */
+				error ("pattern too long");
+			i2 = grab (sizeof (instr));
 
 			i2->nxtins = i;
 			i = i2;
@@ -234,6 +240,79 @@ char *buf;
     return argcopy(i, buf);
 }
 
+/* The instructions a pattern is matched against, read once per optim
+ * call (step 24): every action used to read them again, through the
+ * banked records, and copy their operands again. Position c is the
+ * instruction c back from i2 (0: i2 itself); a pattern's ^1 operand
+ * looks one further back. Filled as far as an action needs */
+static H cins[NPOS];            /* the instruction (ilist ends the walk) */
+static char clab[NPOS];         /* has labels */
+static char *cmnem[NPOS];       /* its mnemonic (mnemtab) */
+static char *copd[NPOS];        /* its operand (opnd), once read */
+static char cgot[NPOS];         /* copd is read */
+static char cbuf[NPOS][ARGSIZE+1];
+static direct int cfill;        /* positions read */
+
+/* position c: the instruction there */
+static H
+cpos(c)
+int c;
+{
+    H h;
+
+    while (cfill <= c) {
+        h = cins[cfill - 1];
+        if (h != ilist)
+            h = I_PRED(h);
+        cins[cfill] = h;
+        if (h != ilist) {
+            clab[cfill] = I_LLIST(h) != 0;
+            cmnem[cfill] = MNEMOF(h);
+        }
+        cgot[cfill++] = FALSE;
+    }
+    return cins[c];
+}
+
+/* the operand at position c (opnd: NULL for a branch and the head) */
+static char *
+copnd(c)
+int c;
+{
+    if (!cgot[c]) {
+        copd[c] = opnd(cins[c], cbuf[c]);
+        cgot[c] = TRUE;
+    }
+    return copd[c];
+}
+
+/* the same without a call where it's already read */
+#define CPOS(c)     ((c) < cfill ? cins[c] : cpos(c))
+#define COPND(c)    (cgot[c] ? copd[c] : copnd(c))
+
+/* text s can't match pattern p (match) if p starts with something
+ * other than a wildcard (match.c: '*', '?', '<') and s doesn't: most
+ * patterns tried fail there, without a call (step 24) */
+#define FIRSTDIFF(p, s) (*(p) != *(s) && *(p) != '*' && *(p) != '?' \
+                            && *(p) != '<')
+
+/* does mnemonic m match a pattern's p? Both are in mnemtab, where each
+ * text is kept once, so the same text is the same pointer (optim tests
+ * that before calling); a pattern without a wildcard matches only its
+ * own text */
+static
+mmatch(m, p)
+char *m;
+register char *p;
+{
+    register char *q;
+
+    for (q = p; *q; ++q)
+        if (*q == '*' || *q == '?' || *q == '<')
+            return match(m, p);
+    return FALSE;
+}
+
 /* Fix: Added return type void */
 void
 optim(i)
@@ -244,7 +323,7 @@ H i;
     action *a;
     instr *ap, *mp;
     char labc, c, found, fallback = FALSE;
-    char mbuf[MNEMSIZE+1], pbuf[ARGSIZE+1], abuf[ARGSIZE+1], *s, *ps;
+    char mbuf[MNEMSIZE+1], pbuf[ARGSIZE+1], abuf[ARGSIZE+1], *s, *ps, *ms;
 
     i = I_PRED(i);
     for (;;) {
@@ -281,34 +360,41 @@ loop:   if (i == ilist || (i2 = I_SUCC(i)) == ilist)
             fallback = TRUE;
         }
 
+        cins[0] = i2;
+        clab[0] = FALSE;                /* tested above */
+        cmnem[0] = MNEMOF(i2);
+        cgot[0] = FALSE;
+        cfill = 1;
 restart:
         for (found = FALSE; a ; a = a->nxtact) {
 #ifdef DEBUG
             debug("  matching action %p.\n",a);
 #endif
-            i = i2;
             labc = c = 0;
-            for (ap = a->actp; ap; i = I_PRED(i), ap = ap->nxtins, ++c) {
-                if (i == ilist) break;
-                if (!labc && I_LLIST(i)) labc = c; /* has label(s) at pos c */
+            for (ap = a->actp; ap; ap = ap->nxtins, ++c) {
+                if (CPOS(c) == ilist) break;
+                if (!labc && clab[c]) labc = c; /* has label(s) at pos c */
                 if (labc && labc < c) {
 #ifdef DEBUG
                     debug("    inside label prevents match.\n");
 #endif
                     break;
                 }
-                if (ap->mnp && match(MNEMOF(i),ap->mnp) == 0) break;
+                if ((ms = ap->mnp) && ms != cmnem[c]
+                        && (FIRSTDIFF(ms, cmnem[c]) || !mmatch(cmnem[c], ms)))
+                    break;
                 if (ap->opp) {
-                    if ((s = opnd(i, abuf)) == NULL) break;
+                    if ((s = COPND(c)) == NULL) break;
                     if ((int)ap->opp == 1) {
-                        t = I_PRED(i);
-                        if (t == ilist) break;
-                        if ((ps = opnd(t, pbuf)) == NULL) break;
-                        if (match(s,ps) == 0) break;
-                    } else if (match(s,ap->opp) == 0) break;
+                        if (CPOS(c + 1) == ilist) break;
+                        if ((ps = COPND(c + 1)) == NULL) break;
+                    } else
+                        ps = ap->opp;
+                    if (FIRSTDIFF(ps, s) || match(s,ps) == 0) break;
                 }
 #ifdef DEBUG
-                debug("    matched: %s %s <=> %s %s\n",MNEMOF(i),abuf,
+                debug("    matched: %s %s <=> %s %s\n",cmnem[c],
+                               cgot[c] && copd[c] ? copd[c] : "",
                                strinst(ap->mnp), strinst(ap->opp));
 #endif
             }
@@ -418,7 +504,7 @@ void
 finddupl(i)
 H i;
 {
-    H ip1, lbp, rlp1, rlp2, lmovp, t, u, lab;
+    H ip1, lbp, rlp1, rlp2, lmovp, t, u, lab, r;
     int it;
     char *mbuf, abuf[ARGSIZE+1];
 
@@ -502,11 +588,14 @@ H i;
         } else {
             mbuf = MNEMOF(i);
             argcopy(i, abuf);
-            /* travel down instruction list */
-            for (ip1 = I_PRED(i); ip1 != ilist; ip1 = I_PRED(ip1)) {
+            /* travel back through the earlier returns (inst.c's list:
+             * the instructions with CODEBRK and not BRANCH, in the order
+             * the walk back through every instruction met them) */
+            for (r = retnew; r; r = RET_OLDER(r)) {
+                if ((ip1 = RET_INS(r)) == i)
+                    continue;
                 it = I_ITYPE(ip1);
-                if (!(it & CODEBRK)
-                        || (it & (BLOCKDUP|BRANCH)))
+                if (it & BLOCKDUP)
                     continue;
                 if (strcmp(mbuf,MNEMOF(ip1)) == 0
                         && (t = I_ARG(ip1), strcmp(abuf,ARG(t)) == 0)

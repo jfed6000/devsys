@@ -1,21 +1,42 @@
 #include "op.h"
 #include "ctype.h"
 
-#ifndef _OS9
-# include <fnmatch.h>
-#endif
-#include <stdint.h>
+/* does s match p, where '*' is any characters, '?' any one and the
+ * rest themselves? (step 24) CoCoC's patmatch, which the 6809 used, is
+ * the same test, but a call for every character after a '*' (6% of
+ * dco68's time on te); Linux used fnmatch, where '[' also starts a
+ * set, so an operand like [2,s] compared as a pattern (^1) differed
+ * between the machines. One backtrack point is enough for '*' */
+static
+glob (p, s)
+register char *p;
+char *s;
+{
+	char *pstar, *sstar;
+
+	pstar = NULL;
+	for (;;) {
+		if (*p == '*') {
+			pstar = ++p;
+			sstar = s;
+		} else if (*s && (*p == '?' || *p == *s)) {
+			++p;
+			++s;
+		} else if (*s == '\0' && *p == '\0') {
+			return 1;
+		} else if (pstar == NULL || *sstar == '\0') {
+			return 0;
+		} else {
+			p = pstar;
+			s = ++sstar;
+		}
+	}
+}
 
 match (s, p)
 char *s,*p;
 {
-	if (p == NULL) {
-		return 1;
-#ifdef _OS9
-	} else if (patmatch (p, s, 0)) {
-#else
-	} else if (0 == fnmatch (p, s, FNM_NOESCAPE)) {
-#endif
+	if (p == NULL || glob (p, s)) {
 		return 1;
 	}
 
