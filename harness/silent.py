@@ -25,6 +25,10 @@ proof for the native chain (native.py cc builds and runs longret.c).
   6. unsgn    an unsigned comparison with 0 doesn't test a stale carry
               (D59): dco68 dropped "cmpd #0" after "ldd" before bhi/bls.
               harness/native/unsgn.c, built and run like longret.
+  7. cstr     dcc68 removes its strings file ("cstr.XXXXXX") when a fatal
+              error ends the compile (D61): errexit() left it in the
+              current directory. Linux dcc68, and native dcc68 in the
+              model, on a string followed by a fatal error record.
 
   python3 harness/silent.py [--keep]
 """
@@ -112,6 +116,25 @@ def check_errexit():
     return good == 0 and bad != 0, f"good source {good}, bad -D value {bad}"
 
 
+def check_cstr():
+    d = os.path.join(WORK, "cstr")
+    src = 'main() { puts("hello"); }\n#1\nbad line\n2\n0\nfatal\nf() {}\n'
+    left = {}
+    for where in ("linux", "native"):
+        w = os.path.join(d, where)
+        os.makedirs(w)
+        open(os.path.join(w, "x.i"), "w").write(src if where == "linux" else src.replace("\n", "\r"))
+        if where == "linux":
+            p = run([os.path.join(DCC, "CC09/dcc68"), "x.i", "-o=x.a"], w)
+        else:
+            p = os9run(d, where, os.path.join(NATIVE, "bin", "dcc68"), ["x.i", "-o=x.a"],
+                       os.path.join(d, "c68"))
+        left[where] = (p.returncode, [f for f in os.listdir(w) if f.startswith("cstr.")])
+    ok = all(rc != 0 and not files for rc, files in left.values())
+    return ok, ", ".join(f"{k}: status {rc}, {len(f)} strings file(s) left"
+                         for k, (rc, f) in left.items())
+
+
 def check_dcpp():
     d = os.path.join(WORK, "dcpp")
     os.makedirs(os.path.join(d, "CMDS"))
@@ -175,7 +198,8 @@ def main():
     results = []
     for name, check in (("longret", check_longret), ("errexit", check_errexit),
                         ("dcpp", check_dcpp), ("macros", check_macros),
-                        ("regwidth", check_regwidth), ("unsgn", check_unsgn)):
+                        ("regwidth", check_regwidth), ("unsgn", check_unsgn),
+                        ("cstr", check_cstr)):
         ok, detail = check()
         results.append(ok)
         print(f"{'pass' if ok else 'FAIL'}  {name}: {detail}")

@@ -129,6 +129,7 @@ errexit()
                 if(infile)
                         unlink(infile);
 #endif
+                rmstrings();
                 symdone();
                 exit(1);
 }

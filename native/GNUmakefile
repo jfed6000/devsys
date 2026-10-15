@@ -73,7 +73,7 @@ dcc68_MEM	:= 10
 dcc68_CC	:= -s
 
 dco68_DIR	:= $(DEVSYS)/dcc/COpt
-dco68_OBJS	:= main parse labels inst optim match misc ctype bank
+dco68_OBJS	:= main parse labels inst optim match misc ctype bank topslot
 dco68_DEFS	:=
 # no stack checks in the bank accessor (called for every record access)
 dco68_NOCHECK	:= bank
@@ -91,6 +91,9 @@ make_DEFS	:=
 make_CC		:= -s
 
 TOOLS	:= las llink dcpp dcc68 dco68 dcc make
+# The tools that map RAM blocks into windows (F$MapBlk): each module must
+# fill the top memory slot, or a window covers the system page (D51, D61)
+MAPPERS	:= las llink dcc68 dco68
 
 all: $(TOOLS)
 
@@ -108,6 +111,7 @@ $(OBJ)/$(1)/%.r: $$($(1)_DIR)/%.c $$(wildcard $$($(1)_DIR)/*.h) $(HOSTTOOLS) | $
 
 $(BIN)/$(1): $$(patsubst %,$(OBJ)/$(1)/%.r,$$($(1)_OBJS)) $(CLIBS) | $(BIN)
 	$(LLINK) -o=$$@ -n=$(1) $(if $($(1)_MEM),-M=$($(1)_MEM)) -m -s $(CLIB)/cstart.r $$(filter %.r,$$(filter-out $(CLIB)/%,$$^)) -l=$(CLIB)/sys.l -l=$(CLIB)/clib.l >$(OBJ)/$(1).map
+	$(if $(filter $(1),$(MAPPERS)),python3 $(DEVSYS)/harness/topslot.py $$@:$(OBJ)/$(1).map || { rm -f $$@; exit 1; })
 
 $(OBJ)/$(1):
 	mkdir -p $$@

@@ -79,9 +79,15 @@ char *line;
 				error ("bad opcode reference");
 				break;
 		} else {
-			mnem = grab (count+1);
-			strncpy (mnem, c, count);
-			*(mnem+count) = '\0';
+			/* devsys: the instructions' table of mnemonics, so
+			 * each is kept once, not once per pattern (D61) */
+			char m[MNEMSIZE];
+
+			if (count >= MNEMSIZE)
+				error ("bad mnemonic");
+			strncpy (m, c, count);
+			m[count] = '\0';
+			mnem = mnemtab[mnemix (m)];
 #if 0 && defined DEBUG
 			debug("\nmnem: \"%s\"", mnem);
 #endif

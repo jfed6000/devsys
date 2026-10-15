@@ -170,7 +170,9 @@ endsect()
 }
 
 
-/*
+/* devsys: the strings file is closed and opened again to read it, as
+ * CoCoC once did, not rewound: rewind() is fseek's, which brought 400
+ * bytes of library into dcc68 for this one call (D61) */
 dumpstrings()
 {
      register int c;
@@ -181,22 +183,19 @@ dumpstrings()
                fatal(M_CANT_READ_STRINGS_FILE);
           while((c = getc(strfile)) != EOF)
                putc(c,code);
-          fclose(strfile);
-          unlink(strname);
+          if(ferror(strfile)) fatal(M_DUMPSTRINGS);
+          rmstrings();
      }
 }
-*/
-dumpstrings()
-{
-     register int c;
 
+/* close and remove the strings file, if there is one: when the compile
+ * ends, and on every error exit (devsys: errexit left it, D61) */
+rmstrings()
+{
      if(strfile) {
-          rewind(strfile);
-          while((c = getc(strfile)) != EOF)
-               putc(c,code);
-          if(ferror(strfile)) fatal(M_DUMPSTRINGS);
           fclose(strfile);
           unlink(strname);
+          strfile = NULL;
      }
 }
 
@@ -205,10 +204,7 @@ tidy()
 {
      int err = errno ? errno : 1;
 
-     if(strfile) {
-          fclose(strfile);
-          unlink(strname);
-     }
+     rmstrings();
      symdone();
      _exit(err);
 }

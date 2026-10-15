@@ -30,7 +30,9 @@
 #define STATBLK 62              /* handles into Static, ordinary memory */
 #define STATSIZE 1088             /* ilist + 128 bucket heads, 8 bytes each */
 #ifndef NWIN
-#  define NWIN  4               /* windows: dco68 uses 3 of the 8 slots */
+/* windows: the 8 slots of the 64K hold dco68's module (3, topslot.c),
+ * its data (2: the patterns alone take about 3.5K) and 3 windows (D61) */
+#  define NWIN  3
 #endif
 
 #define HANDLE(b, o) ((((unsigned) (b) + 1) << 10) | ((unsigned) (o) >> 3))
@@ -66,15 +68,8 @@ static
 newblock()
 {
 #ifdef _OS9
-    /* F$MapBlk gives the highest free slot. Unless dco68's code reaches
-     * the top one ($E000-$FFFF), that is it, and a block mapped there
-     * covers the system's page at $FE00: the machine hangs. A module
-     * reaches it when it ends by $FD00 in its last block: at most
-     * 15,616 bytes in two blocks, 16,385 to 23,808 in three (D51) */
-    extern int etext();
-
-    if (NBlk == 0 && (unsigned) etext < 0xE000)
-        error("dco68 doesn't fill its top memory slot: its size must be at most 15,616 bytes (two blocks)");
+    if (NBlk == 0)
+        topslot();      /* F$MapBlk mustn't give the top slot (D51, D61) */
 #endif
     if (NBlk == MAXBLK)
         error("out of memory (%d blocks)", MAXBLK);

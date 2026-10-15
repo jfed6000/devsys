@@ -10,7 +10,7 @@ current dco68 is compared with a reference built from a git revision
   plain     dcc/COpt/dco68 (Linux: every block stays where it is)
   bankwin1  -DBANKWIN -DNWIN=1: one window, emulated by copying a block in
             and out, as strict as the 6809 with one window
-  bankwin4  -DBANKWIN -DNWIN=4: four windows, as the 6809 build has
+  bankwin3  -DBANKWIN -DNWIN=3: three windows, as the 6809 build has (D61)
 
 Inputs: dcc68's output for every C source in CoCoC (through the devsys
 dcpp and dcc68) and the cross-build's native/obj/*/*.raw.a (run make in
@@ -107,7 +107,7 @@ def main():
                                  os.path.join(WORK, "ref")),
               "plain": build(cur, os.path.join(WORK, "plain")),
               "bankwin1": build(cur, os.path.join(WORK, "bw1"), "-DBANKWIN -DNWIN=1"),
-              "bankwin4": build(cur, os.path.join(WORK, "bw4"), "-DBANKWIN -DNWIN=4")}
+              "bankwin3": build(cur, os.path.join(WORK, "bw3"), "-DBANKWIN -DNWIN=3")}
 
     files = inputs()
     bad = {k: 0 for k in builds if k != "reference"}
