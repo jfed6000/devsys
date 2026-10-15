@@ -138,6 +138,7 @@ map (b)
 
 #endif
 
+#ifndef COCO
 char *
 #ifdef __STDC__
 bank_ptr (unsigned h)
@@ -148,7 +149,7 @@ bank_ptr (h)
 {
     register int b = HBLK (h);
 
-#if defined(COCO) || defined(BANKWIN)
+#ifdef BANKWIN
     if (b != Cur)
     {
         map (b);
@@ -159,6 +160,35 @@ bank_ptr (h)
     return Blk[b] + HOFF (h);
 #endif
 }
+#else
+/* bank_ptr(h) on the 6809: the block is the high byte / 16 - 1, the
+ * offset the low 12 bits * 2 (HBLK, HOFF). In assembly because DCC's
+ * h >> 12 is a library loop a bit at a time (cclsr took 18% of each
+ * pass), and every symbol, macro line and image record comes here.
+ * Cur is -1..14, so its low byte is enough to compare */
+#asm
+bank_ptr: lda 2,s
+ lsra
+ lsra
+ lsra
+ lsra
+ deca
+ cmpa Cur+1,y
+ bne bnkp2
+bnkp1 ldd 2,s
+ anda #15
+ lslb
+ rola
+ addd Window,y
+ rts
+bnkp2 tfr a,b
+ clra
+ pshs d
+ lbsr map
+ leas 2,s
+ bra bnkp1
+#endasm
+#endif
 
 unsigned
 #ifdef __STDC__
