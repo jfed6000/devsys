@@ -2,6 +2,13 @@
  * rtables.h - initializing data for tables and structures          *
  *                                                                  *
  * $Id::                                                        $   *
+ *                                                                  *
+ * The CODFORM tables are searched by FindCmd, which takes the      *
+ * first entry that is a prefix of the mnemonic: among entries with *
+ * the same first letter, a longer name must come before a shorter  *
+ * one it starts with ("ldd" before "ld"). cmdinit (findcmd.c)      *
+ * sorts every table by first letter at start (D64), so a new table *
+ * must be added there.                                             *
  * **************************************************************** */
 
 /* Table for cmds allowable before psect is encountered */

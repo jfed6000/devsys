@@ -40,6 +40,7 @@ main (argc, argv)
 {
     const char **_curntsrc;
 
+    cmdinit ();
     incdirs[0] = ".";
     inccount++;
 

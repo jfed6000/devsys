@@ -177,25 +177,30 @@ search (name, node)
 {
     int cmp = 1;
     register SYMH n;
+    struct symblstr *p;
 
     if ( (n = *node = *bucket (name)) )
     {
         do
         {
-            cmp = namecmp (name, SP (*node = n)->symblnam);
+            /* One mapping per node: namecmp maps nothing (D64) */
+
+            p = SP (*node = n);
+            cmp = PragNoCase ? namecmp (name, p->symblnam)
+                             : strcmp (name, p->symblnam);
 
             if (cmp < 0)
             {
-                n = SP (n)->left;
+                n = p->left;
             }
             else
             {
-                if ((cmp == 0) || ! (SP (n)->locmsk & LOC1BYT))
+                if ((cmp == 0) || ! (p->locmsk & LOC1BYT))
                 {
                     break;
                 }
 
-                n = SP (n)->right;
+                n = p->right;
             }
         } while (n);
     }
