@@ -234,7 +234,7 @@ optim(i)
 H i;
 {
     H i2, t, lab;
-    int it;
+    int it, c2;
     action *a;
     instr *ap, *mp;
     char labc, c, found, fallback = FALSE;
@@ -270,8 +270,7 @@ loop:   if (i == ilist || (i2 = I_SUCC(i)) == ilist)
 #ifdef DEBUG
         debug("actions search:\n");
 #endif
-        strcpy(mbuf, INS(i2)->mnem);
-        if (!(a = acslots[hash(mbuf)])) {
+        if (!(a = acslots[hash(MNEMOF(i2))])) {
             a = acslots[0];
             fallback = TRUE;
         }
@@ -292,7 +291,7 @@ restart:
 #endif
                     break;
                 }
-                if (ap->mnp && match(INS(i)->mnem,ap->mnp) == 0) break;
+                if (ap->mnp && match(MNEMOF(i),ap->mnp) == 0) break;
                 if (ap->opp) {
                     if ((s = opnd(i, abuf)) == NULL) break;
                     if ((int)ap->opp == 1) {
@@ -303,7 +302,7 @@ restart:
                     } else if (match(s,ap->opp) == 0) break;
                 }
 #ifdef DEBUG
-                debug("    matched: %s %s <=> %s %s\n",INS(i)->mnem,abuf,
+                debug("    matched: %s %s <=> %s %s\n",MNEMOF(i),abuf,
                                strinst(ap->mnp), strinst(ap->opp));
 #endif
             }
@@ -333,28 +332,27 @@ restart:
 			if (ap->mnp) {
 				if ((int)ap->mnp == 1) /* do nothing, same as NULL */;
 				else if ((int)ap->mnp == 2) {
-					strcpy(mbuf, INS(t)->mnem);
-					strcpy(INS(i)->mnem, mbuf);
+					c2 = I_MNEM(t);
+					INS(i)->mnem = c2;
 				} else if (ts = index(ap->mnp, '\\')) {	// mnp has \#
 					if (*(ts+1) > '0' && *(ts+1) < '3') {
-						strcpy(mbuf, INS(i)->mnem);
-						strcpy(pbuf, INS(t)->mnem);
+						strcpy(mbuf, MNEMOF(i));
+						strcpy(pbuf, MNEMOF(t));
 						matchcpy (ap->mnp,
 						          mbuf, mp->mnp,
 						          pbuf,
 						          (mp->nxtins) ? mp->nxtins->mnp : 0);
-						strcpy(INS(i)->mnem, mbuf);
+						INS(i)->mnem = mnemix(mbuf);
 					} else error("bad opcode reference");
 				} else {
-					strcpy(INS(i)->mnem,ap->mnp);
+					INS(i)->mnem = mnemix(ap->mnp);
 				}
             }
             if (ap->opp) {
 				if ((int)ap->opp == 1) /* do nothing, same as NULL */;
 				else if ((int)ap->opp == 2) {
 					argcopy(t, pbuf);
-					lab = I_ARG(i);
-					strcpy(ARG(lab), pbuf);
+					setarg(i, pbuf);
 				} else if (ts = index(ap->opp, '\\')) {	// opp has \#
 					if (*(ts+1) > '0' && *(ts+1) < '3') {
 						argcopy(i, abuf);
@@ -363,12 +361,10 @@ restart:
 						          abuf, mp->opp,
 						          pbuf,
 						          (mp->nxtins) ? mp->nxtins->opp : 0);
-						lab = I_ARG(i);
-						strcpy(ARG(lab), abuf);
+						setarg(i, abuf);
 					} else error("bad operand reference");
 				} else {
-					lab = I_ARG(i);
-					strcpy(ARG(lab),ap->opp);
+					setarg(i, ap->opp);
 				}
             }
             i = I_PRED(i);
@@ -400,7 +396,7 @@ H i;
     it = I_ITYPE(s);
     it = ((I_ITYPE(i) & BRAMASK) ^ 1) | (it & ~(CODEBRK|BRAMASK));
     INS(i)->itype = it;
-    strcpy(INS(i)->mnem,bratab[it & BRATYPE]);
+    INS(i)->mnem = mnemix(bratab[it & BRATYPE]);
     lab = I_ARG(i);
     remref(i,lab);
     lab = I_ARG(s);
@@ -418,7 +414,7 @@ H i;
 {
     H ip1, lbp, rlp1, rlp2, lmovp, t, u, lab;
     int it;
-    char mbuf[MNEMSIZE+1], abuf[ARGSIZE+1];
+    char *mbuf, abuf[ARGSIZE+1];
 
     if (I_PRED(i) == ilist) return;
     /* move labels on "bra"s to here */
@@ -498,7 +494,7 @@ H i;
                 /* label with code before this branch */
                 duplrefs(lab,i);
         } else {
-            strcpy(mbuf, INS(i)->mnem);
+            mbuf = MNEMOF(i);
             argcopy(i, abuf);
             /* travel down instruction list */
             for (ip1 = I_PRED(i); ip1 != ilist; ip1 = I_PRED(ip1)) {
@@ -506,7 +502,7 @@ H i;
                 if (!(it & CODEBRK)
                         || (it & (BLOCKDUP|BRANCH)))
                     continue;
-                if (strcmp(mbuf,INS(ip1)->mnem) == 0
+                if (strcmp(mbuf,MNEMOF(ip1)) == 0
                         && (t = I_ARG(ip1), strcmp(abuf,ARG(t)) == 0)
                         && (t = I_PRED(ip1), u = I_PRED(i), duplsrch(t,u)))
                     break;
@@ -523,7 +519,7 @@ H ip1, ip2;
 {
     H l1, l2, d1, d2;
     int t1, t2;
-    char mbuf[MNEMSIZE+1], abuf[ARGSIZE+1];
+    char abuf[ARGSIZE+1];
 
     t1 = I_ITYPE(ip1);
     t2 = I_ITYPE(ip2);
@@ -538,8 +534,7 @@ H ip1, ip2;
         }
         return l1 == l2;
     }
-    strcpy(mbuf, INS(ip1)->mnem);
-    if (strcmp(mbuf, INS(ip2)->mnem) != 0)
+    if (strcmp(MNEMOF(ip1), MNEMOF(ip2)) != 0)
         return 0;
     argcopy(ip1, abuf);
     l2 = I_ARG(ip2);

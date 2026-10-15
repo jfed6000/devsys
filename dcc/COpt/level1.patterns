@@ -74,23 +74,154 @@ pshs x pshs d
 pshs y pshs d
 ^2 y,d
 
-ldd * cmpd #0
-^2 ^2
+# A load or store sets N and Z and clears V, as "cmp #0" does, but
+# leaves C as it was, where cmp #0 clears it: the compare can go only
+# before a branch on N, Z or V (devsys, step 21: dropping it before
+# bhi/bls/bhs/blo let "while (n > 0)" with an unsigned n test a stale
+# carry). A branch's mnemonic here is its condition alone.
+ldd * cmpd #0 eq *
+^2 ^2 ^1 ^1
 
-ldx * cmpx #0
-^2 ^2
+ldd * cmpd #0 ne *
+^2 ^2 ^1 ^1
 
-ldy * cmpy #0
-^2 ^2
+ldd * cmpd #0 lt *
+^2 ^2 ^1 ^1
 
-ldu * cmpu #0
-^2 ^2
+ldd * cmpd #0 ge *
+^2 ^2 ^1 ^1
 
-sty * cmpy #0
-^2 ^2
+ldd * cmpd #0 le *
+^2 ^2 ^1 ^1
 
-stu * cmpu #0
-^2 ^2
+ldd * cmpd #0 gt *
+^2 ^2 ^1 ^1
+
+ldd * cmpd #0 pl *
+^2 ^2 ^1 ^1
+
+ldd * cmpd #0 mi *
+^2 ^2 ^1 ^1
+
+ldx * cmpx #0 eq *
+^2 ^2 ^1 ^1
+
+ldx * cmpx #0 ne *
+^2 ^2 ^1 ^1
+
+ldx * cmpx #0 lt *
+^2 ^2 ^1 ^1
+
+ldx * cmpx #0 ge *
+^2 ^2 ^1 ^1
+
+ldx * cmpx #0 le *
+^2 ^2 ^1 ^1
+
+ldx * cmpx #0 gt *
+^2 ^2 ^1 ^1
+
+ldx * cmpx #0 pl *
+^2 ^2 ^1 ^1
+
+ldx * cmpx #0 mi *
+^2 ^2 ^1 ^1
+
+ldy * cmpy #0 eq *
+^2 ^2 ^1 ^1
+
+ldy * cmpy #0 ne *
+^2 ^2 ^1 ^1
+
+ldy * cmpy #0 lt *
+^2 ^2 ^1 ^1
+
+ldy * cmpy #0 ge *
+^2 ^2 ^1 ^1
+
+ldy * cmpy #0 le *
+^2 ^2 ^1 ^1
+
+ldy * cmpy #0 gt *
+^2 ^2 ^1 ^1
+
+ldy * cmpy #0 pl *
+^2 ^2 ^1 ^1
+
+ldy * cmpy #0 mi *
+^2 ^2 ^1 ^1
+
+ldu * cmpu #0 eq *
+^2 ^2 ^1 ^1
+
+ldu * cmpu #0 ne *
+^2 ^2 ^1 ^1
+
+ldu * cmpu #0 lt *
+^2 ^2 ^1 ^1
+
+ldu * cmpu #0 ge *
+^2 ^2 ^1 ^1
+
+ldu * cmpu #0 le *
+^2 ^2 ^1 ^1
+
+ldu * cmpu #0 gt *
+^2 ^2 ^1 ^1
+
+ldu * cmpu #0 pl *
+^2 ^2 ^1 ^1
+
+ldu * cmpu #0 mi *
+^2 ^2 ^1 ^1
+
+sty * cmpy #0 eq *
+^2 ^2 ^1 ^1
+
+sty * cmpy #0 ne *
+^2 ^2 ^1 ^1
+
+sty * cmpy #0 lt *
+^2 ^2 ^1 ^1
+
+sty * cmpy #0 ge *
+^2 ^2 ^1 ^1
+
+sty * cmpy #0 le *
+^2 ^2 ^1 ^1
+
+sty * cmpy #0 gt *
+^2 ^2 ^1 ^1
+
+sty * cmpy #0 pl *
+^2 ^2 ^1 ^1
+
+sty * cmpy #0 mi *
+^2 ^2 ^1 ^1
+
+stu * cmpu #0 eq *
+^2 ^2 ^1 ^1
+
+stu * cmpu #0 ne *
+^2 ^2 ^1 ^1
+
+stu * cmpu #0 lt *
+^2 ^2 ^1 ^1
+
+stu * cmpu #0 ge *
+^2 ^2 ^1 ^1
+
+stu * cmpu #0 le *
+^2 ^2 ^1 ^1
+
+stu * cmpu #0 gt *
+^2 ^2 ^1 ^1
+
+stu * cmpu #0 pl *
+^2 ^2 ^1 ^1
+
+stu * cmpu #0 mi *
+^2 ^2 ^1 ^1
 
 leas 2,s puls u,pc
 ^1 x,u,pc

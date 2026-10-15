@@ -152,7 +152,6 @@ GLOBAL direct UINT     dup_find;
 GLOBAL direct int      CurntFil;
 GLOBAL direct int      LibFile;     /* D004b */
 GLOBAL direct int      obmemreq;
-GLOBAL direct char    *inpBuf;      /* D004f */
 GLOBAL direct char    *curRofNa;
 GLOBAL direct int      ddcount;
 GLOBAL direct int      dtcount;

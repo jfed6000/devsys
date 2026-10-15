@@ -261,6 +261,7 @@ lw_cleanup ()
 {
     if (TmpName[0])
         unlink(TmpName);
+    bb_free ();         /* on OS-9 the blocks outlive the process */
 }
 
 lw_select ()

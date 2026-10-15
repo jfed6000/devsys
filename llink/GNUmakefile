@@ -10,7 +10,8 @@ OBJS	= \
 	misc.o \
 	rl_05.o \
 	util.o \
-	lwsel.o
+	lwsel.o \
+	bigbuf.o
 
 llink: $(OBJS)
 	$(CC) $(LFLAGS) -o $@ $(OBJS)
