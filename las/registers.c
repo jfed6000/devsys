@@ -687,6 +687,20 @@ genreflist ()
 
                 if ((sym_msk (__lbl) & (NEGMASK | DIRENT)) == 0)
                 {
+                    /* A file with a module is written raw, without its
+                     * references (UsedModule): nothing will ever supply
+                     * this name, so it is undefined, as lwasm says. The
+                     * reference used to vanish with a 0 in its place */
+
+                    if (UsedModule && ! InSection)
+                    {
+                        char msg[64];
+
+                        strcpy (msg, "undefined symbol ");
+                        strncat (msg, sym_name (__lbl), 40);
+                        e_report (msg);
+                    }
+
                     RefExtern = 1;
 
                     if (sym_refs (__lbl) == 0)

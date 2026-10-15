@@ -933,7 +933,163 @@ def suite_self(dsk):
     return lines, check
 
 
+# Step 23: jfed's own F256 programs (~/projects/f256/jfed, outside devsys;
+# a program whose source is missing is skipped). C: name, source, dcc
+# options; built by native dcc, compared with the host passes.
+JFED = os.path.expanduser("~/projects/f256/jfed")
+PROG_C = [("te", "te/te/te.c", "-m=2k"),
+          ("dev", "dev-cc/dev.c", "-m=2k"),
+          ("tepipes", "te-pipes/te.c", "-m=2k"),
+          ("forktest", "te-pipes/forktest.c", ""),
+          ("as09", "as09/as09_main.c", ""),
+          ("optkeyc", "OptKeyTest/optkeytest.c", ""),
+          ("keytest", "textedit/keytest.c", ""),
+          ("tedm", "textedit/texteditMv2046.c", "-m=2k")]
+# Assembly: name, source, defs (a NitrOS9 tree, or None: the source's own
+# directory has them); built by native las, compared with the host las
+# (and lwasm, by lwdiff's rules, on the host)
+N9MAIN = os.path.expanduser("~/projects/wild/main/nitros9")
+N9TEXT = os.path.expanduser("~/projects/wild/newtextclutaddr/nitros9")   # SS.MTXTBLK
+PROG_ASM = [("testp1", "PipeExample/testp1.asm", N9MAIN),
+            ("testp2", "PipeExample/testp2.asm", N9MAIN),
+            ("memtext", "memtext/memtexttest.asm", N9TEXT),
+            ("optkeya", "OptKeyTest/optkeytest.asm", None)]
+PROG_PRAGMAS = "pcaspcr,nosymbolcase,condundefzero,undefextern,dollarnotlocal,noforwardrefmax"
+
+
+def host_prog_c(name, src, opts):
+    """A C program through the host passes as dcc runs them, from a copy
+    named NAME.c (dcc68 names the psect after the file)."""
+    d = os.path.join(WORK, "progs-host")
+    os.makedirs(d, exist_ok=True)
+    shutil.copy(src, os.path.join(d, name + ".c"))
+    env = lwdiff.clean_env()
+    dcc = os.path.join(DEVSYS, "dcc")
+
+    def run(argv, **kw):
+        p = subprocess.run(argv, cwd=d, env=env, capture_output=True, **kw)
+        if p.returncode:
+            sys.exit(f"host {argv[0]} ({name}): {p.stderr.decode(errors='replace')[-500:]}")
+        return p
+    pre = run([os.path.join(dcc, "CPP/dcpp"), "-I=" + os.path.dirname(src),
+               "-I=" + os.path.join(COCOC, "Defs"), name + ".c"])
+    open(os.path.join(d, name + ".i"), "wb").write(pre.stdout)
+    run([os.path.join(dcc, "CC09/dcc68"), name + ".i", f"-o={name}.raw.a"])
+    with open(os.path.join(d, name + ".raw.a"), "rb") as fin:
+        opt = run([os.path.join(dcc, "COpt/dco68")], stdin=fin)
+    open(os.path.join(d, name + ".a"), "wb").write(opt.stdout)
+    run([REF, f"-o={name}.r", name + ".a"])
+    mem = [o.replace("-m=", "-M=") for o in opts.split() if o.startswith("-m=")]
+    run([os.path.join(DEVSYS, "llink/llink"), f"-o={name}"] + mem +
+        [os.path.join(CLIB, "cstart.r"), name + ".r", "-l=" + os.path.join(CLIB, "clib.l")])
+    return os.path.join(d, name)
+
+
+def prog_asm_args(defs, srcdir, root):
+    """las options for one assembly program: the include path is the
+    source's directory, then the tree's defs and level2/wildbits (where
+    defsfile is), each under root (a host or an OS-9 path)."""
+    inc = ["-I=" + root("src", srcdir)]
+    if defs:
+        inc += ["-I=" + root("defs", os.path.join(defs, "defs")),
+                "-I=" + root("wb", os.path.join(defs, "level2/wildbits"))]
+    return ["--lwasm", "--pragma=" + PROG_PRAGMAS] + inc + ["-Dwildbits=1"]
+
+
+def suite_progs(dsk):
+    """Step 23: jfed's programs built on the F256 (dcc for C, las for
+    assembly), each compared with the same build by the host tools.
+    Times come from date -t around each build."""
+    os9("makdir", f"{dsk},T/P", check=False)
+    lines, cprogs, aprogs = ["chd /dd/T/P"], [], []
+
+    def stamp(name, i):
+        return f"date -t >{name}.t{i}"
+    for name, rel, opts in PROG_C:
+        src = os.path.join(JFED, rel)
+        if not os.path.exists(src) or (ONLY and not any(o in name for o in ONLY)):
+            continue
+        put(src, f"{dsk},T/P/{name}.c", text=True)
+        lines += [stamp(name, 0), f"dcc {name}.c {opts} -f=/dd/T/P/{name} >{name}.out >>{name}.err",
+                  stamp(name, 1)]
+        cprogs.append((name, src, opts))
+    staged, dirmap = set(), {}     # each directory once, as T/P/D/<n>
+    for name, rel, defs in PROG_ASM:
+        src = os.path.join(JFED, rel)
+        if not os.path.exists(src) or (ONLY and not any(o in name for o in ONLY)):
+            continue
+        srcdir = os.path.dirname(src)
+
+        def native_root(kind, path):
+            return dirmap.setdefault(path, f"/dd/T/P/D/{len(dirmap)}")
+        args = prog_asm_args(defs, srcdir, native_root)
+        for path, where in dirmap.items():
+            if path in staged:
+                continue
+            os9("makdir", f"{dsk},T/P/D", check=False)
+            os9("makdir", f"{dsk},{where[4:]}", check=False)
+            names = [f for f in os.listdir(path) if f.endswith(".d") or f == "defsfile"]
+            for f in names:
+                put(os.path.join(path, f), f"{dsk},{where[4:]}/{f}", text=True)
+            staged.add(path)
+        put(src, f"{dsk},T/P/{name}.asm", text=True)
+        opt = os.path.join(WORK, name + ".opt")
+        open(opt, "w").write("\n".join(args + [f"-o=/dd/T/P/{name}"]) + "\n")
+        put(opt, f"{dsk},T/P/{name}.opt", text=True)
+        lines += [stamp(name, 0), f"las {name}.asm --args={name}.opt >{name}.out >>{name}.err",
+                  stamp(name, 1)]
+        aprogs.append((name, src, defs))
+
+    def elapsed(name):
+        import datetime
+        try:
+            ts = [datetime.datetime.strptime((os9_text(f"{dsk},T/P/{name}.t{i}") or "").strip(),
+                                             "%B %d, %Y  %H:%M:%S") for i in (0, 1)]
+            return f"{(ts[1] - ts[0]).total_seconds():.0f} s"
+        except ValueError:
+            return "? s"
+
+    def check():
+        good = 0
+        for name, src, opts in cprogs:
+            ref = host_prog_c(name, src, opts)
+            out = os.path.join(WORK, "progs", name)
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            ok = get(f"{dsk},T/P/{name}", out)
+            same = ok and open(out, "rb").read() == open(ref, "rb").read()
+            print(f"  {name}: {os.path.getsize(out) if ok else 0} bytes, "
+                  f"{'identical to the host passes' if same else 'DIFFERS' if ok else 'NOT BUILT'}, "
+                  f"{elapsed(name)}")
+            if not same:
+                print("    " + (os9_text(f"{dsk},T/P/{name}.err") or "").strip()[-600:]
+                      .replace("\n", "\n    "))
+            good += same
+        for name, src, defs in aprogs:
+            d = os.path.join(WORK, "progs-host")
+            os.makedirs(d, exist_ok=True)
+            args = prog_asm_args(defs, os.path.dirname(src), lambda kind, path: path)
+            ref = os.path.join(d, name)
+            p = subprocess.run([REF] + args + [f"-o={ref}", src], cwd=d, env=lwdiff.clean_env(),
+                               capture_output=True)
+            out = os.path.join(WORK, "progs", name)
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            ok = get(f"{dsk},T/P/{name}", out)
+            same = ok and p.returncode == 0 and open(out, "rb").read() == open(ref, "rb").read()
+            print(f"  {name}: {os.path.getsize(out) if ok else 0} bytes, "
+                  f"{'identical to the host las' if same else 'DIFFERS' if ok else 'NOT BUILT'}, "
+                  f"{elapsed(name)}")
+            if not same:
+                print("    " + (os9_text(f"{dsk},T/P/{name}.out") or "").strip()[-600:]
+                      .replace("\n", "\n    "))
+            good += same
+        n = len(cprogs) + len(aprogs)
+        print(f"progs: {good} of {n} programs built on the F256 identical to the host tools")
+        return good == n
+    return lines, check
+
+
 SUITES = {"las": suite_las, "link": suite_link, "cc": suite_cc, "make": suite_make,
+          "progs": suite_progs,
           "self": suite_self, "lw": suite_lw,
           "obj": suite_obj, "img": suite_img}
 DEFAULT = ["las", "link", "cc", "make"]
