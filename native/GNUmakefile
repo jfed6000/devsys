@@ -50,7 +50,7 @@ las_MEM		:= 8
 # them comes from a checked function. The symbol accessors are las's
 # hottest calls, and the 6-byte check per function is room las needs: the
 # module must stay at most 48,384 bytes (6 blocks ending by $FD00, D37)
-las_NOCHECK	:= symtab bank defsimg module preload
+las_NOCHECK	:= symtab bank defsimg module preload findcmd
 
 llink_DIR	:= $(DEVSYS)/llink
 llink_OBJS	:= rlink_main globals rl_02 rl_03 misc rl_05 util lwsel bigbuf

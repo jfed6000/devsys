@@ -691,6 +691,18 @@ newline (ZILCH)
  *          0 on end of sourcefile(s)                                   *
  * ******************************************************************** */
 
+/* stdio's read buffer: CoCoC's FILE and glibc's (getsrcline) */
+
+#ifdef COCO
+#define BUFPTR(f) ((f)->_ptr)
+#define BUFEND(f) ((f)->_end)
+#else
+#ifdef __GLIBC__
+#define BUFPTR(f) ((f)->_IO_read_ptr)
+#define BUFEND(f) ((f)->_IO_read_end)
+#endif
+#endif
+
 int
 getsrcline (ZILCH)
 {
@@ -719,8 +731,45 @@ getsrcline (ZILCH)
              * and a last line with no line ending still counts.
              */
 
-            while ((_curchr = getc (SrcFile)) != -1)
+            for (;;)
             {
+#ifdef BUFPTR
+                /* Ordinary characters straight from stdio's buffer (D64):
+                 * the same characters getc would return, without a call
+                 * each; getc below takes over at a line end, a character
+                 * that reads as EOF ((char)-1), or the end of the buffer. */
+
+                register char *_p = BUFPTR (SrcFile);
+                char *_end = BUFEND (SrcFile),
+                     *_lim = &InpBuf[sizeof (InpBuf) - 1];
+
+                while (_p < _end)
+                {
+                    /* One test passes every ordinary character: below it
+                     * are 0x00-0x0d and (char)-1 */
+
+                    if (((unsigned char)((_curchr = *_p) + 1) <= 0x0e) &&
+                        ((_curchr == 0x0a) || (_curchr == 0x0d) ||
+                         (_curchr == -1)))
+                    {
+                        break;
+                    }
+
+                    if (_dest < _lim)
+                    {
+                        *(_dest++) = _curchr;
+                    }
+
+                    ++_p;
+                }
+
+                BUFPTR (SrcFile) = _p;
+#endif
+                if ((_curchr = getc (SrcFile)) == -1)
+                {
+                    break;
+                }
+
                 if ((_curchr == 0x0a) || (_curchr == 0x0d))
                 {
                     if (_curchr == 0x0d)

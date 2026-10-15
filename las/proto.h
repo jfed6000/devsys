@@ -66,6 +66,7 @@ void wrt_refs(void);
 void wrtCmmns(SYMH parm);
 /* findcmd.c */
 CODFORM *FindCmd(char *src_str, CODFORM *cod_strt, CODFORM *cod_stop);
+void cmdinit(void);
 /* labels.c */
 int MovLbl(char *destpos);
 int do_label(void);
@@ -282,6 +283,7 @@ void wrt_refs();
 void wrtCmmns();
 /* findcmd.c */
 CODFORM *FindCmd();
+void cmdinit();
 /* labels.c */
 int MovLbl();
 int do_label();

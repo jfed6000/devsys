@@ -49,14 +49,20 @@ MovLbl (destpos)
 
     if (isalpha ((int)(*SrcChar)))
     {
-        char *start = destpos;
+        register char *src = SrcChar;
+        char *start = destpos,
+             *lim = destpos + (SYMLEN - 1);
 
-        count = SYMLEN - 1;
-
-        while ((count-- > 0) && (_ischar (*SrcChar)))
+        while ((destpos < lim) && (_ischar (*src)))
         {
-            *(destpos++) = *(SrcChar++);
+            *(destpos++) = *(src++);
         }
+
+        SrcChar = src;
+
+        /* What "while ((count-- > 0) && ...)" from SYMLEN - 1 left (D64) */
+
+        count = (destpos < lim) ? (lim - destpos) - 1 : -1;
 
         /* lwasm: "sizeof{name}" is one name, a struct's size (lwstruct.c) */
 
