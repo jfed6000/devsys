@@ -28,7 +28,7 @@ char *s;
 
     p = newlabel(strlen(s));
 
-    l = ltable[hash(s)];
+    l = ltable[lhash(s)];
     strcpy(LAB(p)->lname,s);
 
     /* put at back of list */
@@ -49,13 +49,30 @@ char *s;
 {
     H p, l;
 
-    l = ltable[hash(s)];
+    l = ltable[lhash(s)];
 
     for (p = C_SUCC(l); p != l; p = L_SUCC(p)) {
         if (strcmp(s,LAB(p)->lname) == 0)
             return p;
     }
     return 0;
+}
+
+/* a label's bucket (step 24): hash()'s sum of the characters put te's
+ * 1,343 labels, mostly _123 and _$12, in 120 buckets up to 72 deep, and
+ * a lookup reads every label before it in its bucket. Each character
+ * shifted in by 2 spreads them as well as random (te: at most 18). Only
+ * the low 7 bits are used. A name
+ * is always in its own bucket, in the order it came, so which bucket
+ * that is changes nothing else */
+lhash(s)
+register char *s;
+{
+    register int i = 0;
+
+    while (*s)
+        i = (i << 2) + *s++;
+    return i & 127;
 }
 
 hash(s)

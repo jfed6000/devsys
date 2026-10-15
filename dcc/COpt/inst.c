@@ -60,7 +60,7 @@ H *l;
     register instruction *ip;
     H i, lp, t, pred;
     char *mnemp, *argp, **mnemtp, mbuf[MNEMSIZE+1];
-    int argl;
+    int argl, it;
 
     i = newins();
 
@@ -72,22 +72,23 @@ H *l;
 #endif
 
     t = l ? *l : 0;
-    INS(i)->llist = t;
     if (t) {
         for (lp = *l; lp; lp = L_NEXTL(lp))
             LAB(lp)->dest = i;
         *l = 0;
     }
     strcpy(mbuf, mnem);
-    INS(i)->mnem = mnemix(mbuf);
+    it = mnemix(mbuf);
+    pred = I_PRED(ins);
+    ip = INS(i);                /* its fields at one mapping (step 24) */
+    ip->llist = t;
+    ip->mnem = it;
+    ip->succ = ins;
+    ip->pred = pred;
     if (*(argp = args))
         while (*++argp);
     argl = argp - args;
 
-    pred = I_PRED(ins);
-    ip = INS(i);
-    ip->succ = ins;
-    ip->pred = pred;
     INS(pred)->succ = i;
     INS(ins)->pred = i;
     ++inscount;
@@ -134,7 +135,9 @@ H *l;
             INS(i)->itype |= CODEBRK;
         break;
     }
-    if (!(I_ITYPE(i) & BRANCH)) {
+    if (!((it = I_ITYPE(i)) & BRANCH)) {
+        if (it & CODEBRK)
+            retadd(ins, i);
         t = newarg(argl);
         strcpy(ARG(t), args);
         INS(i)->arg = t;
@@ -167,15 +170,33 @@ newins()
 }
 
 
+/* A label's reference cells: succ runs from the newest to the oldest
+ * and ends at 0, as before; back runs the other way round and the
+ * newest cell's back is the oldest (step 24). remref looks from both
+ * ends: delete removes the oldest branch, whose cell was at the end of
+ * the list, and walking there grew with the number of branches to the
+ * label (dev: 138,238 record reads) */
+typedef struct refstruct {
+    H succ, pred, back;     /* pred: the branch */
+} refcell;
+
+#define REF(h)  ((refcell *) bank_ptr (h))
+
 insref(ip, lp)
 H ip, lp;
 {
-    H rlp, t;
+    register refcell *r;
+    H rlp, t, b;
 
     rlp = newchain();
-    CHN(rlp)->pred = ip;
     t = L_RLIST(lp);
-    CHN(rlp)->succ = t;
+    b = t ? REF(t)->back : rlp;     /* the oldest */
+    r = REF(rlp);
+    r->pred = ip;
+    r->succ = t;
+    r->back = b;
+    if (t)
+        REF(t)->back = rlp;
     LAB(lp)->rlist = rlp;
 }
 
@@ -225,8 +246,10 @@ delete()
         fix(i, FORWARD);
     if ((l = I_LLIST(i)) != 0)
         fix(i, BACK);
+    /* fputs and putc, not fprintf: its formatting cost more than the
+     * characters (step 24) */
     while (l) {
-        fprintf(out, "%s", LAB(l)->lname);
+        fputs(LAB(l)->lname, out);
         if (L_LFLAGS(l) & GLOBAL)
             putc(':', out);
         if ((l = L_NEXTL(l)) != 0)
@@ -238,17 +261,42 @@ delete()
     mbuf = MNEMOF(i);
     a = I_ARG(i);
     if (itype & BRANCH) {
-        fprintf(out, "%sb%s %s", (itype & LONG ? "l" : ""), mbuf,
-            (itype & DESTPTR ? LAB(a)->lname : ARG(a)));
+        if (itype & LONG)
+            putc('l', out);
+        putc('b', out);
+        fputs(mbuf, out);
+        putc(' ', out);
+        fputs((itype & DESTPTR ? LAB(a)->lname : ARG(a)), out);
     } else {
-        fprintf(out, "%s", mbuf);
-        if (ARG(a)[0])
-            fprintf(out, " %s", ARG(a));
+        fputs(mbuf, out);
+        if (ARG(a)[0]) {
+            putc(' ', out);
+            fputs(ARG(a), out);
+        }
     }
     putc('\n', out);
     remins(i);
 }
 
+
+/* is a long branch to one of instruction i's labels left? If not, fix's
+ * walk back from i finds nothing (step 24: so for most labels, te 923
+ * of 1,077). A label's reference cells are exactly the branches whose
+ * operand it is, and every long branch has DESTPTR (insins) */
+static
+longref(i)
+H i;
+{
+    H l, r, t;
+
+    for (l = I_LLIST(i); l; l = L_NEXTL(l))
+        for (r = L_RLIST(l); r; r = C_SUCC(r)) {
+            t = C_PRED(r);
+            if ((I_ITYPE(t) & LONGBRA) == LONGBRA)
+                return TRUE;
+        }
+    return FALSE;
+}
 
 /* Fix: Added return type void */
 void
@@ -276,6 +324,8 @@ H i;
             }
         }
     } else {
+        if (!longref(i))
+            return;
         for (c = BRALIM; c && (ip = I_SUCC(ip)) != ilist; --c) {
             if (((t = I_ITYPE(ip)) & LONGBRA) == LONGBRA) {
                 lp = (t & DESTPTR) ? I_ARG(ip) : findlabel(argcopy(ip, abuf));
@@ -299,24 +349,30 @@ H i;
 {
     register instruction *ip;
     H l, a, p, s;
+    int it;
 
 #ifdef DEBUG
     debug("remins: ");
     prtins(i);
 #endif
-    a = I_ARG(i);
-    if (I_ITYPE(i) & BRANCH) {
+    ip = INS(i);                /* its fields at one mapping (step 24) */
+    a = ip->arg;
+    it = ip->itype;
+    l = ip->llist;
+    p = ip->pred;
+    s = ip->succ;
+    if (it & BRANCH) {
         remref(i, a);
-    } else
+    } else {
         freearg(a);
-    for (l = I_LLIST(i); l; l = L_NEXTL(l)) {   /* return labels */
+        if (it & CODEBRK)
+            retrem(i);
+    }
+    for ( ; l; l = L_NEXTL(l)) {    /* return labels */
         LAB(l)->dest = 0;
         freelabel(l);
     }
     /* remove instruction from the list */
-    ip = INS(i);
-    p = ip->pred;
-    s = ip->succ;
     INS(p)->succ = s;
     INS(s)->pred = p;
 
@@ -329,21 +385,113 @@ H i;
 remref(ip, lp)
 H ip, lp;
 {
-    H rlp, prev, n;
+    register refcell *r;
+    H head, a, b, n, p;
 
-    if (lp) {
-        for (prev = 0, rlp = L_RLIST(lp); rlp; prev = rlp, rlp = C_SUCC(rlp))
-            if (C_PRED(rlp) == ip) {
-                n = C_SUCC(rlp);
-                if (prev)
-                    CHN(prev)->succ = n;
-                else
-                    LAB(lp)->rlist = n;
-                freelabel(lp);
-                freechain(rlp);
+    /* a branch has one cell on its label's list, so the cell found
+     * from either end is the one the walk from the head found */
+    if (lp && (head = L_RLIST(lp)) != 0) {
+        for (a = head, b = REF(head)->back; ; a = n, b = p) {
+            if (C_PRED(a) == ip) {
+                b = a;
                 break;
             }
+            if (C_PRED(b) == ip)
+                break;
+            if (a == b || (n = C_SUCC(a)) == b)
+                return 0;           /* not there */
+            p = REF(b)->back;
+        }
+        r = REF(b);
+        n = r->succ;
+        p = r->back;
+        if (b == head) {
+            if (n)
+                REF(n)->back = p;
+            LAB(lp)->rlist = n;
+        } else {
+            REF(p)->succ = n;
+            REF(n ? n : head)->back = p;
+        }
+        freelabel(lp);
+        freechain(b);
     }
+}
+
+/* The returns (rts, puls ...,pc: CODEBRK and not BRANCH), oldest to
+ * newest, so finddupl can look for an earlier return without walking
+ * every instruction before it: with the whole file in memory that walk
+ * grew with the square of its length (step 24). A cell is a record
+ * {newer, older, the instruction}; an instruction stays a return for
+ * life (only branches change type), and a return is only ever added
+ * at the end of the code (insins before ilist) */
+direct H retnew;                /* the newest return's cell, 0: none */
+static direct H retold, _rfree;
+
+typedef struct rstruct {
+    H newer, older, ins;
+} rcell;
+
+#define RCL(h)  ((rcell *) bank_ptr (h))
+
+/* instruction i, a return, has been inserted before ins */
+retadd(ins, i)
+H ins, i;
+{
+    register rcell *r;
+    H c, t;
+
+    if (ins != ilist)
+        error("return inserted inside the code");
+    if ((c = _rfree) != 0)
+        _rfree = C_SUCC(c);
+    else
+        c = bank_alloc(sizeof(rcell));
+    t = retnew;
+    r = RCL(c);
+    r->newer = 0;
+    r->older = t;
+    r->ins = i;
+    if (t)
+        RCL(t)->newer = c;
+    else
+        retold = c;
+    retnew = c;
+}
+
+/* return i is being removed: look for its cell from both ends (delete
+ * removes the oldest, a pattern or duplsrch one near the newest) */
+retrem(i)
+H i;
+{
+    register rcell *r;
+    H a, b, n, o;
+
+    for (a = retold, b = retnew; ; a = n, b = o) {
+        if (a == 0)
+            error("lost a return");
+        if (RCL(a)->ins == i) {
+            b = a;
+            break;
+        }
+        if (RCL(b)->ins == i)
+            break;
+        n = RCL(a)->newer;
+        o = RCL(b)->older;
+    }
+    r = RCL(b);
+    n = r->newer;
+    o = r->older;
+    if (n)
+        RCL(n)->older = o;
+    else
+        retnew = o;
+    if (o)
+        RCL(o)->newer = n;
+    else
+        retold = n;
+    CHN(b)->succ = _rfree;
+    _rfree = b;
 }
 
 static direct H _cfree = 0;
@@ -357,7 +505,7 @@ newchain()
     if ((cp = _cfree) != 0)
         _cfree = C_SUCC(cp);
     else
-        cp = bank_alloc(sizeof(chain));
+        cp = bank_alloc(sizeof(refcell));     /* a label's are */
     c = CHN(cp);
     c->succ = c->pred = 0;
     return cp;

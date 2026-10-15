@@ -122,7 +122,10 @@ found:
 }
 #endif
 
-/* block b as the current one (bankcur, bankaddr): its address */
+/* block b as the current one (bankcur, bankaddr): its address. On the
+ * 6809 with three windows in assembly below (step 24: in C, finding
+ * the window that already holds b took 9% of dco68's time on te) */
+#if !defined(_OS9) || NWIN != 3
 bank_map(b)
 int b;
 {
@@ -136,6 +139,57 @@ int b;
         bankaddr = Blk[b];
 #endif
 }
+#else
+/* bankcur = b; then Static, a window that holds b (its age renewed, as
+ * map does), or map's choice. When Clock would wrap, map does it all */
+#asm
+bank_map: ldd 2,s
+ std bankcur,y
+ cmpd #62 STATBLK
+ bne bnm1
+ leax Static,y
+ stx bankaddr,y
+ rts
+bnm1 addd #1
+ leax WinBlk,y
+ cmpd ,x
+ beq bnm2
+ cmpd 2,x
+ beq bnm3
+ cmpd 4,x
+ beq bnm4
+bnm5 ldd 2,s
+ pshs d
+ lbsr map
+ leas 2,s
+ std bankaddr,y
+ rts
+bnm4 ldb #4
+ bra bnm6
+bnm3 ldb #2
+ bra bnm6
+bnm2 clrb
+bnm6 pshs u
+ clra
+ tfr d,u
+ ldd Clock,y
+ addd #1
+ beq bnm7
+ std Clock,y
+ leax WinUse,y
+ tfr u,d
+ leax d,x
+ ldd Clock,y
+ std ,x
+ leax Window,y
+ tfr u,d
+ ldd d,x
+ std bankaddr,y
+ puls u,pc
+bnm7 puls u
+ bra bnm5
+#endasm
+#endif
 
 #ifndef _OS9
 char *
@@ -154,13 +208,20 @@ H h;
  * shifts are library loops a bit at a time (h >> 11 and << 2 took 43%
  * of dco68's time), and every record access comes here */
 #asm
-bank_ptr: lda 2,s
+bank_ptr: bsr bkaddr
+ tfr x,d
+ rts
+
+* bkaddr: X = the address of handle h, the caller's argument (4,s here:
+* it is called by bank_ptr and the field readers). Step 24: the readers
+* did all of bank_ptr's call, and every record read comes here
+bkaddr lda 4,s
  lsra
  lsra
  deca
  cmpa bankcur+1,y
- bne bnkp2
-bnkp1 ldd 2,s
+ bne bka2
+bka1 ldd 4,s
  anda #3
  lslb
  rola
@@ -169,35 +230,33 @@ bnkp1 ldd 2,s
  lslb
  rola
  addd bankaddr,y
+ tfr d,x
  rts
-bnkp2 tfr a,b
+bka2 tfr a,b
  clra
  pshs d
  lbsr bank_map
  leas 2,s
- bra bnkp1
+ bra bka1
 
 * bkgetN(h): the 2-byte field at offset N of record h (op.h's I_SUCC...)
-bkget0: clrb
- bra bkget
-bkget2: ldb #2
- bra bkget
-bkget4: ldb #4
- bra bkget
-bkget6: ldb #6
- bra bkget
-bkget8: ldb #8
- bra bkget
-bkget10: ldb #10
-bkget pshs b
- ldd 3,s
- pshs d
- lbsr bank_ptr
- leas 2,s
- tfr d,x
- puls b
- abx
+bkget0: bsr bkaddr
  ldd ,x
+ rts
+bkget2: bsr bkaddr
+ ldd 2,x
+ rts
+bkget4: bsr bkaddr
+ ldd 4,x
+ rts
+bkget6: bsr bkaddr
+ ldd 6,x
+ rts
+bkget8: bsr bkaddr
+ ldd 8,x
+ rts
+bkget10: bsr bkaddr
+ ldd 10,x
  rts
 
 * mnemof(h): instruction h's mnemonic, mnemtab[field 8] (op.h's MNEMOF)

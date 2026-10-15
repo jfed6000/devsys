@@ -131,6 +131,8 @@ typedef struct istruct {
 #define L_LFLAGS(h) bkget10(h)
 #define C_SUCC(h)   bkget0(h)
 #define C_PRED(h)   bkget2(h)
+#define RET_OLDER(h) bkget2(h)
+#define RET_INS(h)  bkget4(h)
 extern H bkget0(), bkget2(), bkget4(), bkget6(), bkget8(), bkget10();
 #else
 #define I_SUCC(h)   (INS(h)->succ)
@@ -146,6 +148,8 @@ extern H bkget0(), bkget2(), bkget4(), bkget6(), bkget8(), bkget10();
 #define L_LFLAGS(h) (LAB(h)->lflags)
 #define C_SUCC(h)   (CHN(h)->succ)
 #define C_PRED(h)   (CHN(h)->pred)
+#define RET_OLDER(h) (((H *) bank_ptr (h))[1])  /* inst.c's rcell */
+#define RET_INS(h)  (((H *) bank_ptr (h))[2])
 #endif
 
 /* An instruction's mnemonic: a string in ordinary memory, good for as
@@ -165,6 +169,7 @@ extern direct H ilist;          /* the list head: a chain record */
 extern H ltable[];              /* the label buckets' heads */
 extern H newchain(), newarg(), inslabel(), newlabel(), findlabel(), talloc();
 extern H insins(), newins();
+extern direct H retnew;          /* inst.c: the newest return's cell */
 extern char *argcopy();
 extern char *grab();
 extern direct int inscount;
