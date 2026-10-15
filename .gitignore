@@ -32,3 +32,6 @@ harness/in/
 # C libraries (rebuild with make -C clib -f GNUmakefile)
 clib/obj/
 clib/lib/
+
+# Disk images and SD cards (the card, read-back cards, boot disks): never in git
+*.dsk

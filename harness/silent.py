@@ -29,6 +29,10 @@ proof for the native chain (native.py cc builds and runs longret.c).
               error ends the compile (D61): errexit() left it in the
               current directory. Linux dcc68, and native dcc68 in the
               model, on a string followed by a fatal error record.
+  8. undef    las reports a symbol never defined in a module (step 23):
+              a module is written raw without its references, and las
+              dropped them, leaving 0 and exit status 0, where lwasm says
+              "Undefined symbol". In code, fdb/fcb and an indexed operand.
 
   python3 harness/silent.py [--keep]
 """
@@ -135,6 +139,18 @@ def check_cstr():
                          for k, (rc, f) in left.items())
 
 
+def check_undef():
+    d = os.path.join(WORK, "undef")
+    os.makedirs(d)
+    open(os.path.join(d, "u.asm"), "w").write(
+        " mod eom,name,$11,$81,start,size\n org 0\nsize equ .\nname fcs /u/\n"
+        "start ldb #NOSUCH\n fdb NOB\n lda NOC,x\n rts\n emod\neom equ *\n")
+    p = run([LAS, "--lwasm", "-o=u.mod", "u.asm"], d)
+    out = p.stdout.decode(errors="replace")
+    named = [n for n in ("NOSUCH", "NOB", "NOC") if f"undefined symbol {n}" in out]
+    return p.returncode != 0 and len(named) == 3, f"status {p.returncode}, {len(named)} of 3 named"
+
+
 def check_dcpp():
     d = os.path.join(WORK, "dcpp")
     os.makedirs(os.path.join(d, "CMDS"))
@@ -199,7 +215,7 @@ def main():
     for name, check in (("longret", check_longret), ("errexit", check_errexit),
                         ("dcpp", check_dcpp), ("macros", check_macros),
                         ("regwidth", check_regwidth), ("unsgn", check_unsgn),
-                        ("cstr", check_cstr)):
+                        ("cstr", check_cstr), ("undef", check_undef)):
         ok, detail = check()
         results.append(ok)
         print(f"{'pass' if ok else 'FAIL'}  {name}: {detail}")
