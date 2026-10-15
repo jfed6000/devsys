@@ -16,10 +16,10 @@ direct int datstring;
 
 
 initialise(ptr,tsc,type)
-register symnode *ptr;
+register SYM ptr;
 {
     register char *p;
-    register dimnode *dimp;
+    register CELL dimp;
     register int count;
 
     switch (tsc) {
@@ -37,14 +37,14 @@ register symnode *ptr;
     }
 
     if (blklev == 0) {      /* outside a function */
-        p = ptr->sname;
+        p = symname(ptr);
         if (tsc != STATIC && tsc != STATICD) nlabel(p,1);
         else {
-            ptr->storage = EXTDEF;
+            SP_STORAGE(ptr,EXTDEF);
             nlabel(p,0);        /* local to file */
         }
     } else {
-        olbl(ptr->offset);  /* function local */
+        olbl(SG_OFFSET(ptr));  /* function local */
         nl();
     }
 
@@ -52,9 +52,9 @@ register symnode *ptr;
         datstring = 1;
         getsym();
         if (sym == STRING) {
-            dimp = ptr->dimptr;
-            if (dimp->dim == 0) dimp->dim = stringlen;
-            else if ((count = dimp->dim - stringlen) >= 0) oz(count);
+            dimp = SG_DIMS(ptr);
+            if ((count = car(dimp)) == 0) setcar(dimp,stringlen);
+            else if ((count -= stringlen) >= 0) oz(count);
             else error(M_TOO_LONG);
 
             getsym();
@@ -66,10 +66,9 @@ register symnode *ptr;
         getsym();
     }
 
-    if (type == STRUCT) ilist(type,ptr,ptr->x.elems,0);
-    else if (isary(type)) ilist(type,ptr,ptr->dimptr,0);
-    else if (ilist(type,ptr,ptr->dimptr,1)) ;
-    else iskip();
+    if (type == STRUCT || isary(type))
+        ilist(type,ptr,type == STRUCT ? SG_X(ptr) : SG_DIMS(ptr),0);
+    else if (!ilist(type,ptr,SG_DIMS(ptr),1)) iskip();
 out:
     endsect();
     datstring = 0;
@@ -79,13 +78,13 @@ out:
 
 static 
 ilist(type,ptr,list,level)
-register symnode *ptr;
-register dimnode *list;
+register SYM ptr;
+register CELL list;     /* dimensions, or for a struct its members */
 {
-    register dimnode *newlist;
+    register CELL newlist;
     int flag,t,i;
     unsigned n;
-    elem *e;
+    CELL e;
 
     if(level == 0) need(LBRACE);
     else if(sym == LBRACE) {
@@ -94,17 +93,17 @@ register dimnode *list;
     } else flag = 0;
 
     if (isary(type)) {
-        if ((n = list->dim) == 0) n = INFINITY;
+        if ((n = car(list)) == 0) n = INFINITY;
         if ((t = decref(type)) == STRUCT)
-            newlist = (dimnode *) ptr->x.elems;
-        else newlist = list->dptr;
+            newlist = SG_X(ptr);
+        else newlist = cdr(list);
         for (i = 0; sym != RBRACE; ) {
             if (ilist(t,ptr,newlist,level+1) == 0) return 0;
             if (++i < n && sym == COMMA) getsym();
             else break;
         }
-        if (n == INFINITY) list->dim = i;
-        else if (i < n) zero(getsize(t,ptr->size,list->dptr)*(n-i));
+        if (n == INFINITY) setcar(list,i);
+        else if (i < n) zero(getsize(t,SG_SIZE(ptr),cdr(list))*(n-i));
 out:
         if (level == 0 || flag) {
             if(sym == COMMA) getsym();
@@ -116,23 +115,24 @@ out:
         }
         return 1;
     } else if (type == STRUCT) {
-        if ((e = (elem *) list) == 0) {
+        if ((e = list) == 0) {
             error(M_UNIONS_NOT_ALLOWED);
             iskip();
             return 0;
         }
         while (sym != RBRACE) {
-            ptr = e->element;
-            list = ptr->type == STRUCT  ? (dimnode *) ptr->x.elems
-                                        : ptr->dimptr;
-            if (ilist(ptr->type,ptr,list,level+1) == 0) return 0;
-            if ((e = e->strnext) && sym == COMMA) getsym();
+            register symrec *p = SYMP(ptr = car(e));
+
+            list = (t = p->type) == STRUCT ? p->x : p->dims;
+            if (ilist(t,ptr,list,level+1) == 0) return 0;
+            if ((e = cdr(e)) && sym == COMMA) getsym();
             else break;
         }
         while (e) {
-            ptr = e->element;
-            zero(getsize(ptr->type,ptr->size,ptr->dimptr));
-            e = e->strnext;
+            register symrec *p = SYMP(car(e));
+
+            zero(getsize(p->type,p->size,p->dims));
+            e = cdr(e);
         }
         goto out;
     } else if (defobject(type)) {
@@ -199,7 +199,7 @@ err:
     }
 
     if (p->op == AMPER)
-        switch ((p2 = p->left)->val.sp->storage) {
+        switch (SG_STORAGE((p2 = p->left)->val.sp)) {
             default:
                 done = 0;
                 break;

@@ -156,61 +156,116 @@ long fp_dtol ();
 #define UNIQUE      '_'     /* for local labels etc. */
 #define NEWLINE     13
 
-typedef struct structstruct {
-    struct structstruct *strnext;   /* next element in structure */
-    struct symstr *element;         /* ptr to mos entry */
-} elem;
+/* Symbols and lists are kept by handle, in banked storage (symdb.c) */
+typedef unsigned SYM;       /* a symbol; 0 is none */
+typedef unsigned CELL;      /* a list cell; 0 ends a list */
 
-typedef struct dimstr {
-    short dim;              /* size of this dimension */
-    struct dimstr *dptr;    /* ptr to next dimension */
-} dimnode;
+/* a symbol's fields, for sget()/sput() */
+#define S_TYPE      0       /* type of entry */
+#define S_SIZE      1       /* size of entry */
+#define S_DIMS      2       /* CELL: list of dimensions (car = size) */
+#define S_OFFSET    3       /* general purpose */
+#define S_STORAGE   4       /* storage class */
+#define S_X         5       /* CELL: struct members (car = SYM), or
+                             * a label's flags */
+#define S_BLKLEV    6       /* block level of declaration */
+#define S_DOWN      7       /* SYM: the 'hidden' outer declaration, or
+                             * 1..256: the hash chain it hangs from */
+#define S_NEXT      8       /* SYM: next entry in various lists */
+#define S_HLINK     9       /* SYM: next symbol in its hash chain */
+#define S_NSAVED    9       /* fields pushdown() saves */
+#define S_NFIELDS   10      /* then the name */
 
-typedef struct downsym {
-    short type;             /* type of entry */
-    int size;               /* size of entry */
-    dimnode *dimptr;        /* ptr to list of dimensions */
-    int offset;             /* general purpose */
-    int storage;            /* storage class */
-    union {
-        elem *elems;        /* chain of structure members */
-        int labflg;         /* label flags */
-    } x;
-    short blklev;           /* block level of declaration */
-    struct symstr *downptr, /* ptr to 'hidden' outer declaration */
-                  *snext;   /* ptr to entry in various lists */
-} pshnode;
+/* SG_F(s) reads field F of symbol s, SP_F(s,v) writes it. On the 6809
+ * each is a call to an assembly entry point for that field (symdb.c),
+ * with the handle (and the value) in direct-page variables: 2 bytes
+ * shorter at each of some 200 calls than pushing them. The value is
+ * taken before the handle, so a field read inside v can't change it */
+#ifdef _OS9
+extern direct SYM symh;     /* symdb.c */
+extern direct int symv;
+#define SG_TYPE(s)        (symh = (s), sg0())
+#define SG_SIZE(s)        (symh = (s), sg1())
+#define SG_DIMS(s)        (symh = (s), sg2())
+#define SG_OFFSET(s)      (symh = (s), sg3())
+#define SG_STORAGE(s)     (symh = (s), sg4())
+#define SG_X(s)           (symh = (s), sg5())
+#define SG_BLKLEV(s)      (symh = (s), sg6())
+#define SG_DOWN(s)        (symh = (s), sg7())
+#define SG_NEXT(s)        (symh = (s), sg8())
+#define SG_HLINK(s)       (symh = (s), sg9())
+#define SP_TYPE(s,v)      (symv = (v), symh = (s), sp0())
+#define SP_SIZE(s,v)      (symv = (v), symh = (s), sp1())
+#define SP_DIMS(s,v)      (symv = (v), symh = (s), sp2())
+#define SP_OFFSET(s,v)    (symv = (v), symh = (s), sp3())
+#define SP_STORAGE(s,v)   (symv = (v), symh = (s), sp4())
+#define SP_X(s,v)         (symv = (v), symh = (s), sp5())
+#define SP_BLKLEV(s,v)    (symv = (v), symh = (s), sp6())
+#define SP_DOWN(s,v)      (symv = (v), symh = (s), sp7())
+#define SP_NEXT(s,v)      (symv = (v), symh = (s), sp8())
+#define SP_HLINK(s,v)     (symv = (v), symh = (s), sp9())
+#else
+#define SG_TYPE(s)        sget(s,S_TYPE)
+#define SG_SIZE(s)        sget(s,S_SIZE)
+#define SG_DIMS(s)        sget(s,S_DIMS)
+#define SG_OFFSET(s)      sget(s,S_OFFSET)
+#define SG_STORAGE(s)     sget(s,S_STORAGE)
+#define SG_X(s)           sget(s,S_X)
+#define SG_BLKLEV(s)      sget(s,S_BLKLEV)
+#define SG_DOWN(s)        sget(s,S_DOWN)
+#define SG_NEXT(s)        sget(s,S_NEXT)
+#define SG_HLINK(s)       sget(s,S_HLINK)
+#define SP_TYPE(s,v)      sput(s,S_TYPE,v)
+#define SP_SIZE(s,v)      sput(s,S_SIZE,v)
+#define SP_DIMS(s,v)      sput(s,S_DIMS,v)
+#define SP_OFFSET(s,v)    sput(s,S_OFFSET,v)
+#define SP_STORAGE(s,v)   sput(s,S_STORAGE,v)
+#define SP_X(s,v)         sput(s,S_X,v)
+#define SP_BLKLEV(s,v)    sput(s,S_BLKLEV,v)
+#define SP_DOWN(s,v)      sput(s,S_DOWN,v)
+#define SP_NEXT(s,v)      sput(s,S_NEXT,v)
+#define SP_HLINK(s,v)     sput(s,S_HLINK,v)
+#endif
 
-#define DOWNSIZE sizeof(pshnode)
+/* A list cell is two fields, read and written like a symbol's first two */
+#define car(c)            SG_TYPE(c)
+#define cdr(c)            SG_SIZE(c)
+#define setcar(c,a)       SP_TYPE(c,a)
+#define setcdr(c,d)       SP_SIZE(c,d)
 
-typedef struct symstr {
-    short type;             /* type of entry */
-    int size;               /* size of entry */
-    dimnode *dimptr;        /* ptr to list of dimensions */
-    int offset;             /* general purpose */
-    int storage;            /* storage class */
-    union {
-        elem *elems;        /* chain of structure members */
-        int labflg;         /* label flag */
-    } x;
-    short blklev;           /* block level of declaration */
-    struct symstr *downptr, /* ptr to 'hidden' outer declaration */
-                  *snext,   /* ptr to entry in various lists */
-                  *hlink;   /* ptr to next symbol in hash chain */
-    char sname[SHORTNAME+1];/* name entry; must stay the last member:
-                             * allocated longer for longer names */
-} symnode;
+/* Where a function uses several fields of one symbol in a row, it maps
+ * the record once: p = SYMP(s), then p->type... Such a pointer is good
+ * only until the next access to any other symbol or cell (another block
+ * may be mapped then: the CC09-bankwin build checks it) */
+#ifdef FIELD16
+typedef short FIELD;        /* CC09-bank16: 2-byte fields, as on the 6809 */
+#else
+typedef int FIELD;
+#endif
+typedef struct symrec {
+    FIELD type, size, dims, offset, storage, x, blklev, down, next, hlink;
+    char name[1];
+} symrec;
+#ifdef _OS9
+#define SYMP(s)           ((symrec *) (symh = (s), symp()))
+symrec *symp();
+#else
+#define SYMP(s)           ((symrec *) bank_ptr(s))
+#endif
+char *bank_ptr();
 
-#define SYMSIZE sizeof(symnode)
+SYM lookup(), symanon();
+CELL cons();
+char *symname();
 
 typedef struct expstr {
     short type;             /* type of node */
     int size;               /* size of basic type */
-    dimnode *dimptr;        /* ptr to list of dimensions */
+    CELL dimptr;            /* list of dimensions */
     short op;               /* operator */
     union {
         int num;            /* numeric value */
-        symnode *sp;        /* symbol pointer */
+        SYM sp;             /* symbol */
         long *lp;           /* long constant ptr */
 #ifdef DOFLOATS
         FLOATYPE *fp;       /* float constant ptr */
@@ -230,7 +285,7 @@ typedef struct expstr {
 typedef struct initstruct {
     struct initstruct *initnext;    /* next initializer */
     expnode *initp;                 /* ptr to initializer expression */
-    symnode *initname;              /* ptr to dude being initialized */
+    SYM initname;                   /* dude being initialized */
 } initnode;
 
 /* object sizes - char is by definition 1 */
@@ -548,10 +603,9 @@ global direct int   lineno,     /* current line number */
 
 global char filename[FNAMESIZE];    /* current filename buffer */
 
-global direct symnode *freedown,  /* list of free push-down entries */
-                    *arglist,   /* list of arguments */
-                    *labelist,  /* list of labels    */
-                    *vlist;     /* list of declared variables */
+global direct SYM   arglist,    /* list of arguments */
+                    labelist,   /* list of labels    */
+                    vlist;      /* list of declared variables */
 
 global direct char  *symptr,    /* start of current symbol */
                     cc,         /* current character */
@@ -561,13 +615,12 @@ global direct char  *symptr,    /* start of current symbol */
 
 global direct FILE  *strfile;   /* strings output file */
 
-global direct FILE  *pchfp;     /* header image in use (pch.c), or NULL */
 
 extern char     chartab[128],   /* character translater table */
                 valtab[128];    /* operator precedence table */
 
-global symnode  *hashtab[128],  /* main hash table */
-                *mostab[128];   /* structure hash table */
+global SYM      hashtab[128],   /* main hash table */
+                mostab[128];    /* structure hash table */
 
 #ifdef PTREE
 global char *kw[200];           /* pointers to symbol names */
@@ -584,7 +637,7 @@ global direct int   dflag,  /* debug flag; if set causes tree prints */
                     lflag,  /* if set, source lines copied to code file */
                     tcount;
 
-global symnode  sdummy;         /* dummy expression node */
+global direct SYM sdummy;       /* dummy expression node */
 
 global expnode  *freenode;      /* free expression node list */
 
@@ -617,4 +670,4 @@ extern  expnode *parsexp(), *primary(), *explist(), *getcast(),
                 *newnode(), *optim(), *fold(), *chtype(), *fixup(),
                 *tranexp(), *tranbool(), *treecopy();
 
-extern  dimnode *dimwalk();
+extern  CELL dimwalk();

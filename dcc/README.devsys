@@ -41,7 +41,8 @@ Changes (2026-10-09, step 14; docs/DESIGN.md D43):
         storerr/ptrmis/indir (misc.c), one copy of three repeated messages
   COpt  level1.patterns: "puls d / puls u,pc" -> "puls d,u,pc"; the Linux
         build reads its patterns from this directory, not ~/.dcc
-Changes (2026-10-13, step 17: header images; docs/DESIGN.md D50):
+Changes (2026-10-13, step 17: header images; docs/DESIGN.md D50;
+the images were removed in step 20, D57: only the messages remain):
   CC09  -h=IMAGE: when lookup() makes a new symbol, pch.c loads its
         declaration from a header image if the image has the name (a
         filter in memory, then hash chains on disk); names a file never
@@ -81,3 +82,15 @@ The 6809 build (../native/GNUmakefile) compiles dcc68 with -s and
 without -DPROF so it stays at most 48,384 bytes (6 blocks ending by $FD00);
 it is 47,990 now.
 Design and roadmap: ../docs/DESIGN.md
+
+Changes (2026-10-15, step 20: banked symbols; docs/DESIGN.md D57):
+  CC09  symbols and the lists of dimensions and struct members live in
+        8K RAM blocks reached by 16-bit handles (symdb.c on bank.c, las's
+        storage), so a file's symbols no longer have to fit dcc68's own
+        data. SG_F(s)/SP_F(s,v) read and write a field (one assembly
+        entry point per field on the 6809); SYMP(s) maps a record for a
+        run of fields, good until the next symbol or cell access.
+        CC09-bankwin (one window emulated) and CC09-bank16 (2-byte
+        fields) are test builds. Header images (pch.c, dcc68w, dcpp -h,
+        dcc -h/-H) are gone: they were for room the banked symbols give
+  COpt  handles count 8-byte units: 62 blocks (496K) instead of 31

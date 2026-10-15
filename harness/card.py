@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """card - the devsys install disk for a real F256 (SD card), and its check.
 
-  card.py build [--image FILE] [--out FILE] [--platform k2|jr2]
+  card.py build [--image FILE] [--out FILE] [--platform k2|jr2] [--add FILE]
       A copy of the boot image (default boot/wildbits/l2/l2_wildbits_devsysk2.dsk,
       D44) with devsys installed (D47):
-        /dd/CMDS        las, llink, dcc, dcpp, dcc68, dcc68w, dco68, make
+        /dd/CMDS        las, llink, dcc, dcpp, dcc68, dco68, make
         /dd/LIB         devsys's C libraries (clib/, step 18); NitrOS9
                         main's alib.l, net.l and wildbitsl2.l (assembled
                         by the host las)
@@ -14,6 +14,9 @@
                         n9mod.opt and n9obj.opt (las options for NitrOS9
                         sources); help entries in helpmsg
         /dd/DEVSYS      README, EX (examples), G (selftest's sources), selftest
+      --add FILE (repeatable) also puts FILE in /dd/DEVSYS, a text file
+      with CR line ends: a program of your own to build on the machine,
+      e.g. --add ~/projects/f256/jfed/te/te/te.c (step 20).
       Write it to the card with dd (check the device with lsblk first).
       On the F256 type:   /dd/DEVSYS/selftest
       It writes everything to /dd/DEVSYS/R (run it once per card write:
@@ -187,7 +190,7 @@ def host_layout(n, root):
     shutil.copyfile(obj_job(n)["source"], os.path.join(root, D, "EX", OBJPROG + ".as"))
 
 
-def build(image, out, platform):
+def build(image, out, platform, extra=()):
     native.WORK = WORK
     os.makedirs(WORK, exist_ok=True)
     n = n9(platform)
@@ -222,6 +225,11 @@ def build(image, out, platform):
         put(os.path.join(INSTALL, "examples", "make", f), f"{out},{D}/EX/M/{f}", text=True)
     for f in ("util.c", "dbl.a"):
         put(os.path.join(native.MAKEDIR, f), f"{out},{D}/EX/M/{f}", text=True)
+    for f in extra:
+        name = os.path.basename(f)
+        if len(name) > 29:
+            sys.exit(f"card: {name}: an OS-9 name is at most 29 characters")
+        put(f, f"{out},{D}/{name}", text=native.is_text(f))
     cmds = cmd_jobs(n)
     for j in cmds:
         put(j["source"], f"{out},{D}/G/{os.path.basename(j['source'])}", text=True)
@@ -497,11 +505,14 @@ def main():
     ap.add_argument("--platform", choices=("k2", "jr2"), default="k2",
                     help="build, check: the machine (sets main's -Dk2 or -Djr2)")
     ap.add_argument("--out", default=os.path.join(HERE, "out", "devsys_k2.dsk"))
+    ap.add_argument("--add", action="append", default=[],
+                    help="build: another file for /dd/DEVSYS (repeatable)")
     a = ap.parse_args()
     if a.cmd == "build":
         if subprocess.run(["make", "-s", "-f", "GNUmakefile"], cwd=native.NATIVE).returncode:
             sys.exit("native build failed")
-        build(a.image or (K2 if a.platform == "k2" else JR2), os.path.abspath(a.out), a.platform)
+        build(a.image or (K2 if a.platform == "k2" else JR2), os.path.abspath(a.out), a.platform,
+              [os.path.abspath(os.path.expanduser(f)) for f in a.add])
         return 0
     if a.cmd == "check":
         if not a.file:

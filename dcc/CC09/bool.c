@@ -216,7 +216,7 @@ expnode *node;
 isauto(p)
 expnode *p;
 {
-    return p->op == NAME && p->val.sp->storage == AUTO;
+    return p->op == NAME && SG_STORAGE(p->val.sp) == AUTO;
 }
 
 

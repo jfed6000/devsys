@@ -303,8 +303,10 @@ constop(op,r,l)
 expnode *
 getcast()
 {
-    expnode *dptr,*ptr;
-    int lno,dummy,size,type;
+    expnode *ptr;
+    SYM name;
+    CELL dptr,dummy;
+    int lno,size,type,n;
     register char *errpnt;
 
     lno = symline;
@@ -314,12 +316,14 @@ getcast()
         error(M_UNDEFINED_STRUCT);
         ptr = NULL;
     } else {
-        type = declarator(&ptr,&dptr,type);
+        type = declarator(&name,&dptr,type);
         clear(&arglist);
-        if (ptr) error(M_NAME_IN_A_CAST);
+        if (name) error(M_NAME_IN_A_CAST);
         ptr = newnode(CAST,0,0,0,lno,errpnt);
         ptr->type = type;
-        sizeup(ptr,dptr,size);
+        n = basesize(type,size);
+        ptr->size = n ? n : size;
+        ptr->dimptr = dptr;
     }
     return ptr;
 }
@@ -365,9 +369,13 @@ expnode **prim;
             p = *prim = optim(p);
             goto usual;
         case NAME:
-            p->type = p->val.sp->type;
+            p->type = SG_TYPE(p->val.sp);
             chkdecl(p);
-            p = (expnode *) p->val.sp;
+            {
+                register symrec *rp = SYMP(p->val.sp);
+
+                return getsize(rp->type,rp->size,rp->dims);
+            }
         case CAST:
 usual:      return getsize(p->type,p->size,p->dimptr);
         case DOT:

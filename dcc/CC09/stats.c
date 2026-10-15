@@ -46,7 +46,7 @@ extern  expnode *dregcont,      /* D register content */
 
 static  expnode *emit(), *getptest(), *gettest(), *sidexp();
 
-static  symnode *checklabel();
+static  SYM checklabel();
 
 statement()
 {
@@ -502,15 +502,15 @@ register labstruc *labptr;
 
 dogoto()
 {
-    register symnode *ptr;
+    register SYM ptr;
 
     getsym();
 
     if (sym != NAME) error(M_LABEL_REQUIRED);
     else {
         if (ptr = checklabel()) {
-            gen(GOTO,ptr->offset,0);
-            ptr->x.labflg |= GONETO;
+            gen(GOTO,SG_OFFSET(ptr),0);
+            SYMP(ptr)->x |= GONETO;
         }
         getsym();
     }
@@ -520,14 +520,15 @@ dogoto()
 
 dolabel()
 {
-    register symnode *ptr;
+    register SYM ptr;
+    register symrec *p;
 
     if (ptr = checklabel()) {
-        if (ptr->storage == STATIC) multidef();
+        if ((p = SYMP(ptr))->storage == STATIC) multidef();
         else {
-            ptr->storage = STATIC;
-            gen(LABEL,ptr->offset,0);
-            ptr->x.labflg |= DEFINED;
+            p->storage = STATIC;
+            gen(LABEL,p->offset,0);
+            SYMP(ptr)->x |= DEFINED;
         }
     }
 #ifdef REGCONTS
@@ -538,28 +539,32 @@ dolabel()
 }
 
 
-static symnode *
+static SYM
 checklabel()
 {
-    register symnode *ptr;
+    register SYM ptr;
+    register symrec *p;
+    int lab;
 
-    ptr = (symnode *) symval;
+    p = SYMP(ptr = symval);
 
-    if (ptr->type == LABEL) return ptr;
+    if (p->type == LABEL) return ptr;
 
-    if (ptr->type != UNDECL) {
-        if (ptr->blklev != 0) {
+    if (p->type != UNDECL) {
+        if (p->blklev != 0) {
             error(M_ALREADY_A_LOCAL_VARIABLE);
-            return NULL;
+            return 0;
         }
         pushdown(ptr);
     }
-    ptr->type = LABEL;
-    ptr->storage = AUTO;
-    ptr->offset = getlabel();
-    ptr->x.labflg = 0;
-    ptr->blklev = blklev;
-    ptr->snext = labelist;
+    lab = getlabel();
+    p = SYMP(ptr);
+    p->type = LABEL;
+    p->storage = AUTO;
+    p->offset = lab;
+    p->x = 0;
+    p->blklev = blklev;
+    p->next = labelist;
     labelist = ptr;
     return ptr;
 }

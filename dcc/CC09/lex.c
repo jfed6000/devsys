@@ -34,13 +34,12 @@ extern DBLETYPE atoftbl[];
 #endif
 direct int stringlen;
 
-extern symnode *lookup();
 extern char *grab();
 
 
 getsym()
 {
-    register symnode *ptr;
+    register SYM ptr;
     register int numtype;
     register numptrs np;
     register LONGTYPE *longp;
@@ -68,14 +67,14 @@ getsym()
         case LETTER:
             getword(name);
             ptr=lookup(name);
-            if((sym=ptr->type)==KEYWORD){
-                if((symval=ptr->storage)==SIZEOF){
+            if((sym=SG_TYPE(ptr))==KEYWORD){
+                if((symval=SG_STORAGE(ptr))==SIZEOF){
                     sym=SIZEOF;
                     symval = LEV_14;    /* high level unary operator */
                 }
             } else {
                 sym = NAME;
-                symval = (int) ptr;
+                symval = ptr;
             }
             break;
         case DIGIT:
@@ -370,69 +369,12 @@ int c;
     return (chartab[c]==LETTER || chartab[c]==DIGIT);
 }
 
-direct  symnode *freesym;       /* list of free symbol table entries */
-
-symnode *
-lookup(name)
-char name[];
-{
-    /* return a pointer to a symbol table entry for 'name'  */
-    /* if one is not found create one                       */
-    register symnode *nptr,**tptr,**tab;
-
-    /* which symbol table is it in? */
-    tab = mosflg ? mostab : hashtab;
-
-    /* point to hash table entry */
-    tptr = &tab[hash(name)];
-
-    /* chunter down the list until found or run off the end */
-    for (nptr = *tptr; nptr; nptr = nptr->hlink) {
-        if (nptr->sname[0] == name[0]
-                    && strncmp(name,nptr->sname,NAMESIZE) == 0)
-            return nptr;
-    }
-
-    /* the entry cannot be found; make a new one */
-    /* Entries have room for SHORTNAME characters, so short names cost
-     * what they always did; a longer name gets a longer entry. Freed
-     * entries are only reused for short names. */
-    {
-        int len = strlen(name);
-
-        if (len <= SHORTNAME && (nptr = freesym)) freesym = nptr->hlink;
-        else nptr = (symnode *) grab(SYMSIZE +
-                                     (len > SHORTNAME ? len - SHORTNAME : 0));
-    }
-
-    strcpy(nptr->sname,name);
-    nptr->type = UNDECL;
-    nptr->storage = 0;
-
-    /* put the new entry on the front of the list;  the chance  */
-    /* that a lookup is for a recently declared variable is     */
-    /* high - this should therefore speed things up             */
-    nptr->hlink = *tptr;
-    *tptr = nptr;
-
-    /* prepare for release to free list by 'clear()' */
-    nptr->downptr = (symnode *) tptr;
-
-#ifndef MKIMG
-    /* a header image may declare it (pch.c) */
-    if (pchfp) pchload(nptr,name);
-#endif
-
-    return nptr;
-}
-
-
 install(word,typ)
 char *word;
 int typ;
 {
         /* put a keyword in the symbol table */
-        register symnode *cptr;
+        register SYM cptr;
         char neword[NAMESIZE+1];
 
         /* cut the word down to size */
@@ -441,8 +383,8 @@ int typ;
         neword[NAMESIZE] = '\0';
         cptr=lookup(neword);
 
-        cptr->type=KEYWORD;
-        cptr->storage = typ;
+        SP_TYPE(cptr,KEYWORD);
+        SP_STORAGE(cptr,typ);
 }
 
 

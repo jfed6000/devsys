@@ -258,17 +258,18 @@ chtype(node)
 expnode *node;
 {
     register expnode *lhs,*rhs,*eptr;
-    register symnode *sptr;
-    register dimnode *dptr;
+    register SYM sptr;
+    register CELL dptr;
     register int op,size,xtype;
     int t,tl,tr,mosar;
+    symrec *rp;
 
     lhs = node->left;
     rhs = node->right;
 
     /* defaults */
     xtype = size = INTSIZE;
-    dptr = NULL;
+    dptr = 0;
     t = INT;
 
 #ifdef PTREE
@@ -279,20 +280,22 @@ expnode *node;
 #endif
     switch (op = node->op) {
         case NAME:
-            sptr = node->val.sp;
-            if (sptr->storage == TYPEDEF) {
+            rp = SYMP(sptr = node->val.sp);
+            if (rp->storage == TYPEDEF) {
                 terror(node,M_TYPEDEF_NOT_A_VARIABLE);
                 makedummy(node);
                 break;
             }
-            t = sptr->type;
-            dptr = sptr->dimptr;
+            t = rp->type;
+            dptr = rp->dims;
             if (btype(t) == USTRUCT) {
-                register symnode *p = (symnode *) sptr->size;
-                t = sptr->type = modtype(t,p->type);
-                sizeup(sptr,dptr,p->size);
+                /* an incomplete struct's size field holds its tag */
+                register SYM p = SG_SIZE(sptr);
+                t = modtype(t,SG_TYPE(p));
+                SP_TYPE(sptr,t);
+                sizeup(sptr,dptr,SG_SIZE(p));
             }
-            size = sptr->size;
+            size = SG_SIZE(sptr);
             if (isary(t) || isftn(t)) {
                 lhs = node;
                 lhs->size = size;
@@ -303,7 +306,7 @@ expnode *node;
                 } else t = incref(lhs->type = t);
                 lhs->sux = 1;
             } else
-                switch (tl = sptr->storage) {
+                switch (tl = SG_STORAGE(sptr)) {
 #ifdef USE_YREG
                     case YREG:
 #endif
@@ -370,14 +373,14 @@ expnode *node;
                     t = incref(decref(t));
                     release(node);
                     node = lhs;
-                    dptr = dptr ? dptr->dptr : 0;
+                    dptr = dptr ? cdr(dptr) : 0;
                 } else node->val.num = 0;
             } else {
                 terror(lhs,M_POINTER_REQUIRED);
                 makedummy(lhs);
                 lhs->type = POINTER | INT;
                 t = INT;
-                dptr = NULL;
+                dptr = 0;
             }
             xtype = lhs->sux;
             size = lhs->size;
@@ -435,13 +438,15 @@ strcommon:
                 t = decref(eptr->type);
             } else if (isftn(t)) t = decref(t);
             else if (t == UNDECL) {
-                sptr = lhs->val.sp;
-                sptr->type = INT | FUNCTION;
-                sptr->size = INTSIZE;
-                sptr->dimptr = NULL;
-                sptr->storage = EXTERN;
-                sptr->blklev = 0;
-                move(sptr,lhs,6);
+                rp = SYMP(sptr = lhs->val.sp);
+                rp->type = INT | FUNCTION;
+                rp->size = INTSIZE;
+                rp->dims = 0;
+                rp->storage = EXTERN;
+                rp->blklev = 0;
+                lhs->type = INT | FUNCTION;
+                lhs->size = INTSIZE;
+                lhs->dimptr = 0;
                 t = INT;
             } else {
                 terror(lhs,M_NOT_A_FUNCTION);
@@ -578,7 +583,7 @@ dblerr:         terror(node,M_BOTH_MUST_BE_INTEGRAL);
                         }
                     }
                     size = POINTSIZE;
-                    dptr = NULL;
+                    dptr = 0;
                     t = INT;
                 } else {
 dofix:
@@ -652,7 +657,7 @@ asserr:
                 if (isptr(rhs->type)) {
                     if (t != rhs->type || lhs->size != rhs->size)
                         ptrmis(node);
-                    else dptr = NULL;
+                    else dptr = 0;
                 } else chknull(rhs);
             } else if (isptr(t = rhs->type)) {
                 size = rhs->size;
@@ -935,7 +940,8 @@ register expnode *lhs,*rhs;
 
 expnode *
 fixup(size,t,dptr,rhs)
-register expnode *dptr,*rhs;
+CELL dptr;
+register expnode *rhs;
 {
     register expnode *ptr;
 
@@ -991,7 +997,7 @@ register expnode *node;
 int *t,*mosar;
 {
     register expnode *eptr;
-    register symnode *sptr;
+    register SYM sptr;
 
     *t = node->type;
     if (node->op == AMPER) {
@@ -1003,13 +1009,14 @@ int *t,*mosar;
     } else *mosar = 0;
     chkdecl(node);
     if (node->op == NAME) {
-        sptr = node->val.sp;
-        if (sptr->storage != MOS) goto err;
+        register symrec *rp = SYMP(node->val.sp);
+
+        if (rp->storage != MOS) goto err;
         node->op = CONST;
-        node->val.num = sptr->offset;
+        node->val.num = rp->offset;
         node->sux = 0;
         node->type = INT;
-        return sptr->size;
+        return rp->size;
     }
 err:
     terror(node,M_STRUCT_MEMBER_REQUIRED);
@@ -1036,13 +1043,17 @@ register expnode *node;
 makedummy(node)
 register expnode *node;
 {
-    move(&sdummy,node,6);
+    register symrec *rp = SYMP(sdummy);
+
+    node->type = rp->type;
+    node->size = rp->size;
+    node->dimptr = rp->dims;
     node->sux = 1;
     reltree(node->left);
     reltree(node->right);
     node->left = node->right = 0;
     node->op = NAME;
-    node->val.sp = &sdummy;
+    node->val.sp = sdummy;
 }
 
 

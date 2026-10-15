@@ -10,38 +10,6 @@
 #include "cj.h"
 
 
-/* to push down an outer block declaration
- */
-pushdown(sptr)
-register symnode *sptr;
-{
-    register symnode *nptr;
-
-    if (nptr = freedown) freedown = nptr->snext;
-    else nptr = (symnode *) grab(DOWNSIZE);
-
-    move(sptr,nptr,DOWNSIZE);
-    sptr->downptr = nptr;
-    sptr->type = sptr->size = sptr->dimptr = sptr->offset = sptr->storage = 
-        sptr->x.labflg = sptr->blklev = sptr->snext = 0;
-}
-
-
-/* to recover outer block declaration
- */
-pullup(sptr)
-register symnode *sptr;
-{
-    register symnode *nptr;
-
-    nptr = sptr->downptr;
-    move(nptr,sptr,DOWNSIZE);
-
-    nptr->snext = freedown;
-    freedown = nptr;
-}
-
-
 /* byte move by count
  */
 move(p1,p2,count)
@@ -97,13 +65,6 @@ char s[];
 }
 
 
-warn(s)
-char s[];
-{
-    dowarn(symptr-line,s,symline);
-}
-
-
 comperr(node,errstr)
 register expnode *node;
 char *errstr;
@@ -121,23 +82,6 @@ register expnode *node;
 char *errstr;
 {
     doerr(node->pnt - line,errstr,node->lno);
-}
-
-
-dowarn(n,wstr,lno)
-register int n;
-char wstr[];
-{
-    eprintf("%s:%d: *** warning: %s ***\n", filename, lno, msg(wstr));
-    if (lno == lineno) {
-        eputs(line);
-        goto dopoint;
-    } else if (lno == lineno - 1) {
-        eputs(lastline);
-dopoint:
-        for ( ; n > 0; --n) eputchar(' ');
-        eputs("^");
-    }
 }
 
 
@@ -277,7 +221,7 @@ istype()
                 return 1;
         }
     else if (sym == NAME) {
-        if (((symnode *)symval)->storage == TYPEDEF) return 1;
+        if (SG_STORAGE(symval) == TYPEDEF) return 1;
     }
     return 0;
 }
@@ -317,11 +261,11 @@ register int op;
 }
 
 
-dimnode *
+CELL
 dimwalk(dptr)
-register dimnode *dptr;
+CELL dptr;
 {
-    return dptr ? dptr->dptr : 0;
+    return dptr ? cdr(dptr) : 0;
 }
 
 
@@ -417,7 +361,7 @@ register expnode *node;
     op=node->op;
     printf("%08x ",node);
     if (op == NAME)
-        printf("%-10.8s$%-8x",node->val.sp->sname,node->modifier);
+        printf("%-10.8s$%-8x",symname(node->val.sp),node->modifier);
     else printf("%-10s$%-8x",op>0?kw[op]:"EVIL",node->val.num);
     val=node->type;
     for (i=14; i>=4 ; i-=2) {

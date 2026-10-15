@@ -1,7 +1,7 @@
 
-/* rlink.h - llink's one header. Every .c file includes it first, so the
- * header text is the same in each and one header image (dcc -H, D50)
- * serves them all; globals.c defines the variables (MAIN) */
+/* rlink.h - llink's one header. Every .c file includes it first (one
+ * header image served them all until step 20 removed images, D50);
+ * globals.c defines the variables (MAIN) */
 
 #include <stdlib.h>
 

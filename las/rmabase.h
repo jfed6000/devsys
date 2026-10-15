@@ -3,8 +3,8 @@
  *                                                                      *
  * Everything rma.h needs before its global variables, and nothing that *
  * depends on MAIN: globals.c defines the variables (MAIN) but shares   *
- * this part with every other file, so a header image (dcc -h, step 17) *
- * of it serves globals.c too. rma.h includes it first.                 *
+ * this part with every other file (for dcc's header images, D50, gone  *
+ * since step 20). rma.h includes it first.                             *
  * ******************************************************************** */
 
 #ifdef COCO

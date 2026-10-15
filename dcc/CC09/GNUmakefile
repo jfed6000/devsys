@@ -14,10 +14,10 @@ LDFLAGS = $(ARCH) -g -lm
 BINARY	= dcc68
 CKEYS	= ckeys
 # This is a nifty hack, 'wildcard' expands to files that exist...
-DEPS	= cj.h msgs.h GNUmakefile $(wildcard local.make)
+DEPS	= cj.h msgs.h bank.h GNUmakefile $(wildcard local.make)
 OBJS	= bool.o build.o cmain.o codgen.o declare.o floats.o get.o inits.o \
 	lex.o local.o longs.o misc.o optim.o prtree.o regscont.o stats.o tb.o \
-	tranexp.o fp6809.o pch.o
+	tranexp.o fp6809.o symdb.o bank.o
 
 $(BINARY):	$(OBJS) dcc68.msg
 	$(CC) -o $@ $(OBJS) $(LDFLAGS) 

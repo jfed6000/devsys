@@ -78,26 +78,19 @@
 #define M_STRUCT_MEMBER_REQUIRED        "\305" /* struct member required */
 #define M_STRUCTURE_OR_UNION_INAPPROPRI "\306" /* structure or union inappropriate */
 #define M_MUST_BE_INTEGRAL              "\307" /* must be integral */
-#define M_CANT_OPEN_HEADER_IMAGE        "\310" /* can't open header image */
-#define M_IMAGE_MEMBER_NOT_IN_IMAGE     "\311" /* image: member not in image */
-#define M_IMAGE_STRUCT_TOO_BIG          "\312" /* image: struct too big */
-#define M_CANT_WRITE_IMAGE              "\313" /* can't write image */
-#define M_IMAGE_TOO_MANY_DIMENSIONS     "\314" /* image: too many dimensions */
-#define M_NO_IF_FOR_ELSE                "\315" /* no 'if' for 'else' */
-#define M_ILLEGAL_DECLARATION           "\316" /* illegal declaration */
-#define M_SYNTAX_ERROR                  "\317" /* syntax error */
-#define M_MULTIPLE_DEFAULTS             "\320" /* multiple defaults */
-#define M_NO_SWITCH_STATEMENT           "\321" /* no switch statement */
-#define M_WHILE_EXPECTED                "\322" /* while expected */
-#define M_BREAK_ERROR                   "\323" /* break error */
-#define M_CONTINUE_ERROR                "\324" /* continue error */
-#define M_LABEL_REQUIRED                "\325" /* label required */
-#define M_ALREADY_A_LOCAL_VARIABLE      "\326" /* already a local variable */
-#define M_CONDITION_NEEDED              "\327" /* condition needed */
-#define M_TRANSLATION                   "\330" /* translation */
-#define M_BINARY_OP                     "\331" /* binary op. */
-#define M_X_TRANSLATE                   "\332" /* x translate */
-#define M_COMPILER_ERROR                "\333" /* compiler error -  */
-#define M_LABEL_UNDEFINED               "\334" /* label undefined :  */
-#define M_IMAGE_TOO_MANY_HEADERS        "\335" /* image: too many headers */
-#define M_IMAGE_DEFINITION              "\336" /* image: a header defines something */
+#define M_NO_IF_FOR_ELSE                "\310" /* no 'if' for 'else' */
+#define M_ILLEGAL_DECLARATION           "\311" /* illegal declaration */
+#define M_SYNTAX_ERROR                  "\312" /* syntax error */
+#define M_MULTIPLE_DEFAULTS             "\313" /* multiple defaults */
+#define M_NO_SWITCH_STATEMENT           "\314" /* no switch statement */
+#define M_WHILE_EXPECTED                "\315" /* while expected */
+#define M_BREAK_ERROR                   "\316" /* break error */
+#define M_CONTINUE_ERROR                "\317" /* continue error */
+#define M_LABEL_REQUIRED                "\320" /* label required */
+#define M_ALREADY_A_LOCAL_VARIABLE      "\321" /* already a local variable */
+#define M_CONDITION_NEEDED              "\322" /* condition needed */
+#define M_TRANSLATION                   "\323" /* translation */
+#define M_BINARY_OP                     "\324" /* binary op. */
+#define M_X_TRANSLATE                   "\325" /* x translate */
+#define M_COMPILER_ERROR                "\326" /* compiler error -  */
+#define M_LABEL_UNDEFINED               "\327" /* label undefined :  */

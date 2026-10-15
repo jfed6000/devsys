@@ -41,7 +41,7 @@ register expnode *val;
 register int arg;
 {
     register expnode *ptr;
-    register symnode *sptr;
+    register SYM sptr;
     int reg;
     int temp,value;
 
@@ -117,7 +117,7 @@ register int arg;
             if ((ptr = (expnode *) arg)->op == NAME
                                     && (sptr = ptr->val.sp)) {
                 ot(lbsr);
-                nlabel(sptr->sname,0);
+                nlabel(symname(sptr),0);
                 return;
             }
             ot("jsr ");
@@ -254,14 +254,14 @@ simple:
             return;
         case LOADIM:
             if (arg == NODE) {
-                switch (temp = val->val.sp->storage) {
+                switch (temp = SG_STORAGE(val->val.sp)) {
                     case DIRECT:
                     case EXTERND:
                     case STATICD:
                         outlea(reg);
                         ob('>');
-                        if (temp == STATICD) olbl(val->val.sp->offset);
-                        else on(val->val.sp->sname);
+                        if (temp == STATICD) olbl(SG_OFFSET(val->val.sp));
+                        else on(symname(val->val.sp));
                         addoff(val->modifier);
 #ifndef USE_YREG
                         os(yind);
@@ -523,7 +523,7 @@ register expnode *val;
     if (arg == NODE) {
         cflag = (val->type == CHAR || val->type == UCHAR);
         arg = val->op;
-        val = (expnode *) val->val.sp;
+        val = (expnode *) val->val.sp;  /* a SYM, for deref() */
     }
 
     switch (op) {
@@ -611,8 +611,9 @@ register int offset;
 deref(arg,val,offset)
 {
     register expnode *node;
-    register symnode *sn;
+    register SYM sn;
     int sc;
+    symrec *rp;         /* sn's record: nothing below maps another */
 
     if (arg & INDIRECT) ob('[');
 
@@ -638,28 +639,28 @@ deref(arg,val,offset)
 #endif
             break;
         case NAME:
-            if (sn = (symnode *)val)
-                switch (sc = sn->storage) {
+            if (sn = (SYM) val)
+                switch (sc = (rp = SYMP(sn))->storage) {
                     case AUTO:
-                        od(val = sn->offset-sp+offset);
+                        od(val = rp->offset-sp+offset);
                         os(spind);
                         break;
                     case STATICD:
                         if(!datflag) ob((arg & INDIRECT) ? '>' : '<');
                     case STATIC:
-                        olbl(sn->offset);
+                        olbl(rp->offset);
                         goto dooff;
                     case DIRECT:
                     case EXTERND:
                         if(!datflag) ob((arg & INDIRECT) ? '>' : '<');
                     case EXTERN:
                     case EXTDEF:
-                        on(sn->sname);
+                        on(symname(sn));
 dooff:
                         addoff(offset);
                         if(arg & INDIRECT || (!datflag && (sc != DIRECT
                                     && sc != EXTERND && sc != STATICD))) {
-                            if(isftn(sn->type)) os(",pcr");
+                            if(isftn(rp->type)) os(",pcr");
 #ifndef USE_YREG
                             else os(yind);
 #endif

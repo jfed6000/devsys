@@ -8,7 +8,6 @@
 #include "cj.h"
 #include <signal.h>
 
-char *dumname = sdummy.sname;
 
 char strname[] = "cstr.XXXXXX";
 
@@ -18,9 +17,6 @@ direct char *infile;
 direct int eflag;
 #endif
 
-#ifdef MKIMG
-char *imgname;
-#endif
 #ifndef PASS2
 /* pass1 only */
 direct  int     *inclptr;       /* include stack pointer */
@@ -39,12 +35,16 @@ char **argv;
         intercept(tidy);
 #endif
 
-        sdummy.type = INT;
-        sdummy.size = INTSIZE;
-        sdummy.dimptr = NULL;
-        sdummy.offset = 0;
-        sdummy.storage = EXTDEF;
-        strcpy(dumname,"_dummy_");
+        {
+            register symrec *p;
+
+            /* zeroed: no dimensions, offset 0 */
+            p = SYMP(sdummy = symanon());
+            p->type = INT;
+            p->size = INTSIZE;
+            p->storage = EXTDEF;
+            strcpy(p->name,"_dummy_");
+        }
 
         lexinit();
         in = stdin;
@@ -60,15 +60,6 @@ char **argv;
 #endif
                             case 's':
                                 sflag = 1; break;
-#ifndef MKIMG
-                            case 'h':   /* -h=image: headers' declarations */
-                                if(*++p=='=') pchopen(++p);
-                                goto done;
-#else
-                            case 'w':   /* -w=image: write one */
-                                if(*++p=='=') imgname = ++p;
-                                goto done;
-#endif
 #ifdef  PTREE
                             case 'd':
                                 dflag = 1;
@@ -118,9 +109,6 @@ char **argv;
                 extdef();          /* go do it!!! */
 
         epilogue();
-#ifdef MKIMG
-        if (imgname && !errcount) pchwrite(imgname);
-#endif
 
         if(ferror(code))
                 fatal(M_ERROR_WRITING_ASSEMBLY);
@@ -130,6 +118,8 @@ char **argv;
                 fprintf(stderr,"errors: %d\n",errcount);
                 errexit();
         }
+        symdone();
+        exit(0);
 }
 
 
@@ -139,5 +129,6 @@ errexit()
                 if(infile)
                         unlink(infile);
 #endif
+                symdone();
                 exit(1);
 }

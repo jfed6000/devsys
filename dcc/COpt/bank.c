@@ -1,8 +1,8 @@
 /* bank.c - dco68's records in 8K blocks of extra RAM (devsys)
  *
  * las's storage (las/bank.c, DESIGN.md D27) for dco68: a Level 2 process
- * sees 64K, but a whole file's instructions need up to about 110K
- * (dcc68's optim.c), so they live in blocks from F$AllRAM, mapped one at
+ * sees 64K, but a whole file's instructions need 110K for dcc68's optim.c
+ * and 360K for te (a 4,212-line editor, step 20), so they live in blocks from F$AllRAM, mapped one at
  * a time into the window (F$MapBlk / F$ClrBlk).
  *
  *      bank_alloc (size)   new zeroed storage: returns its handle
@@ -10,9 +10,10 @@
  *                          called for a handle in another block
  *      bank_done ()        give the blocks back (every exit calls it)
  *
- * A handle is 16 bits: block number + 1 in the top 5, the offset in the
- * block / 4 in the low 11 (storage is 4-byte aligned). So there are at
- * most 31 blocks (248K), and a handle is never 0.
+ * A handle is 16 bits: block number + 1 in the top 6, the offset in the
+ * block / 8 in the low 10 (storage is 8-byte aligned). So there are at
+ * most 62 blocks (496K) besides the static records, and a handle is
+ * never 0. (Until step 20, 4-byte units and 31 blocks: te needs 45.)
  *
  * Three builds:
  *   _OS9     the real thing: one window, mapped by system calls
@@ -25,16 +26,16 @@
 #include "op.h"
 
 #define BLKSIZE 8192
-#define MAXBLK  30
-#define STATBLK 30              /* handles into Static, ordinary memory */
-#define STATSIZE 1024
+#define MAXBLK  62
+#define STATBLK 62              /* handles into Static, ordinary memory */
+#define STATSIZE 1088             /* ilist + 128 bucket heads, 8 bytes each */
 #ifndef NWIN
 #  define NWIN  4               /* windows: dco68 uses 3 of the 8 slots */
 #endif
 
-#define HANDLE(b, o) ((((unsigned) (b) + 1) << 11) | ((unsigned) (o) >> 2))
-#define HBLK(h) ((int) ((h) >> 11) - 1)
-#define HOFF(h) (((h) & 0x07ff) << 2)
+#define HANDLE(b, o) ((((unsigned) (b) + 1) << 10) | ((unsigned) (o) >> 3))
+#define HBLK(h) ((int) ((h) >> 10) - 1)
+#define HOFF(h) (((h) & 0x03ff) << 3)
 
 static int NBlk;                /* blocks allocated */
 static int Used;                /* bytes used in the last one */
@@ -153,20 +154,21 @@ H h;
     return bankaddr + HOFF(h);
 }
 #else
-/* bank_ptr(h) on the 6809: the block is the high byte / 8 - 1, the
- * offset the low 11 bits * 4 (HBLK, HOFF). In assembly because DCC's
+/* bank_ptr(h) on the 6809: the block is the high byte / 4 - 1, the
+ * offset the low 10 bits * 8 (HBLK, HOFF). In assembly because DCC's
  * shifts are library loops a bit at a time (h >> 11 and << 2 took 43%
  * of dco68's time), and every record access comes here */
 #asm
 bank_ptr: lda 2,s
  lsra
  lsra
- lsra
  deca
  cmpa bankcur+1,y
  bne bnkp2
 bnkp1 ldd 2,s
- anda #7
+ anda #3
+ lslb
+ rola
  lslb
  rola
  lslb
@@ -213,7 +215,7 @@ int size;
 {
     H h;
 
-    size = (size + 3) & ~3;
+    size = (size + 7) & ~7;
     if (NBlk == 0 || Used + size > BLKSIZE)
         newblock();
     h = HANDLE(NBlk - 1, Used);
@@ -230,7 +232,7 @@ int size;
 {
     H h;
 
-    size = (size + 3) & ~3;
+    size = (size + 7) & ~7;
     if (StatUsed + size > STATSIZE)
         error("out of static records");
     h = HANDLE(STATBLK, StatUsed);

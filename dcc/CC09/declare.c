@@ -32,11 +32,12 @@ direct int fnline;
 
 extdef()
 {
-    register symnode *ptr;
-    symnode *ptemp;
-    dimnode *dimptr, *tdp;
+    register SYM ptr;
+    register symrec *p;
+    SYM ptemp;
+    CELL dimptr, tdp;
     int size,ssize,tsc,sclass,type,temp;
-    elem *eptr;
+    CELL eptr;
 
     while (sym == RBRACE) {
         error(M_TOO_MANY_BRACKETS);
@@ -69,7 +70,7 @@ extdef()
         temp = declarator(&ptemp,&tdp,type);
         ptr = ptemp;     /* decl ptr to register */
 
-        if (ptr == NULL) {
+        if (ptr == 0) {
             if (temp != STRUCT && temp != UNION) identerr();
             goto next;
         }
@@ -81,23 +82,25 @@ extdef()
         tsc = isftn(temp) ? ((sym == COMMA || sym == SEMICOL) ? EXTERN
                                                         : EXTDEF) : sclass;
 
-        if (ptr->type != UNDECL) {
+        if (SG_TYPE(ptr) != UNDECL) {
             if (check_same(ptr,temp,eptr)) ;
             else if (tsc != EXTERN) {
-                if (ptr->storage != EXTERN && ptr->storage != EXTERND)
+                p = SYMP(ptr);
+                if (p->storage != EXTERN && p->storage != EXTERND)
                     multidef();
                 else {
-                    ptr->storage = tsc;
-                    ptr->dimptr = tdp;
-                    ptr->x.elems = eptr;
+                    p->storage = tsc;
+                    p->dims = tdp;
+                    p->x = eptr;
                     goto onlist;
                 }
             }
         } else {
-            ptr->type = temp;
-            ptr->blklev = 0;
-            ptr->storage = tsc;
-            ptr->x.elems = eptr;
+            p = SYMP(ptr);
+            p->type = temp;
+            p->blklev = 0;
+            p->storage = tsc;
+            p->x = eptr;
 onlist:
             ssize = sizeup(ptr,tdp,size);
             if (!isftn(temp)) {
@@ -113,8 +116,8 @@ onlist:
                             defglob(ptr,ssize,(tsc == DIRECT));
                             break;
                     }
-                if (tsc == STATIC) ptr->storage = EXTDEF;
-                else if (tsc == STATICD) ptr->storage = DIRECT;
+                if (tsc == STATIC || tsc == STATICD)
+                    SP_STORAGE(ptr,tsc == STATIC ? EXTDEF : DIRECT);
             }
         }
         if (isftn(temp)) {
@@ -122,7 +125,7 @@ onlist:
             if (isary(temp) || isftn(temp)
                             || temp == STRUCT || temp == UNION) {
                 error(M_FUNCTION_TYPE_ERROR);
-                ptr->type = INT | FUNCTION;
+                SP_TYPE(ptr,INT | FUNCTION);
                 temp = INT;
             }
             if (tsc == EXTERN) clear(&arglist);
@@ -142,11 +145,12 @@ next:
 
 argdef()
 {
-    register symnode *ptr;
-    symnode *ptemp;
-    dimnode *dimptr, *tdp;
+    register SYM ptr;
+    register symrec *p;
+    SYM ptemp;
+    CELL dimptr, tdp;
     int sclass,type,size,stemp,temp;
-    elem *eptr;
+    CELL eptr;
 
     switch (sclass = setclass()) {
         default:    error(M_ARGUMENT_STORAGE);
@@ -165,22 +169,22 @@ argdef()
             goto next;
         } else if (isary(temp)) {
             temp = incref(decref(temp));
-            tdp = tdp ? tdp->dptr : 0;
+            tdp = tdp ? cdr(tdp) : 0;
         }
 #ifdef DOFLOATS
         else if (temp == FLOAT) temp = DOUBLE;
 #endif
-        if (ptr == NULL) {
+        if (ptr == 0) {
             identerr();
             goto next;
         }
         stemp = chkreg(sclass,temp);
 
-        switch (ptr->storage) {
+        switch ((p = SYMP(ptr))->storage) {
             case ARG:
-                ptr->type = temp;
-                ptr->storage = stemp;
-                ptr->x.elems = eptr;
+                p->type = temp;
+                p->storage = stemp;
+                p->x = eptr;
                 if (!sizeup(ptr,tdp,size)) sizerr();
                 break;
             case AUTO:
@@ -201,12 +205,13 @@ next:
 
 blkdef()
 {
-    register symnode *ptr;
-    symnode *ptemp;
-    dimnode *dimptr, *tdp;
+    register SYM ptr;
+    register symrec *p;
+    SYM ptemp;
+    CELL dimptr, tdp;
     expnode *ep;
     int sclass,type,temp,size,stemp,ssize;
-    elem *eptr;
+    CELL eptr;
     initnode *i;
 
     switch (sclass = setclass()) {
@@ -222,45 +227,46 @@ blkdef()
         tdp = dimptr;
         temp = declarator(&ptemp,&tdp,type);
         ptr = ptemp;
-        if (ptr == NULL) {
+        if (ptr == 0) {
             if (temp != STRUCT && temp != UNION) identerr();
             goto next;
         }
         if (isftn(temp) || sclass == EXTERN) {
-            if (ptr->type == UNDECL){
-                ptr->type = temp;
-                ptr->storage = EXTERN;
-                ptr->blklev = 0;
-                ptr->x.elems = eptr;
+            if ((p = SYMP(ptr))->type == UNDECL){
+                p->type = temp;
+                p->storage = EXTERN;
+                p->blklev = 0;
+                p->x = eptr;
                 sizeup(ptr,tdp,size);
             } else check_same(ptr,temp,eptr);
             goto next;
         }
         stemp = chkreg(sclass,temp);
 
-        if (ptr->type != UNDECL) {
-            if (ptr->blklev == blklev) {
+        if ((p = SYMP(ptr))->type != UNDECL) {
+            if (p->blklev == blklev) {
                 multidef();
                 goto next;
             }
             pushdown(ptr);
+            p = SYMP(ptr);
         }
-        ptr->type = temp;
-        ptr->storage = stemp;
-        ptr->x.elems = eptr;
-        ptr->blklev = blklev;
-        ptr->snext = vlist;
+        p->type = temp;
+        p->storage = stemp;
+        p->x = eptr;
+        p->blklev = blklev;
+        p->next = vlist;
         vlist = ptr;
 
         if (!(ssize = sizeup(ptr,tdp,size)) && sym != ASSIGN) sizerr();
         switch (stemp) {
             case AUTO:
                 stlev -= ssize;
-                ptr->offset = stlev;
+                SP_OFFSET(ptr,stlev);
                 break;
             case STATICD:
             case STATIC:
-                ptr->offset = getlabel();
+                SP_OFFSET(ptr,getlabel());
         }
 
         if (sym == ASSIGN) {
@@ -286,7 +292,7 @@ blkdef()
         } else switch(stemp) {
                 case STATIC:
                 case STATICD:
-                    locstat(ptr->offset,ssize,(stemp == STATICD));
+                    locstat(SG_OFFSET(ptr),ssize,(stemp == STATICD));
             }
 next:
         if (sym != COMMA) break;
@@ -297,12 +303,13 @@ next:
 
 
 check_same(ptr,type,eptr)
-register symnode *ptr;
+register SYM ptr;
 register int type;
-register elem *eptr;
+register CELL eptr;
 {
-     if (ptr->type != type
-                || (type == STRUCT && ptr->x.elems != eptr)) {
+     register symrec *p = SYMP(ptr);
+
+     if (p->type != type || (type == STRUCT && p->x != eptr)) {
           error(M_DECLARATION_MISMATCH);
           return TRUE;
      }
@@ -344,10 +351,11 @@ chkreg(sclass,type)
 
 
 newfunc(fptr,sclass)
-symnode *fptr;
+SYM fptr;
 {
-    register symnode *p1;
-    symnode *p2;
+    register SYM p1;
+    register symrec *p;
+    SYM p2;
     int offset,stemp,paramlev;
     char *cp;
 #ifdef PROF
@@ -359,7 +367,7 @@ symnode *fptr;
 
     while (sym != LBRACE) argdef();
 
-    cp = fptr->sname;
+    cp = symname(fptr);
 
 #ifdef PROF
     /* make the profiler function name string */
@@ -374,7 +382,7 @@ symnode *fptr;
 # ifdef DEBUG
         if (dflag) {printf("newfunc node:\n"); pnode(p1);}
 # endif
-        switch (p1->type) {
+        switch (SG_TYPE(p1)) {
             case LONG:
             case ULONG:
 # ifdef DOFLOATS
@@ -389,32 +397,33 @@ symnode *fptr;
 # endif
                 break;
             default:
-                switch (p1->storage) {
+                switch (SG_STORAGE(p1)) {
                     case UREG:
 #ifdef USE_YREG
                     case YREG:
 #endif
 # ifdef PROF
-                        startfunc(cp,(sclass != STATIC),p1->storage,prlab);
+                        startfunc(cp,(sclass != STATIC),SG_STORAGE(p1),prlab);
 # else
-                        startfunc(cp,(sclass != STATIC),p1->storage);
+                        startfunc(cp,(sclass != STATIC),SG_STORAGE(p1));
 # endif
                         break;
                     case ARG:
-                        p1->storage = AUTO;
+                        SP_STORAGE(p1,AUTO);
                     case AUTO:
 # ifdef PROF
                         startfunc(cp,(sclass != STATIC),DREG,prlab);
 # else
                         startfunc(cp,(sclass != STATIC),DREG);
 # endif
-                        p1->offset = (paramlev -= 2);
-                        if (p1->type == CHAR || p1->type == UCHAR) p1->offset += 1;
+                        SP_OFFSET(p1,(paramlev -= 2));
+                        if (SG_TYPE(p1) == CHAR || SG_TYPE(p1) == UCHAR)
+                            SP_OFFSET(p1,SG_OFFSET(p1) + 1);
                         break;
                     default:
                         error(M_ARGUMENT_TYPE_IN_NEWFUNC);
                 }
-                p1 = p1->snext;
+                p1 = SG_NEXT(p1);
         }
     } else {
 # ifdef PROF
@@ -436,8 +445,9 @@ symnode *fptr;
     while (p1) {
         int size;
 
-        p1->offset = offset;
-        switch (p1->type) {
+        p = SYMP(p1);
+        p->offset = offset;
+        switch (p->type) {
             case LONG:
             case ULONG:
                 size = LONGSIZE;
@@ -452,11 +462,11 @@ symnode *fptr;
 #endif
             case CHAR:
             case UCHAR:
-                ++p1->offset;
+                ++p->offset;
             default:
                 size = INTSIZE;
         }
-        switch (stemp = p1->storage) {
+        switch (stemp = p->storage) {
             case UREG:
 #ifdef USE_YREG
             case YREG:
@@ -464,13 +474,13 @@ symnode *fptr;
                 gen(stemp,offset-sp);
                 break;
             case ARG:
-                p1->storage = AUTO;
+                p->storage = AUTO;
         }
         offset += size;
-        p1 = p1->snext;
+        p1 = SG_NEXT(p1);
     }
     p2 = arglist;
-    arglist = NULL;
+    arglist = 0;
 
 #ifdef REGCONTS
     clrconts();         /* clear register contents */
@@ -496,11 +506,11 @@ int stkadj;
 {
     register expnode *p;
     struct initstruct *i;
-    register symnode *varlist;
+    register SYM varlist;
     int savlev;
 
     varlist = vlist;
-    vlist = NULL;
+    vlist = 0;
     getsym();
     ++blklev;
     savlev = stlev + stkadj;
@@ -540,26 +550,28 @@ int stkadj;
 
 
 declist(list)
-register symnode **list;
+register SYM *list;
 {
-    register symnode *ptr,*last;
+    register SYM ptr,last;
+    register symrec *p;
 
-    *list = NULL;
+    *list = 0;
     getsym();
 
     for (;;) {
         if (sym == RPAREN) break;
         if (sym == NAME) {
-            ptr = (symnode *) symval;
-            if (ptr->storage == ARG) error(M_NAMED_TWICE);
-            else if (ptr->type != UNDECL) pushdown(ptr);
-            ptr->type = INT;
-            ptr->storage = ARG;
-            ptr->blklev = 1;
-            ptr->size = 2;
-            if (*list) last->snext = ptr;
+            ptr = symval;
+            if ((p = SYMP(ptr))->storage == ARG) error(M_NAMED_TWICE);
+            else if (p->type != UNDECL) pushdown(ptr);
+            if (*list) SP_NEXT(last,ptr);
             else *list = ptr;
-            ptr->snext = NULL;
+            p = SYMP(ptr);
+            p->type = INT;
+            p->storage = ARG;
+            p->blklev = 1;
+            p->size = 2;
+            p->next = 0;
             last = ptr;
             getsym();
         } else identerr();
@@ -675,17 +687,18 @@ err:
 
 settype(size,dimptr,ellist)
 int *size;
-dimnode **dimptr;
-elem **ellist;
+CELL *dimptr;
+CELL *ellist;
 {
-    register symnode *ptr, *tagptr;
-    dimnode *dptr;
+    register SYM ptr, tagptr;
+    register symrec *p;
+    CELL dptr;
     int offset,msize,mtype,savflg,dtype,s;
-    elem *eptr,*elast,*elocal;
+    CELL eptr,elast,elocal;
     int type = UNDECL, tsize = INTSIZE;
 
     *ellist = 0;
-    *dimptr = NULL;     /* devsys: the early returns for "struct tag x[n]"
+    *dimptr = 0;        /* devsys: the early returns for "struct tag x[n]"
                          * left the caller's dimension list unset (a crash
                          * in declarator() on XLisp/xlkmap.c) */
     if (sym==KEYWORD) {
@@ -718,26 +731,27 @@ default:
             case STRUCT:
                 tsize=offset=0;
                 ++mosflg;	/* go into special "struct" lexer mode */
-                tagptr=NULL;
+                tagptr=0;
                 getsym();
                 --mosflg;	/* and get back out */
                 if (sym==NAME) {
-                    tagptr= (symnode *) symval;
-                    if (tagptr->type==UNDECL) {
-                        tagptr->type=USTRUCT;
-                        tagptr->storage=STRTAG;
-                    } else if (tagptr->storage!=STRTAG)
+                    p = SYMP(tagptr = symval);
+                    if (p->type==UNDECL) {
+                        p->type = USTRUCT;
+                        p->storage = STRTAG;
+                    } else if (p->storage!=STRTAG)
                         error(M_NAME_CLASH);
                     getsym();
                     if (sym != LBRACE) {
-                        if(tagptr->type==STRUCT) {
-                            *size=tagptr->size;
-                            *ellist=tagptr->x.elems;
+                        if((p = SYMP(tagptr))->type==STRUCT) {
+                            *size=p->size;
+                            *ellist=p->x;
                             return STRUCT;
                         }
-                        *size = (int) tagptr;
+                        /* incomplete: the size field holds the tag */
+                        *size = tagptr;
                         return USTRUCT;
-                    } else if(tagptr->type==STRUCT) multidef();
+                    } else if(SG_TYPE(tagptr)==STRUCT) multidef();
                 }
                 if (sym!=LBRACE) error(M_STRUCT_SYNTAX);
                 else {
@@ -750,8 +764,8 @@ default:
                         if (sym==RBRACE) break;
                         mtype=settype(&msize,&dptr,&elocal);
                         while (1) {
-                            symnode *ptemp;
-                            dimnode *tdptr;
+                            SYM ptemp;
+                            CELL tdptr;
 
                             tdptr = dptr;
                             if (sym == SEMICOL) break;
@@ -759,36 +773,37 @@ default:
                             dtype = declarator(&ptemp,&tdptr,mtype);
                             ptr = ptemp;     /* decl ptr to register */
                             --blklev;
-                            if (ptr == NULL) {
+                            if (ptr == 0) {
                                 identerr();
                                 goto next;
                             }
-                            if (ptr->type != UNDECL) {
-                                if (ptr->blklev == blklev) {
-                                    if (ptr->type != dtype
-                                                || ptr->storage != MOS
-                                                || ptr->offset != offset)
+                            if ((p = SYMP(ptr))->type != UNDECL) {
+                                if (p->blklev == blklev) {
+                                    if (p->type != dtype
+                                            || p->storage != MOS
+                                            || p->offset != offset)
                                         error(M_STRUCT_MEMBER_MISMATCH);
                                 } else pushdown(ptr);
                             }
                             if (dtype == USTRUCT)
                                     error(M_UNDEFINED_STRUCTURE);
-                            ptr->type = dtype;
-                            ptr->storage = MOS;
-                            ptr->offset = offset;
-                            ptr->x.elems = elocal;
+                            p = SYMP(ptr);
+                            p->type = dtype;
+                            p->storage = MOS;
+                            p->offset = offset;
+                            p->x = elocal;
                             if (s = sizeup(ptr,tdptr,msize)) {
                                 if (type == STRUCT) tsize = (offset += s);
                                 else tsize = s > tsize ? s : tsize;
                             } else sizerr();
-                            ptr->blklev = blklev;
-                            ptr->snext = vlist;
+                            p = SYMP(ptr);
+                            p->blklev = blklev;
+                            p->next = vlist;
                             vlist = ptr;
 
                             if (type == STRUCT) {
-                                eptr = (elem *) grab(sizeof(elem));
-                                eptr->element = ptr;
-                                if (*ellist) elast->strnext = eptr;
+                                eptr = cons(ptr,0);
+                                if (*ellist) setcdr(elast,eptr);
                                 else *ellist = eptr;
                                 elast = eptr;
                             }
@@ -799,39 +814,41 @@ next:
                     } while(sym == SEMICOL);
                     --mosflg;	/* get back out of "struct mode" */
                     if (tagptr) {
-                        tagptr->size = tsize;
-                        tagptr->type = STRUCT;
-                        tagptr->x.elems = *ellist;
+                        p = SYMP(tagptr);
+                        p->size = tsize;
+                        p->type = STRUCT;
+                        p->x = *ellist;
                     }
                     need(RBRACE);
                     break;
                 }
         }
     } else if (sym == NAME) {
-        ptr = (symnode *) symval;
-        if (ptr->storage == TYPEDEF) {
-            *size = ptr->size;
-            *dimptr = ptr->dimptr;
-            *ellist = ptr->x.elems;
+        if ((p = SYMP(symval))->storage == TYPEDEF) {
+            *size = p->size;
+            *dimptr = p->dims;
+            *ellist = p->x;
+            type = p->type;
             getsym();
-            return ptr->type;
+            return type;
         }
     }
     *size = tsize;
-    *dimptr = NULL;
+    *dimptr = 0;
     return type;
 }
 
 
 declarator(ptr,dptr,bastype)
-symnode **ptr;
-dimnode **dptr;
+SYM *ptr;
+CELL *dptr;
 {
-    register dimnode *tempdim, *p, *p1;
+    register CELL tempdim, p, p1;
     int dtype, savmos, count;
-    auto dimnode *dummy;
+    CELL dummy;
+    SYM args;
 
-    *ptr = NULL;
+    *ptr = 0;
     dtype = 0;
 
     while (sym == STAR) {
@@ -839,7 +856,7 @@ dimnode **dptr;
         getsym();
     }
     if (sym == NAME) {
-        *ptr = (symnode *) symval;
+        *ptr = symval;
         getsym();
     } else if (sym == LPAREN) {
         getsym();
@@ -852,24 +869,21 @@ dimnode **dptr;
     if (sym == LPAREN) {
         dtype = (dtype<<2) + FUNCTION;
         if (blklev) {
-            declist(&dummy);
-            clear(&dummy);
+            declist(&args);
+            clear(&args);
         } else declist(&arglist);
     } else {
-        tempdim = p1 = NULL;
+        tempdim = p1 = 0;
         savmos = mosflg;
         count = mosflg = 0;
         while (sym == LBRACK) {
             dtype = (dtype << 2) + ARRAY;
             getsym();
-            p = (dimnode *) grab(sizeof(dimnode));
-            p->dptr = NULL;     /* devsys: grab() doesn't clear memory;
-                                 * appending to an existing chain below
-                                 * never ended the list */
-            if (count == 0 && sym == RBRACK) p->dim = 0;
-            else p->dim = constexp(0);
+            p = cons(0,0);
+            if (count == 0 && sym == RBRACK) setcar(p,0);
+            else setcar(p,constexp(0));
 
-            if (p1) p1->dptr = p;
+            if (p1) setcdr(p1,p);
             else tempdim = p;
             p1 = p;
             need(RBRACK);
@@ -878,10 +892,10 @@ dimnode **dptr;
         mosflg = savmos;
         if (tempdim) {
             if (dummy = *dptr) {
-                while (dummy->dptr) dummy = dummy->dptr;
-                dummy->dptr = tempdim;
+                while (cdr(dummy)) dummy = cdr(dummy);
+                setcdr(dummy,tempdim);
             } else {
-                p->dptr = NULL;
+                setcdr(p,0);
                 *dptr = tempdim;
             }
         }
@@ -905,12 +919,28 @@ shiftin (a,b)
 
 
 sizeup(ptr,dimptr,size)
-register symnode *ptr;
-register dimnode *dimptr;
+register SYM ptr;
+register CELL dimptr;
 {
     register int n,temp;
+    register symrec *p;
 
-    switch (btype(temp = ptr->type)) {
+    p = SYMP(ptr);
+    n = basesize(temp = p->type,size);
+    p->size = n ? n : size;
+    p->dims = dimptr;
+
+    return getsize(temp,n,dimptr);
+}
+
+
+/* the size of one of t's basic type; 0 for an incomplete struct */
+basesize(t,size)
+{
+    register int n;
+
+    n = 0;
+    switch (btype(t)) {
         case CHAR:
         case UCHAR:     n = 1; break;
         case INT:
@@ -925,14 +955,12 @@ register dimnode *dimptr;
         case STRUCT:    n = size; break;
         case USTRUCT:   n = 0; break;
     }
-    ptr->size = n ? n : size;
-
-    return getsize(temp,n,ptr->dimptr = dimptr);
+    return n;
 }
 
 
 getsize(t,size,dptr)
-register dimnode *dptr;
+register CELL dptr;
 {
     int n;
 
@@ -941,8 +969,8 @@ register dimnode *dptr;
     if (isary(t)) {
         n = 1;
         do {
-            n *= dptr->dim;
-            dptr = dptr->dptr;
+            n *= car(dptr);
+            dptr = cdr(dptr);
         } while (isary(t = decref(t)));
 
         return n * (isptr(t) ? POINTSIZE : size);
@@ -952,16 +980,24 @@ register dimnode *dptr;
 
 
 clear(list)
-symnode **list;
+SYM *list;
 {
-    register symnode *this, *next, *p, **pp;
+    register SYM this, next;
+    register symrec *p;
     char err[60];
 
     this = *list;
 
     while (this) {
-        next = this->snext;
-        if (this->type == LABEL) {
+        p = SYMP(this);
+        next = p->next;
+        switch (p->storage) {
+#ifdef USE_YREG
+            case YREG:
+#endif
+            case UREG: --reguse;
+        }
+        if (p->type == LABEL) {
 /*
             if(!(this[ELEMS] & GONETO)) {
                 strncpy(err,this+(SNAME>>1),8);
@@ -969,36 +1005,17 @@ symnode **list;
                 error(err);
             }
 */
-            if(!(this->x.labflg & DEFINED)) {
+            if(!(p->x & DEFINED)) {
                 error(strncat(strcpy(err,msg(M_LABEL_UNDEFINED)),
-                                this->sname,NAMESIZE));
+                                symname(this),NAMESIZE));
             }
         }
 
-        switch (this->storage) {
-#ifdef USE_YREG
-            case YREG:
-#endif
-            case UREG: --reguse;
-        }
-
-        pp = (symnode **) this->downptr;
-        if ((pp >= hashtab && pp < hashtab + 128)
-                        || (pp >= mostab && pp < mostab + 128)) {
-            extern symnode *freesym;
-
-            if (*pp == this) *pp = this->hlink;
-            else {
-                for (p = *pp; p->hlink != this; p = p->hlink) ;
-                p->hlink = this->hlink;
-            }
-            this->hlink = freesym;
-            freesym = this;
-        } else pullup(this);
+        symfree(this);
         this = next;
     }
 
-    *list = NULL;
+    *list = 0;
 }
 
 

@@ -82,9 +82,6 @@ getlin()
                                 fprintf(code,"%s\n",line);
                                 continue;
                         case NEWFNAME:
-#ifdef MKIMG
-                                pchname(line);  /* the image's headers */
-#endif
                                 strncpy (filename, line, sizeof (filename) - 1);
                                 filename[sizeof (filename) - 1] = '\0';
 #ifdef SPLIT
@@ -139,15 +136,12 @@ getlin()
 #ifdef  SPLIT
                                         tidy();
 #else
-                                        exit(1);
+                                        errexit();
 #endif
                                 continue;
                         }
                 }
                 else {
-#ifdef MKIMG
-                        pchline(line);  /* a header's text: its checksum */
-#endif
 #ifdef  SPLIT
 /*
                         p2line(++lineno,soffset);
@@ -200,7 +194,7 @@ cgets()                 /* Function to input a line of source.
 #ifdef SPLIT
                         tidy();
 #else
-                        exit(1);
+                        errexit();
 #endif
                 }
                 return NULL;

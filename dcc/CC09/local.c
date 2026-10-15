@@ -57,10 +57,10 @@ extstat(ptr,size,area)
 
 
 defvar(ptr,size,scope)
-symnode *ptr;
+SYM ptr;
 char scope;
 {
-     fprintf(code,"%s%c rmb %d\n",ptr->sname,scope,size);
+     fprintf(code,"%s%c rmb %d\n",symname(ptr),scope,size);
 }
 
 
@@ -209,6 +209,7 @@ tidy()
           fclose(strfile);
           unlink(strname);
      }
+     symdone();
      _exit(err);
 }
 
