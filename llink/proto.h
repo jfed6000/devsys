@@ -127,3 +127,9 @@ extern void lw_cleanup();
 /* rl_02.c: 8-character names in ROF version 0 */
 extern void v0alias();
 extern SYMDAT *v0match();
+/* bigbuf.c: the psect being linked, in 8K blocks */
+extern void bb_alloc();
+extern char *bb_ptr();
+extern int bb_read();
+extern void bb_write();
+extern void bb_free();

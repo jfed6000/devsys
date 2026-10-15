@@ -94,14 +94,16 @@ typedef struct lstruct {
     H rlist;                /* reference cells of the branches to it */
     H nextl;                /* the next label on the same instruction */
     SHORT lflags;
-    char lname[LABELSIZE+1];
+    char lname[LABELSIZE+1];    /* allocated as long as the name needs */
 } label;
+
+#define LABHDR  (5 * sizeof(H) + sizeof(SHORT))     /* label before lname */
 
 typedef struct istruct {
     H succ, pred;           /* ilist */
     H llist;                /* its labels */
     SHORT itype;
-    char mnem[MNEMSIZE+1];
+    SHORT mnem;             /* the mnemonic: its index in mnemtab (mnemix) */
     H arg;                  /* BRANCH with DESTPTR: the label; else the
                              * operand text (ARG) */
 } instruction;
@@ -120,7 +122,8 @@ typedef struct istruct {
 #define I_PRED(h)   bkget2(h)
 #define I_LLIST(h)  bkget4(h)
 #define I_ITYPE(h)  bkget6(h)
-#define I_ARG(h)    bkget19(h)
+#define I_MNEM(h)   bkget8(h)
+#define I_ARG(h)    bkget10(h)
 #define L_SUCC(h)   bkget0(h)
 #define L_DEST(h)   bkget4(h)
 #define L_RLIST(h)  bkget6(h)
@@ -128,12 +131,13 @@ typedef struct istruct {
 #define L_LFLAGS(h) bkget10(h)
 #define C_SUCC(h)   bkget0(h)
 #define C_PRED(h)   bkget2(h)
-extern H bkget0(), bkget2(), bkget4(), bkget6(), bkget8(), bkget10(), bkget19();
+extern H bkget0(), bkget2(), bkget4(), bkget6(), bkget8(), bkget10();
 #else
 #define I_SUCC(h)   (INS(h)->succ)
 #define I_PRED(h)   (INS(h)->pred)
 #define I_LLIST(h)  (INS(h)->llist)
 #define I_ITYPE(h)  (INS(h)->itype)
+#define I_MNEM(h)   (INS(h)->mnem)
 #define I_ARG(h)    (INS(h)->arg)
 #define L_SUCC(h)   (LAB(h)->succ)
 #define L_DEST(h)   (LAB(h)->dest)
@@ -144,16 +148,25 @@ extern H bkget0(), bkget2(), bkget4(), bkget6(), bkget8(), bkget10(), bkget19();
 #define C_PRED(h)   (CHN(h)->pred)
 #endif
 
+/* An instruction's mnemonic: a string in ordinary memory, good for as
+ * long as dco68 runs (each distinct mnemonic is kept once, inst.c) */
+#ifdef _OS9
+#define MNEMOF(h)   mnemof(h)
+extern char *mnemof();
+#else
+#define MNEMOF(h)   (mnemtab[I_MNEM(h)])
+#endif
+extern char *mnemtab[];
+
 extern char *bank_ptr ();
 extern H bank_alloc (), bank_static ();
 
 extern direct H ilist;          /* the list head: a chain record */
 extern H ltable[];              /* the label buckets' heads */
-extern H newchain(), newarg(), inslabel(), newlabel(), findlabel();
+extern H newchain(), newarg(), inslabel(), newlabel(), findlabel(), talloc();
 extern H insins(), newins();
 extern char *argcopy();
 extern char *grab();
-extern direct H lfree;
 extern direct int inscount;
 extern FILE *in,*out,*datfile;
 extern direct int lbf,lbdone,opsdone;

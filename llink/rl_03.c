@@ -52,8 +52,7 @@ wrtlwmod()
     char *mod_nm;
     static char os9name[] = "__os9";
 
-    inpBuf = grab(obmemreq = maxbufsiz);
-    obmemreq = 0;
+    bb_alloc(maxbufsiz);
 
     if (t_idat || t_idpd)
     {
@@ -160,8 +159,7 @@ wrtmodule()
         return 0;
     }
 
-    inpBuf = grab(obmemreq = maxbufsiz);
-    obmemreq = 0;
+    bb_alloc(maxbufsiz);
     mod_hdr.m_sync = MODSYNC;
     mod_hdr.m_size = o9_int(((namelen + t_drefs) * 2) + 13 + t_code + t_idat +  t_idpd + 13 );
 
@@ -347,14 +345,10 @@ L14d3()
 
     fseek(InFile, curObfil->rcodbgn, 0);
 
-    /* Read in code + init data */
-    if (curObfil->codesiz + curObfil->IDpD + curObfil->IDat > 0)
+    /* Read in code + init data (bigbuf.c) */
+    if (!bb_read(InFile, curObfil->codesiz + curObfil->IDpD + curObfil->IDat))
     {
-        if (!(fread(inpBuf, curObfil->codesiz + curObfil->IDpD + curObfil->IDat,
-                        1, InFile)))
-        {
-            rderr(curObfil->roffile);
-        }
+        rderr(curObfil->roffile);
     }
 
     /* Do External Refs */
@@ -446,32 +440,25 @@ L14d3()
         }
     }
 
-    crc(inpBuf, curObfil->codesiz, _Crc);
-
     if (!D0061)
         fseek(OutFile, cod_end, 0);
 
-    /* Write code to module */
-    fwrite(inpBuf, curObfil->codesiz, 1, OutFile);  /* L1737 */
+    /* Write code to module, and its CRC */
+    bb_write(0, curObfil->codesiz, OutFile, 1);     /* L1737 */
     cod_end += curObfil->codesiz;
     D0061 = 1;
     wrerr();
     totcnt = 0;
+    while (totcnt < curObfil->IDpD)
     {
-        register char *cp = &inpBuf[curObfil->codesiz];
-
-        while (totcnt < curObfil->IDpD)
-        {
-            *(D0084++) = *(cp++);
-            ++totcnt;
-        }
+        *(D0084++) = *bb_ptr(curObfil->codesiz + totcnt);
+        ++totcnt;
     }
 
     if (curObfil->IDat)        /* else L1800 */
     {
         fseek(OutFile, IDatLoc, 0);
-        fwrite(&inpBuf[curObfil->codesiz + curObfil->IDpD], curObfil->IDat,
-                1, OutFile);
+        bb_write(curObfil->codesiz + curObfil->IDpD, curObfil->IDat, OutFile, 0);
         IDatLoc += curObfil->IDat;
         wrerr();
         D0061 = 0;
@@ -495,18 +482,13 @@ L14d3()
 procref(b3, ob)
     def_ref *b3; SYMDAT *ob;
 {
-    union {
-        int  it;
-        UINT *ipt;
-        char  *cp;
-    } realaddr;
-
+    unsigned off;       /* the byte to patch, in the psect (bigbuf.c) */
     INTTYPE myval;
     char    reftype,
             obtype,
             myloc;
 
-    realaddr.cp = &inpBuf[b3->r_offset];
+    off = b3->r_offset;
     reftype = b3->r_flag;
 
     if (ob)     /* else L189a */
@@ -550,11 +532,11 @@ procref(b3, ob)
 
     if ((myloc = (reftype & LOCMASK)) != CODLOC)
     {   /* It's a data def */
-        realaddr.it += curObfil->codesiz;
+        off += curObfil->codesiz;
 
         if (!(myloc & DIRLOC))  /* non-dpd */
         {
-            realaddr.it += curObfil->IDpD;
+            off += curObfil->IDpD;
         }
     }
 
@@ -564,22 +546,25 @@ procref(b3, ob)
         {
             int vvtyp;
 
-            if (((vvtyp = *realaddr.cp + myval) < -128) || (vvtyp > 127))
+            if (((vvtyp = *bb_ptr(off) + myval) < -128) || (vvtyp > 127))
             {
                 fatal("\npcr byte ref to '%s' out-of-range at $%04x in psect %s",
                         ob->sname, b3->r_offset, curObfil);
             }
         }
 
-        *realaddr.cp += myval;
+        *bb_ptr(off) += myval;
     }
     else
     {   /* L1970 */
-#ifdef _OS9
-        *realaddr.ipt += myval;
-#else
-        *realaddr.ipt = o9_int(o9_int(*realaddr.ipt) + myval);
-#endif
+        /* a byte at a time, high first: the word may straddle two
+         * blocks, and only one is mapped at a time */
+        UINT w;
+
+        w = (*bb_ptr(off) & 0xff) << 8;
+        w = (w | (*bb_ptr(off + 1) & 0xff)) + myval;
+        *bb_ptr(off) = w >> 8;
+        *bb_ptr(off + 1) = w;
     }
 
     if (myloc != CODLOC)   /* else L19c4 */

@@ -194,8 +194,6 @@ bkget6: ldb #6
 bkget8: ldb #8
  bra bkget
 bkget10: ldb #10
- bra bkget
-bkget19: ldb #19
 bkget pshs b
  ldd 3,s
  pshs d
@@ -205,6 +203,66 @@ bkget pshs b
  puls b
  abx
  ldd ,x
+ rts
+
+* mnemof(h): instruction h's mnemonic, mnemtab[field 8] (op.h's MNEMOF)
+mnemof: ldd 2,s
+ pshs d
+ lbsr bkget8
+ leas 2,s
+ aslb
+ rola
+ leax mnemtab,y
+ ldd d,x
+ rts
+
+* talloc(n): a record of at least n bytes, from tfree's list for its
+* size (n rounded up to 8) or new (inst.c, which has the C version)
+talloc: ldd 2,s
+ addd #7
+ andb #$F8
+ pshs d
+ lsra
+ rorb
+ lsra
+ rorb
+ ldx #tfree
+ leax d,x
+ ldd ,x
+ bne tal1
+ lbsr bank_alloc
+ puls x,pc
+tal1 pshs d,x
+ pshs d
+ lbsr bank_ptr
+ leas 2,s
+ tfr d,x
+ ldd ,x
+ std [2,s]
+ puls d,x
+ leas 2,s
+ rts
+
+* tfreerec(h, n): record h, of at least n bytes, goes on tfree's list
+tfreerec: ldd 4,s
+ addd #7
+ andb #$F8
+ lsra
+ rorb
+ lsra
+ rorb
+ ldx #tfree
+ leax d,x
+ pshs x
+ ldd 4,s
+ pshs d
+ lbsr bank_ptr
+ leas 2,s
+ tfr d,x
+ ldd [,s]
+ std ,x
+ ldd 4,s
+ std [,s++]
  rts
 #endasm
 #endif

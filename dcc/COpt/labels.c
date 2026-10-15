@@ -4,7 +4,6 @@
  * a banked chain record, ltable holds their handles */
 
 H ltable[128];
-direct H lfree;
 
 labelinit()
 {
@@ -27,7 +26,7 @@ char *s;
     register label *lb;
     H l, p, t;
 
-    p = newlabel();
+    p = newlabel(strlen(s));
 
     l = ltable[hash(s)];
     strcpy(LAB(p)->lname,s);
@@ -70,21 +69,20 @@ register char *s;
     return i & 127;
 }
 
+/* a label with room for a len-character name (inst.c's talloc) */
 H
-newlabel()
+newlabel(len)
+int len;
 {
     register label *lb;
     H p;
 
-    if (p = lfree) {
-        lb = LAB(p);
-        lfree = lb->succ;
-        lb->dest = 0;
-        lb->rlist = 0;
-        lb->nextl = 0;
-        lb->lflags = 0;
-    } else p = bank_alloc(sizeof(label));
-
+    p = talloc(LABHDR + len + 1);
+    lb = LAB(p);
+    lb->dest = 0;
+    lb->rlist = 0;
+    lb->nextl = 0;
+    lb->lflags = 0;
     return p;
 }
 
@@ -101,9 +99,8 @@ H p;
         pr = lb->pred;
         CHN(pr)->succ = s;
         CHN(s)->pred = pr;
-        /* add to free list */
-        LAB(p)->succ = lfree;
-        lfree = p;
+        /* add to the free records */
+        tfreerec(p, LABHDR + strlen(LAB(p)->lname) + 1);
     }
 }
 

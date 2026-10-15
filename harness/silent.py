@@ -22,6 +22,9 @@ proof for the native chain (native.py cc builds and runs longret.c).
               after "ldb" where "ldd" was needed. harness/native/
               regwidth.c, built and run like longret: "regwidth: all
               right", status 0.
+  6. unsgn    an unsigned comparison with 0 doesn't test a stale carry
+              (D59): dco68 dropped "cmpd #0" after "ldd" before bhi/bls.
+              harness/native/unsgn.c, built and run like longret.
 
   python3 harness/silent.py [--keep]
 """
@@ -96,6 +99,10 @@ def check_regwidth():
     return build_and_run("regwidth")
 
 
+def check_unsgn():
+    return build_and_run("unsgn")
+
+
 def check_errexit():
     d = os.path.join(WORK, "errexit")
     os.makedirs(d)
@@ -168,7 +175,7 @@ def main():
     results = []
     for name, check in (("longret", check_longret), ("errexit", check_errexit),
                         ("dcpp", check_dcpp), ("macros", check_macros),
-                        ("regwidth", check_regwidth)):
+                        ("regwidth", check_regwidth), ("unsgn", check_unsgn)):
         ok, detail = check()
         results.append(ok)
         print(f"{'pass' if ok else 'FAIL'}  {name}: {detail}")

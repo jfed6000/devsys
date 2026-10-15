@@ -47,7 +47,7 @@ H i;
             fprintf(stderr," (list head)\n");
         else {
             t = I_ITYPE(i);
-            fprintf(stderr," %s ",INS(i)->mnem);
+            fprintf(stderr," %s ",MNEMOF(i));
             a = I_ARG(i);
             if (a == 0)         /* a branch whose label isn't set yet */
                 putc('\n',stderr);

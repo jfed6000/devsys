@@ -53,7 +53,7 @@ las_MEM		:= 8
 las_NOCHECK	:= symtab bank defsimg module preload
 
 llink_DIR	:= $(DEVSYS)/llink
-llink_OBJS	:= rlink_main globals rl_02 rl_03 misc rl_05 util lwsel
+llink_OBJS	:= rlink_main globals rl_02 rl_03 misc rl_05 util lwsel bigbuf
 llink_DEFS	:= -DCOCO
 llink_MEM	:= 10
 

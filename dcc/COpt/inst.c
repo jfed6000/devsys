@@ -79,7 +79,7 @@ H *l;
         *l = 0;
     }
     strcpy(mbuf, mnem);
-    strcpy(INS(i)->mnem, mbuf);
+    INS(i)->mnem = mnemix(mbuf);
     if (*(argp = args))
         while (*++argp);
     argl = argp - args;
@@ -99,7 +99,7 @@ H *l;
     case 'b':
         if ((mnemtp = srchmnem(mnemp + 1, bratab, bratab + NUMBRA)) != 0) {
             INS(i)->itype |= (BRANCH | LONG | (mnemtp - bratab));
-            strcpy(INS(i)->mnem, *mnemtp);
+            INS(i)->mnem = mnemix(*mnemtp);
             parse(LABEL, args, args, &argl);
             lp = findlabel(args);
             if (mnemtp == bratab) {
@@ -216,7 +216,7 @@ delete()
 {
     H i, l, a;
     int itype;
-    char mbuf[MNEMSIZE+1];
+    char *mbuf;             /* the mnemonic (mnemtab: stays valid) */
 
     if ((i = I_SUCC(ilist)) == ilist)
         error("deleting too many instructions");
@@ -235,7 +235,7 @@ delete()
 
     putc(' ', out);
     itype = I_ITYPE(i);
-    strcpy(mbuf, INS(i)->mnem);
+    mbuf = MNEMOF(i);
     a = I_ARG(i);
     if (itype & BRANCH) {
         fprintf(out, "%sb%s %s", (itype & LONG ? "l" : ""), mbuf,
@@ -371,41 +371,175 @@ H p;
     _cfree = p;
 }
 
-static direct H safree = 0, lafree = 0;
+/* Operand texts and labels are as long as their text needs, in 8-byte
+ * steps (step 21: most operands are a few characters, and fixed 16- and
+ * 91-byte slots made te and dev-cc too big). Freed ones wait on a list
+ * per size; a record's size is worked out again from its text. */
+direct H tfree[13];             /* free records by size / 8 */
 
+#ifndef _OS9
+/* a record of at least n bytes (on the 6809 in assembly, bank.c) */
+H
+talloc(n)
+register int n;
+{
+    register H h;
 
+    n = (n + 7) >> 3;
+    if (h = tfree[n]) tfree[n] = C_SUCC(h);
+    else h = bank_alloc(n << 3);
+    return h;
+}
+
+/* record h, of at least n bytes, is free */
+tfreerec(h, n)
+H h;
+register int n;
+{
+    n = (n + 7) >> 3;
+    CHN(h)->succ = tfree[n];
+    tfree[n] = h;
+}
+#endif
+
+/* room for a siz-character operand, empty */
 H
 newarg(siz)
 int siz;
 {
     H ap;
 
-    if (siz < 16)
-        if ((ap = safree) != 0)
-            safree = C_SUCC(ap);
-        else
-            ap = bank_alloc(16);
-    else if ((ap = lafree) != 0)
-        lafree = C_SUCC(ap);
-    else
-        ap = bank_alloc(ARGSIZE + 1);
+    ap = talloc(siz + 1);
     CHN(ap)->succ = 0;
     return ap;
 }
+
+/* instruction i's operand is now s: in its record if s fits (its
+ * present text says how big the record is at least), else a new one.
+ * (Until step 21 this was strcpy into the record, which ran past a
+ * 16-byte one when a pattern made the operand longer) */
+setarg(i, s)
+H i;
+char *s;
+{
+    register H a;
+    register int n;
+
+    a = I_ARG(i);
+    n = strlen(s);
+    if (n > (strlen(ARG(a)) | 7)) {     /* the most the record holds */
+        freearg(a);
+        a = talloc(n + 1);
+        INS(i)->arg = a;
+    }
+    strcpy(ARG(a), s);
+}
+
+/* The mnemonics: each distinct one once, in ordinary memory, found
+ * through 32 hash chains; an instruction holds its index */
+#define MAXMNEM 255
+char *mnemtab[MAXMNEM];
+static unsigned char mnext[MAXMNEM], mhead[32];   /* index + 1, 0: end */
+static int nmnem;
+
+#ifndef _OS9
+mnemix(s)
+register char *s;
+{
+    register int i;
+    int h;
+
+    h = (s[0] + s[1]) & 31;     /* s isn't empty: s[1] is the end at most */
+    for (i = mhead[h]; i; i = mnext[i - 1])
+        if (strcmp(mnemtab[i - 1], s) == 0)
+            return i - 1;
+    if (nmnem == MAXMNEM)
+        error("too many mnemonics");
+    mnemtab[nmnem] = strcpy(grab(strlen(s) + 1), s);
+    mnext[nmnem] = mhead[h];
+    mhead[h] = ++nmnem;
+    return nmnem - 1;
+}
+#else
+/* the same in assembly (mnemix(s) returns s's index) */
+#asm
+mnemix: pshs u
+ ldu 4,s
+ ldb ,u
+ addb 1,u
+ andb #31
+ clra
+ ldx #mhead
+ leax d,x
+ pshs x
+ ldb ,x
+mnx1 beq mnx3
+ decb
+ pshs b
+ clra
+ aslb
+ rola
+ ldx #mnemtab
+ ldd d,x
+ pshs d,u
+ lbsr strcmp
+ leas 4,s
+ std -2,s
+ puls b
+ beq mnx2
+ ldx #mnext
+ abx
+ ldb ,x
+ bra mnx1
+mnx2 clra
+ bra mnx4
+mnx3 ldd nmnem,y
+ cmpd #255
+ bne mnx5
+ leax mnxerr,pcr
+ pshs x
+ lbsr error
+mnx5 pshs u
+ pshs u
+ lbsr strlen
+ addd #1
+ std ,s
+ lbsr grab
+ std ,s
+ lbsr strcpy
+ leas 4,s
+ pshs d
+ ldd nmnem,y
+ aslb
+ rola
+ ldx #mnemtab
+ leax d,x
+ puls d
+ std ,x
+ ldb [,s]
+ pshs b
+ ldd nmnem,y
+ ldx #mnext
+ leax d,x
+ puls b
+ stb ,x
+ ldd nmnem,y
+ addd #1
+ std nmnem,y
+ stb [,s]
+ subd #1
+mnx4 leas 2,s
+ puls u,pc
+mnxerr fcc "too many mnemonics"
+ fcb 0
+#endasm
+#endif
 
 
 freearg(p)
 H p;
 {
     if (p != 0)
-    {
-        if (strlen(ARG(p)) < 16) {
-            CHN(p)->succ = safree;
-            safree = p;
-        } else {
-            CHN(p)->succ = lafree;
-            lafree = p;
-        }
-    }
+        tfreerec(p, strlen(ARG(p)) + 1);
     return 0;
 }
