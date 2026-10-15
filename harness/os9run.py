@@ -59,7 +59,7 @@ SYSNAMES = {
     0x51: "F$DelRAM", 0x80: "I$Attach", 0x82: "I$Dup", 0x83: "I$Create", 0x84: "I$Open",
     0x85: "I$MakDir", 0x86: "I$ChgDir", 0x87: "I$Delete", 0x88: "I$Seek", 0x89: "I$Read",
     0x8A: "I$Write", 0x8B: "I$ReadLn", 0x8C: "I$WritLn", 0x8D: "I$GetStt",
-    0x8E: "I$SetStt", 0x8F: "I$Close",
+    0x8E: "I$SetStt", 0x8F: "I$Close", 0x90: "I$DeletX",
 }
 
 PATHCHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._$/-")
@@ -500,9 +500,11 @@ class Process:
             else:
                 self.disk.cwd = h
             c.x = end
-        elif code == 0x87:                                 # I$Delete
+        elif code in (0x87, 0x90):                         # I$Delete, I$DeletX
+            # I$DeletX (clib's unlink) takes an access mode in A: with
+            # EXEC ($04) the name is in the execution directory
             name, end = self.name_at(c.x)
-            h = self.disk.host(name)
+            h = self.disk.host(name, exe=code == 0x90 and bool(c.a & 4))
             if not os.path.isfile(h):
                 raise OS9Error(E_PNNF)
             os.remove(h)
