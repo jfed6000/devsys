@@ -235,6 +235,7 @@ char *buf;
 
 delete()
 {
+    register instruction *ip;
     H i, l, a;
     int itype;
     char *mbuf;             /* the mnemonic (mnemtab: stays valid) */
@@ -242,39 +243,44 @@ delete()
     if ((i = I_SUCC(ilist)) == ilist)
         error("deleting too many instructions");
 
-    if ((I_ITYPE(i) & LONGBRA) == LONGBRA)
+    ip = INS(i);            /* its fields at one mapping (step 26) */
+    itype = ip->itype;
+    l = ip->llist;
+    if ((itype & LONGBRA) == LONGBRA)
         fix(i, FORWARD);
-    if ((l = I_LLIST(i)) != 0)
+    if (l != 0)
         fix(i, BACK);
-    /* fputs and putc, not fprintf: its formatting cost more than the
-     * characters (step 24) */
+    /* OPUTS and OPUTC (fputs and putc; on the 6809 into the buffer
+     * directly, step 26), not fprintf: its formatting cost more than
+     * the characters (step 24) */
     while (l) {
-        fputs(LAB(l)->lname, out);
+        OPUTS(LAB(l)->lname);
         if (L_LFLAGS(l) & GLOBAL)
-            putc(':', out);
+            OPUTC(':');
         if ((l = L_NEXTL(l)) != 0)
-            putc('\n', out);
+            OPUTC('\n');
     }
 
-    putc(' ', out);
-    itype = I_ITYPE(i);
-    mbuf = MNEMOF(i);
-    a = I_ARG(i);
+    OPUTC(' ');
+    ip = INS(i);            /* fix may have changed them */
+    itype = ip->itype;
+    mbuf = mnemtab[ip->mnem];
+    a = ip->arg;
     if (itype & BRANCH) {
         if (itype & LONG)
-            putc('l', out);
-        putc('b', out);
-        fputs(mbuf, out);
-        putc(' ', out);
-        fputs((itype & DESTPTR ? LAB(a)->lname : ARG(a)), out);
+            OPUTC('l');
+        OPUTC('b');
+        OPUTS(mbuf);
+        OPUTC(' ');
+        OPUTS((itype & DESTPTR ? LAB(a)->lname : ARG(a)));
     } else {
-        fputs(mbuf, out);
+        OPUTS(mbuf);
         if (ARG(a)[0]) {
-            putc(' ', out);
-            fputs(ARG(a), out);
+            OPUTC(' ');
+            OPUTS(ARG(a));
         }
     }
-    putc('\n', out);
+    OPUTC('\n');
     remins(i);
 }
 
@@ -584,10 +590,15 @@ char *s;
 }
 
 /* The mnemonics: each distinct one once, in ordinary memory, found
- * through 32 hash chains; an instruction holds its index */
+ * through 64 hash chains; an instruction holds its index. Step 26: the
+ * chains were 32, by the first two characters, so ldd, lda, ldx, ...
+ * shared one (5.3 strcmps a lookup on te); now every character counts
+ * (h * 2 + c: 1.3). Only the low 6 bits are used, so the 6809 adds in 8
+ * bits. A chain's order changes nothing but the time */
 #define MAXMNEM 255
+#define MHASH   64
 char *mnemtab[MAXMNEM];
-static unsigned char mnext[MAXMNEM], mhead[32];   /* index + 1, 0: end */
+static unsigned char mnext[MAXMNEM], mhead[MHASH];  /* index + 1, 0: end */
 static int nmnem;
 
 #ifndef _OS9
@@ -597,7 +608,9 @@ register char *s;
     register int i;
     int h;
 
-    h = (s[0] + s[1]) & 31;     /* s isn't empty: s[1] is the end at most */
+    for (h = 0, i = 0; s[i]; ++i)
+        h = h * 2 + s[i];
+    h &= MHASH - 1;
     for (i = mhead[h]; i; i = mnext[i - 1])
         if (strcmp(mnemtab[i - 1], s) == 0)
             return i - 1;
@@ -613,9 +626,14 @@ register char *s;
 #asm
 mnemix: pshs u
  ldu 4,s
- ldb ,u
- addb 1,u
- andb #31
+ clrb
+ leax ,u
+mnh1 tst ,x
+ beq mnh2
+ aslb
+ addb ,x+
+ bra mnh1
+mnh2 andb #63 MHASH - 1
  clra
  ldx #mhead
  leax d,x

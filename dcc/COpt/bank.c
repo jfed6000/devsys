@@ -28,7 +28,7 @@
 #define BLKSIZE 8192
 #define MAXBLK  62
 #define STATBLK 62              /* handles into Static, ordinary memory */
-#define STATSIZE 1088             /* ilist + 128 bucket heads, 8 bytes each */
+#define STATSIZE 16             /* ilist (step 26: the label buckets moved to labels.c) */
 #ifndef NWIN
 /* windows: the 8 slots of the 64K hold dco68's module (3, topslot.c),
  * its data (2: the patterns alone take about 3.5K) and 3 windows (D61) */
@@ -41,8 +41,19 @@
 
 static int NBlk;                /* blocks allocated */
 static int Used;                /* bytes used in the last one */
-int bankcur = -1;               /* the block last used (bank_ptr's */
-char *bankaddr;                 /* assembly reads both): its address */
+static H NextH;                 /* the handle of its first free byte (step
+                                 * 26: HANDLE's << 10 is a library loop on
+                                 * the 6809, at every allocation) */
+int bankcur = -1;               /* the block last used */
+char *bankaddr;                 /* its address */
+#ifdef _OS9
+/* for the 6809's record readers (step 26): the high byte of bankcur's
+ * handles without the offset's 2 bits ((bankcur + 1) << 2; 0 matches
+ * no handle), and bankaddr less the block's part of handle << 3
+ * (((bankcur + 1) & 7) << 13), so handle << 3 + bankbias is the address */
+char bankhi;
+char *bankbias;
+#endif
 static char Static[STATSIZE];   /* bank_static's records */
 static int StatUsed;
 #if defined(_OS9) || defined(BANKWIN)
@@ -82,6 +93,7 @@ newblock()
 #endif
     ++NBlk;
     Used = 0;
+    NextH = HANDLE(NBlk - 1, 0);
 }
 
 #if defined(_OS9) || defined(BANKWIN)
@@ -148,8 +160,8 @@ bank_map: ldd 2,s
  cmpd #62 STATBLK
  bne bnm1
  leax Static,y
- stx bankaddr,y
- rts
+ tfr x,d
+ bra bnmset
 bnm1 addd #1
  leax WinBlk,y
  cmpd ,x
@@ -162,8 +174,7 @@ bnm5 ldd 2,s
  pshs d
  lbsr map
  leas 2,s
- std bankaddr,y
- rts
+ bra bnmset
 bnm4 ldb #4
  bra bnm6
 bnm3 ldb #2
@@ -184,8 +195,22 @@ bnm6 pshs u
  leax Window,y
  tfr u,d
  ldd d,x
- std bankaddr,y
- puls u,pc
+ puls u
+* D = the block's address: bankaddr, bankhi, bankbias
+bnmset std bankaddr,y
+ ldb bankcur+1,y
+ incb
+ lslb
+ lslb
+ stb bankhi,y
+ lslb
+ lslb
+ lslb
+ pshs b
+ ldd bankaddr,y
+ suba ,s+
+ std bankbias,y
+ rts
 bnm7 puls u
  bra bnm5
 #endasm
@@ -206,56 +231,146 @@ H h;
 /* bank_ptr(h) on the 6809: the block is the high byte / 4 - 1, the
  * offset the low 10 bits * 8 (HBLK, HOFF). In assembly because DCC's
  * shifts are library loops a bit at a time (h >> 11 and << 2 took 43%
- * of dco68's time), and every record access comes here */
+ * of dco68's time), and every record access comes here. Step 26: h is
+ * in the current block if its high byte without the low 2 bits is
+ * bankhi, and then its address is h << 3 + bankbias */
 #asm
-bank_ptr: bsr bkaddr
+bank_ptr: ldx bankbias,y
+ lda 2,s
+ anda #$FC
+ cmpa bankhi,y
+ beq bkp1
+ bsr bkmap
+bkp1 ldd 2,s
+ lslb
+ rola
+ lslb
+ rola
+ lslb
+ rola
+ leax d,x
  tfr x,d
  rts
 
-* bkaddr: X = the address of handle h, the caller's argument (4,s here:
-* it is called by bank_ptr and the field readers). Step 24: the readers
-* did all of bank_ptr's call, and every record read comes here
-bkaddr lda 4,s
- lsra
+* bkmap: X = the bias (as bankbias) for handle h, the caller's argument
+* (4,s here: it is called by bank_ptr and the field readers when h's
+* high byte isn't bankhi). A handle into Static leaves the current
+* block alone (step 26: ilist, the list head, is there, and each use
+* of it was a change of the current block and another back, 50,000 on
+* te); any other maps its block. Keeps U and Y
+bkmap lda 4,s
+ anda #$FC
+ cmpa #$FC
+ bne bkm1
+ leax Static,y
+ leax -$E000,x (STATBLK + 1) << 13, the part of h << 3 above the offset
+ rts
+bkm1 lsra
  lsra
  deca
- cmpa bankcur+1,y
- bne bka2
-bka1 ldd 4,s
- anda #3
- lslb
- rola
- lslb
- rola
- lslb
- rola
- addd bankaddr,y
- tfr d,x
- rts
-bka2 tfr a,b
+ tfr a,b
  clra
  pshs d
  lbsr bank_map
- leas 2,s
- bra bka1
+ ldx bankbias,y
+ puls d,pc
 
-* bkgetN(h): the 2-byte field at offset N of record h (op.h's I_SUCC...)
-bkget0: bsr bkaddr
- ldd ,x
+* bkgetN(h): the 2-byte field at offset N of record h (op.h's I_SUCC...).
+* Every record read comes here: each has bank_ptr's test inline (step
+* 26: it was a call to a shared address routine, 17% of the time on te)
+bkget0: ldx bankbias,y
+ lda 2,s
+ anda #$FC
+ cmpa bankhi,y
+ beq bkg0
+ bsr bkmap
+bkg0 ldd 2,s
+ lslb
+ rola
+ lslb
+ rola
+ lslb
+ rola
+ ldd d,x
  rts
-bkget2: bsr bkaddr
+bkget2: ldx bankbias,y
+ lda 2,s
+ anda #$FC
+ cmpa bankhi,y
+ beq bkg2
+ bsr bkmap
+bkg2 ldd 2,s
+ lslb
+ rola
+ lslb
+ rola
+ lslb
+ rola
+ leax d,x
  ldd 2,x
  rts
-bkget4: bsr bkaddr
+bkget4: ldx bankbias,y
+ lda 2,s
+ anda #$FC
+ cmpa bankhi,y
+ beq bkg4
+ bsr bkmap
+bkg4 ldd 2,s
+ lslb
+ rola
+ lslb
+ rola
+ lslb
+ rola
+ leax d,x
  ldd 4,x
  rts
-bkget6: bsr bkaddr
+bkget6: ldx bankbias,y
+ lda 2,s
+ anda #$FC
+ cmpa bankhi,y
+ beq bkg6
+ bsr bkmap
+bkg6 ldd 2,s
+ lslb
+ rola
+ lslb
+ rola
+ lslb
+ rola
+ leax d,x
  ldd 6,x
  rts
-bkget8: bsr bkaddr
+bkget8: ldx bankbias,y
+ lda 2,s
+ anda #$FC
+ cmpa bankhi,y
+ beq bkg8
+ bsr bkmap
+bkg8 ldd 2,s
+ lslb
+ rola
+ lslb
+ rola
+ lslb
+ rola
+ leax d,x
  ldd 8,x
  rts
-bkget10: bsr bkaddr
+bkget10: ldx bankbias,y
+ lda 2,s
+ anda #$FC
+ cmpa bankhi,y
+ beq bkg10
+ bsr bkmap
+bkg10 ldd 2,s
+ lslb
+ rola
+ lslb
+ rola
+ lslb
+ rola
+ leax d,x
  ldd 10,x
  rts
 
@@ -330,7 +445,8 @@ int size;
     size = (size + 7) & ~7;
     if (NBlk == 0 || Used + size > BLKSIZE)
         newblock();
-    h = HANDLE(NBlk - 1, Used);
+    h = NextH;                  /* HANDLE(NBlk - 1, Used) */
+    NextH += size >> 3;
     Used += size;
     memset(bank_ptr(h), 0, size);
     return h;

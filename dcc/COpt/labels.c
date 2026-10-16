@@ -1,21 +1,18 @@
 #include "op.h"
 
-/* devsys: labels are banked records (op.h); each bucket's list head is
- * a banked chain record, ltable holds their handles */
+/* devsys: labels are banked records (op.h). A bucket's labels are a
+ * list from lhead to ltail (each label's succ and pred, 0 at the ends),
+ * in the order they came. The heads are in ordinary memory (step 26:
+ * they were 128 banked chain records, 8 bytes each), so walking an
+ * empty bucket maps nothing; a walk maps every label it passes, each
+ * likely in another block: findlabel caused 62% of te's window
+ * changes. So 512 buckets and a hash that spreads te's names */
 
-H ltable[128];
+#define NBUCKET 512
+static H lhead[NBUCKET], ltail[NBUCKET];
 
 labelinit()
 {
-    register int i;
-    register chain *p;
-    H h;
-
-    for (i = 0; i < 128; i++) {
-        ltable[i] = h = bank_static(sizeof(chain));
-        p = CHN(h);
-        p->succ = p->pred = h;
-    }
 }
 
 /* s is in ordinary memory */
@@ -24,20 +21,23 @@ inslabel(s)
 char *s;
 {
     register label *lb;
-    H l, p, t;
+    H p, t;
+    int b;
 
     p = newlabel(strlen(s));
-
-    l = ltable[lhash(s)];
-    strcpy(LAB(p)->lname,s);
+    b = lhash(s);
+    t = ltail[b];
 
     /* put at back of list */
-    t = C_PRED(l);
     lb = LAB(p);
-    lb->succ = l;
+    strcpy(lb->lname, s);
+    lb->succ = 0;
     lb->pred = t;
-    CHN(t)->succ = p;
-    CHN(l)->pred = p;
+    if (t)
+        LAB(t)->succ = p;
+    else
+        lhead[b] = p;
+    ltail[b] = p;
 
     return p;
 }
@@ -47,32 +47,29 @@ H
 findlabel(s)
 char *s;
 {
-    H p, l;
+    H p;
 
-    l = ltable[lhash(s)];
-
-    for (p = C_SUCC(l); p != l; p = L_SUCC(p)) {
+    for (p = lhead[lhash(s)]; p; p = L_SUCC(p)) {
         if (strcmp(s,LAB(p)->lname) == 0)
             return p;
     }
     return 0;
 }
 
-/* a label's bucket (step 24): hash()'s sum of the characters put te's
- * 1,343 labels, mostly _123 and _$12, in 120 buckets up to 72 deep, and
- * a lookup reads every label before it in its bucket. Each character
- * shifted in by 2 spreads them as well as random (te: at most 18). Only
- * the low 7 bits are used. A name
- * is always in its own bucket, in the order it came, so which bucket
- * that is changes nothing else */
+/* a label's bucket. A name is always in its own bucket, in the order it
+ * came, so which bucket that is changes nothing else. Step 24: hash()'s
+ * sum of the characters put te's labels, mostly _123 and _$12, up to 72
+ * deep in 128 buckets; each character shifted in by 2 did better. Step
+ * 26, 512 buckets: by 3, and the high byte folded into the low one, as
+ * the digits of _123 differ only in their low 4 bits */
 lhash(s)
 register char *s;
 {
-    register int i = 0;
+    register H i = 0;       /* 16 bits on both machines */
 
     while (*s)
-        i = (i << 2) + *s++;
-    return i & 127;
+        i = (i << 3) + *s++;
+    return (i ^ (i >> 8)) & (NBUCKET - 1);
 }
 
 hash(s)
@@ -108,16 +105,25 @@ H p;
 {
     register label *lb;
     H s, pr;
+    int b, n;
 
     lb = LAB(p);
     if (lb->dest == 0 && lb->rlist == 0) {
-        /* remove from ltable */
+        /* remove from its bucket */
         s = lb->succ;
         pr = lb->pred;
-        CHN(pr)->succ = s;
-        CHN(s)->pred = pr;
+        n = strlen(lb->lname);
+        b = (s && pr) ? 0 : lhash(lb->lname);
+        if (pr)
+            LAB(pr)->succ = s;
+        else
+            lhead[b] = s;
+        if (s)
+            LAB(s)->pred = pr;
+        else
+            ltail[b] = pr;
         /* add to the free records */
-        tfreerec(p, LABHDR + strlen(LAB(p)->lname) + 1);
+        tfreerec(p, LABHDR + n + 1);
     }
 }
 

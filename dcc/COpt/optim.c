@@ -148,6 +148,22 @@ char *line;
 	return i;
 }
 
+/* the character every operand that matches pattern p ends with: p's
+ * last if it is an ordinary one (match: '*' and '?' match anything,
+ * '<' a number, and the rest only itself, up to the end), else 0 (and
+ * for no pattern, ^1, and the empty operand) */
+static char
+lastlit(p)
+char *p;
+{
+	char c;
+
+	if ((unsigned) p <= 2 || *p == '\0')
+		return 0;
+	c = p[strlen(p) - 1];
+	return (c == '*' || c == '?' || c == '<') ? 0 : c;
+}
+
 loadfile(patfile)
 FILE *patfile;
 {
@@ -171,6 +187,7 @@ FILE *patfile;
 				instr *i = mkInstr (line);
 				a = grab (sizeof (action)); /* new action */
 				a->actp = i;
+				a->lastc = lastlit (i->opp);
 				break;
 			}
 			case 2:	{
@@ -217,6 +234,21 @@ optinit()
 
 		loadfile(patfile);
 		fclose(patfile);
+	}
+
+	/* each action's lskip, for optim: all of a run of actions with
+	 * the same lastc fail together (step 26) */
+	{
+		register action *a, *b;
+		int k;
+
+		for (k = 0; k < 128; ++k)
+			for (a = acslots[k]; a; a = a->nxtact) {
+				for (b = a->nxtact; b && b->lastc == a->lastc;
+						b = b->nxtact)
+					;
+				a->lskip = b;
+			}
 	}
 }
 
@@ -320,9 +352,9 @@ H i;
 {
     H i2, t, lab;
     int it, c2;
-    action *a;
+    action *a, *anext;
     instr *ap, *mp;
-    char labc, c, found, fallback = FALSE;
+    char labc, c, found, fallback = FALSE, olast, lgot;
     char mbuf[MNEMSIZE+1], pbuf[ARGSIZE+1], abuf[ARGSIZE+1], *s, *ps, *ms;
 
     i = I_PRED(i);
@@ -365,11 +397,29 @@ loop:   if (i == ilist || (i2 = I_SUCC(i)) == ilist)
         cmnem[0] = MNEMOF(i2);
         cgot[0] = FALSE;
         cfill = 1;
+        lgot = FALSE;
 restart:
-        for (found = FALSE; a ; a = a->nxtact) {
+        for (found = FALSE; a ; a = anext) {
+            anext = a->nxtact;
 #ifdef DEBUG
             debug("  matching action %p.\n",a);
 #endif
+            /* an action whose newest operand pattern ends in an ordinary
+             * character can't match an operand that ends otherwise
+             * (step 26: of the 13 fallback patterns, tried at nearly
+             * every instruction, most failed only at the operand), nor
+             * can the actions after it with the same lastc */
+            if (a->lastc) {
+                if (!lgot) {
+                    s = COPND(0);
+                    olast = (s && *s) ? s[strlen(s) - 1] : 0;
+                    lgot = TRUE;
+                }
+                if (a->lastc != olast) {
+                    anext = a->lskip;   /* its run fails too */
+                    continue;
+                }
+            }
             labc = c = 0;
             for (ap = a->actp; ap; ap = ap->nxtins, ++c) {
                 if (CPOS(c) == ilist) break;
@@ -509,6 +559,12 @@ H i;
     char *mbuf, abuf[ARGSIZE+1];
 
     if (I_PRED(i) == ilist) return;
+    /* without labels on i, what comes before the returns does nothing:
+     * no references to follow, no labels to move, and duplrefs(0, i)
+     * returns at once (step 26: 4 record reads and a call at every
+     * instruction) */
+    if (I_LLIST(i) == 0)
+        goto codebrk;
     /* move labels on "bra"s to here */
     lmovp = 0;
     /* travel down label list */
@@ -567,6 +623,7 @@ H i;
         t = I_LLIST(i);
         duplrefs(t,i);
     }
+codebrk:
     if ((it = I_ITYPE(i)) & CODEBRK) {
         if (it & BRANCH) {
             lab = I_ARG(i);
