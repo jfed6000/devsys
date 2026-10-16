@@ -586,6 +586,7 @@ _getnum (ZILCH)
     int base,
       _lgth,
       _digit;
+    unsigned small, lim;
     char CTyp;
 
     _lgth = base = 0;
@@ -596,11 +597,13 @@ _getnum (ZILCH)
         case '%':
             _digit = *(++SrcChar);
             base = 2;
+            lim = 32767;        /* (65535 - (base - 1)) / base */
             CTyp = 0x10;
             break;
         case '$':
             _digit = *(++SrcChar);
             base = 16;
+            lim = 4095;
             CTyp = 0x20;
             break;
         default:
@@ -611,11 +614,13 @@ _getnum (ZILCH)
                 SrcChar += 2;           /* lwasm: 0x hex */
                 _digit = *SrcChar;
                 base = 16;
+                lim = 4095;
                 CTyp = 0x20;
             }
             else if (isdigit (_digit))
             {
                 base = 10;
+                lim = 6552;
             }
     }
 
@@ -624,16 +629,43 @@ _getnum (ZILCH)
         return 0;
     }
 
+    /* The digits go into an unsigned int while the next one can't take
+     * it past 16 bits, and into NmbrInt (a long on the 6809) from the
+     * first that could: the same value, but most numbers (2,s, #1) never
+     * need the long multiply, a library call per digit (step 27) */
+
+    small = 0;
     NmbrInt = 0;
 
     while ( _chcodes[_digit = (islower (_digit) ? _toupper (_digit) :
                                                   _digit)] & CTyp)
     {
-        NmbrInt = (NmbrInt * base) + (_digit - ((_digit < 'A') ?
-                                                        '0' : ('A' - 10)));
-        ++_lgth;
+        _digit -= (_digit < 'A') ? '0' : ('A' - 10);
+
+        if (_lgth >= 0)
+        {
+            if (small <= lim)
+            {
+                small = (small * base) + _digit;
+                ++_lgth;
+                _digit = *(++SrcChar);
+                continue;
+            }
+
+            NmbrInt = small;
+            _lgth = -_lgth;     /* from here on in NmbrInt */
+        }
+
+        NmbrInt = (NmbrInt * base) + _digit;
+        --_lgth;
         _digit = *(++SrcChar);
     }
 
-    return _lgth;
+    if (_lgth >= 0)
+    {
+        NmbrInt = small;
+        return _lgth;
+    }
+
+    return -_lgth;
 }

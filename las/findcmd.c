@@ -3,7 +3,15 @@
  * $Id::                                        $   *
  * ************************************************ */
 
+#define NEED_CTYPE              /* isblank, notblank (MovLbl, SkipSpac) */
 #include "rma.h"
+
+#define _ischar(c) (_chcodes[(int)c]&(_DIGIT|_LOWER|_UPPER|_CONTROL))
+
+#ifdef COCO
+char *lblcopy ();
+CODFORM *fcscan ();
+#endif
 
 /* **************************************************************** *
  * cmdinit - sorts each table by its entries' first letter, once at *
@@ -169,6 +177,9 @@ FindCmd (src_str, cod_strt, cod_stop)
         return 0;       /* no entry starts with it: nothing to copy */
     }
 
+#ifdef COCO
+    return fcscan (src_str, cod_strt, cod_stop);    /* below (step 27) */
+#else
     /* Copy lower-case chars from src_str to CmdMnemonic */
 
     cmp_str = CmdMnemonic;
@@ -225,4 +236,188 @@ FindCmd (src_str, cod_strt, cod_stop)
     }
 
     return 0;
+#endif
 }
+
+/* **************************************************************** *
+ * MovLbl and SkipSpac scan every line, often several times (te:    *
+ * 24,054 and 57,917 calls). They were in labels.c; here they are   *
+ * compiled without stack checks, like the rest of this file        *
+ * (las_NOCHECK, step 27). Neither recurses: SkipSpac calls nothing *
+ * and MovLbl only strncmp, so the margin its checked caller        *
+ * reserved (the caller's frame + 64 bytes) covers MovLbl's 16-byte *
+ * frame and strncmp's few.                                         *
+ * **************************************************************** */
+
+/* ******************************************************************** *
+ * MovLbl() - Moves a label to destpos (parameter) if the first char    *
+ *            in the buffer is a legal label char.                      *
+ * Returns: (1) if label found and moved                                *
+ *          (0) if no label                                             *
+ * ******************************************************************** */
+
+int
+#ifdef __STDC__
+MovLbl (char *destpos)
+#else
+MovLbl (destpos)
+     char *destpos;
+#endif
+{
+    int count;
+
+    if (isalpha ((int)(*SrcChar)))
+    {
+        char *start = destpos,
+             *lim = destpos + (SYMLEN - 1);
+#ifdef COCO
+        destpos = lblcopy (destpos, lim);   /* below (step 27) */
+#else
+        register char *src = SrcChar;
+
+        while ((destpos < lim) && (_ischar (*src)))
+        {
+            *(destpos++) = *(src++);
+        }
+
+        SrcChar = src;
+#endif
+
+        /* What "while ((count-- > 0) && ...)" from SYMLEN - 1 left (D64) */
+
+        count = (destpos < lim) ? (lim - destpos) - 1 : -1;
+
+        /* lwasm: "sizeof{name}" is one name, a struct's size (lwstruct.c) */
+
+        if (LwasmMode && (*SrcChar == '{') && (destpos - start == 6) &&
+            (strncmp (start, "sizeof", 6) == 0))
+        {
+            while ((count-- > 0) && *SrcChar && (*SrcChar != '}') &&
+                   notblank (*SrcChar))
+            {
+                *(destpos++) = *(SrcChar++);
+            }
+
+            if ((count > 0) && (*SrcChar == '}'))
+            {
+                *(destpos++) = *(SrcChar++);
+            }
+        }
+
+        *destpos = '\0';
+
+        while (_ischar (*SrcChar))
+        {
+            ++SrcChar;
+        }
+
+        return 1;
+    }
+
+    return 0;
+}
+
+char
+SkipSpac (ZILCH)
+{
+    register char *pt = SrcChar;
+
+    while (isblank(*pt))
+    {
+        pt++;
+    }
+
+    return *(SrcChar = pt);   /* Reset SrcChar to this char */
+}
+
+#ifdef COCO
+/* lblcopy (dest, lim): MovLbl's copy on the 6809 (step 27: DCC's loop
+ * took about 22 instructions a character, this 9). Copies characters
+ * from SrcChar to dest while dest < lim and _ischar (the table byte
+ * & 15; ldb + lda b,u index it by the signed char, as DCC's code does),
+ * advances SrcChar past them and returns dest. Y is the destination
+ * (SrcChar is in the direct page): no operand here may end
+ * in ",y", which dco68 -2 would make an extended address */
+#asm
+lblcopy: pshs y,u
+ ldx <SrcChar
+ ldu #_chcodes
+ ldy 6,s dest
+lbc1 cmpy 8,s lim
+ bhs lbc2
+ ldb ,x
+ lda b,u
+ bita #15 _DIGIT|_LOWER|_UPPER|_CONTROL
+ beq lbc2
+ stb ,y+
+ leax 1,x
+ bra lbc1
+lbc2 tfr y,d
+ puls y
+ stx <SrcChar
+ puls u,pc
+#endasm
+#endif
+
+#ifdef COCO
+/* fcscan (src, strt, stop): the rest of FindCmd on the 6809 (step 27:
+ * in C, 15% of las's time on te). Copies src to CmdMnemonic in lower
+ * case as the C does (a character that isn't lower case gets 0x20 or'd
+ * in: _tolower), then scans the entries strt..stop of one letter for the
+ * first that is a prefix of it: entry and mnemonic's first two
+ * characters compared as one 16-bit number, the rest one by one. Sets
+ * CmdNamEnd on a match. Entries are CODFORMs: the name pointer, then 2
+ * bytes. As elsewhere, no operand may end in ",y" (dco68 -2) */
+#asm
+fcscan: pshs y,u
+ ldx 6,s src
+ ldy #CmdMnemonic
+ ldu #_chcodes
+fcs1 ldb ,x+
+ beq fcs2
+ lda b,u
+ bita #4 _LOWER
+ bne fcs1a
+ orb #$20
+fcs1a stb ,y+
+ bra fcs1
+fcs2 stb ,y+
+ ldx #CmdMnemonic
+ ldd ,x
+ pshs d the first two characters, w
+ ldu 10,s strt
+fcs3 cmpu 12,s stop
+ bhs fcs9
+ ldx ,u
+ ldd ,x
+ cmpd ,s
+ beq fcs5
+ cmpa ,s
+ bne fcs9 past the entries for the letter
+ tstb
+ bne fcs4
+ ldd #CmdMnemonic+1 one character, the same: a prefix
+ bra fcs8
+fcs4 leau 4,u
+ bra fcs3
+fcs5 pshs u
+ leax 1,x
+ ldu #CmdMnemonic+1
+fcs6 ldb ,x+
+ beq fcs7 the entry ended: a prefix
+ cmpb ,u+
+ beq fcs6
+ puls u
+ bra fcs4
+fcs7 tfr u,d q: U is at the character of the mnemonic after the prefix
+ puls u
+fcs8 std <CmdNamEnd
+ tfr u,d
+ leas 2,s
+ puls y,u,pc
+fcs9 clra
+ clrb
+ leas 2,s
+ puls y,u,pc
+#endasm
+#endif
