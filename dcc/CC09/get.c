@@ -171,6 +171,44 @@ register char *s;
 #endif
 
 
+#ifdef _OS9
+/* lnfast (lp, max): the characters of the line that are already in
+ * in's buffer, up to its CR, copied to lp while lp < max; returns lp.
+ * devsys (step 28): cgets called getc for each one and went round its
+ * switch, about 30 instructions a character; here 10. The CR, the end
+ * of the buffer and everything else are left to getc, as before (stdio:
+ * _ptr at 0, _end at 4, _flag at 6; a file written in update mode,
+ * _WRITTEN, reads as EOF in getc, so it is left to getc entirely) */
+char *lnfast();
+#asm
+lnfast: pshs u
+ ldx <in
+ ldu 4,s lp
+ lda 6,x
+ bita #1 _WRITTEN
+ bne lnf9
+ ldd 4,x _end
+ pshs d
+ ldx ,x _ptr
+lnf1 cmpx ,s
+ bhs lnf3
+ cmpu 8,s max
+ bhs lnf3
+ ldb ,x
+ cmpb #$0D CR
+ beq lnf3
+ stb ,u+
+ leax 1,x
+ bra lnf1
+lnf3 leas 2,s
+ tfr x,d
+ ldx <in
+ std ,x _ptr
+lnf9 tfr u,d
+ puls u,pc
+#endasm
+#endif
+
 char *
 cgets()                 /* Function to input a line of source.
                          * Returns a pointer to the start of the line
@@ -208,6 +246,9 @@ cgets()                 /* Function to input a line of source.
                                 return line;    /* normal return point */
                         default:
                                 *lp++ = c;
+#ifdef _OS9
+                                lp = lnfast(lp, max);
+#endif
                                 c = getc(in);
                 }
 

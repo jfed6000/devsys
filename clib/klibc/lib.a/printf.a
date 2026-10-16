@@ -1,3 +1,6 @@
+ ifp1
+ use ../defs/stdio.a
+ endc
  psect printf_a,0,0,3,0,0
 
 *   printf(format, expr1, expr2, .... exprn)
@@ -393,7 +396,27 @@ getdec2 lda b,x
 
 
 ********** send (B) to file
+* devsys (step 28): putc's first case inline (putc.a): B stored if
+* putc would only store it and not flush, else putc does it all
 put2file ldx fpmp,y
+ pshs d
+ ldd _flag,x
+ anda #_INIT+_WRITTEN
+ andb #_ERR+_SCF+_WRITE+_UNBUF
+ cmpa #_INIT+_WRITTEN
+ bne p2f1
+ cmpb #_WRITE
+ bne p2f1
+ ldd _ptr,x
+ addd #1
+ cmpd _end,x
+ bhs p2f1 it would fill the buffer
+ std _ptr,x
+ puls d
+ ldx _ptr,x
+ stb -1,x
+ rts
+p2f1 puls d
  pshs d,x
  lbsr putc
  leas 4,s
