@@ -8,6 +8,10 @@ typedef struct ins {
 typedef struct act {
     struct act *nxtact;
     instr *actp,*repp;
+    struct act *lskip;  /* devsys: the first action after this one's
+                         * run of actions with the same lastc */
+    char lastc;     /* devsys: the last character of actp's operand
+                     * pattern if it is an ordinary one, else 0 (optim) */
 } action;
 
 /*

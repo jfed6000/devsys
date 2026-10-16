@@ -89,7 +89,7 @@ typedef struct chstruct {
 } chain;
 
 typedef struct lstruct {
-    H succ, pred;           /* the bucket's list (ltable) */
+    H succ, pred;           /* its bucket's list (labels.c), 0 at the ends */
     H dest;                 /* the instruction it labels, 0 if none */
     H rlist;                /* reference cells of the branches to it */
     H nextl;                /* the next label on the same instruction */
@@ -166,7 +166,6 @@ extern char *bank_ptr ();
 extern H bank_alloc (), bank_static ();
 
 extern direct H ilist;          /* the list head: a chain record */
-extern H ltable[];              /* the label buckets' heads */
 extern H newchain(), newarg(), inslabel(), newlabel(), findlabel(), talloc();
 extern H insins(), newins();
 extern direct H retnew;          /* inst.c: the newest return's cell */
@@ -177,6 +176,20 @@ extern FILE *in,*out,*datfile;
 extern direct int lbf,lbdone,opsdone;
 extern direct int dbflag,l2flag;
 extern char *parse();
+
+/* reading and writing the file (main.c: on the 6809 straight from and
+ * into stdio's buffer, step 26); IGETS is fgets without the '\n' */
+#ifdef _OS9
+#define IGETS(s, n, fp) igets(s, n, fp)
+#define OPUTS(s)    oputs(s)
+#define OPUTC(c)    oputc(c)
+extern char *igets();
+#else
+extern char *lgets();
+#define IGETS(s, n, fp) lgets(s, n, fp)
+#define OPUTS(s)    fputs(s, out)
+#define OPUTC(c)    putc(c, out)
+#endif
 
 extern match();
 extern matchcpy();

@@ -139,12 +139,7 @@ optimise()
     datflag = endflag = FALSE;
     inlcnt = 0;
 
-    while (fgets(line,LINESIZE,in) != NULL) {
-        {
-            register char *lp = line;
-            while (*lp && *lp != '\n') ++lp;
-            *lp = '\0';
-        }
+    while (IGETS(line,LINESIZE,in) != NULL) {     /* without the '\n' */
         ++inlcnt;
 #ifdef DEBUG
         if (inlcnt >= debugcnt) dbflag = debugon;
@@ -176,7 +171,8 @@ optimise()
                 break;
             case 'n':
                 if(strcmp(mnem,"nam") == 0) {
-put:                fprintf(out,"%s\n",line);
+put:                OPUTS(line);
+                    OPUTC('\n');
                     continue;
                 }
                 break;
@@ -206,11 +202,22 @@ put:                fprintf(out,"%s\n",line);
         }
 
         endsect();
-        if (datflag) fprintf(datfile,"%s\n",line);
-        else {
+        if (datflag) {
+            OPUTS(line);        /* datfile is out */
+            OPUTC('\n');
+        } else {
             if (*lab) {
                 if ((lp1 = findlabel(lab)) == 0)
                     lp1 = inslabel(lab);
+                else {
+                    /* devsys: a label defined twice (never in dcc68's
+                     * output; a file without CR line ends, read in
+                     * 99-character pieces, has them) linked itself into
+                     * l and insins went round it for ever */
+                    for (t = l; t && t != lp1; t = L_NEXTL(t));
+                    if (t || L_DEST(lp1))
+                        error("label %s defined twice", lab);
+                }
                 if (globflag) LAB(lp1)->lflags |= GLOBAL;
                 for (lp2 = lp1; (t = L_NEXTL(lp2)) != 0; lp2 = t);
                 LAB(lp2)->nextl = l;
@@ -242,7 +249,163 @@ endsect()
     if (endflag) {
         if (datflag) datflag = FALSE;
         else while (inscount) delete();
-        fprintf(out," endsect\n");
+        OPUTS(" endsect\n");
         endflag = FALSE;
     }
 }
+
+#ifndef _OS9
+/* fgets, but the line ends where its '\n' was (main.c's IGETS) */
+char *
+lgets(s, n, fp)
+char *s;
+int n;
+FILE *fp;
+{
+    register char *lp;
+
+    if (fgets(s, n, fp) == NULL)
+        return NULL;
+    for (lp = s; *lp && *lp != '\n'; ++lp)
+        ;
+    *lp = '\0';
+    return s;
+}
+#else
+/* dco68 reads and writes every character of the file through stdio:
+ * fgets calls getc for each, fputs calls putc for each, about 30
+ * instructions a character (step 26: 14% of the time on te). These do
+ * what they would, from and into the FILE's buffer directly (stdio.h:
+ * _ptr at 0, _end at 4, _flag at 6), calling getc or putc only when
+ * those would do more than take or store a character.
+ *
+ *   igets(s, n, fp)  fgets, but the line ends where its CR was (main
+ *                    used to look for it again): up to n - 1 characters,
+ *                    through the first CR; NULL if getc returns EOF,
+ *                    even after some (as CoCoC's fgets: a last line
+ *                    without a CR is lost)
+ *   oputs(s)         fputs(s, out)
+ *   oputc(c)         putc(c, out)
+ *
+ * putc only stores if the file is set up (_INIT), written to before
+ * (_WRITTEN), for writing, without error, buffered and not SCF (which
+ * is flushed at every CR), and the character leaves room in the buffer:
+ * otherwise it may flush. getc takes the next character if _ptr < _end
+ * and the file isn't one written in update mode (_WRITTEN). */
+#asm
+igets: pshs u
+ leas -4,s
+ ldx 12,s fp
+ lda 6,x
+ bita #1 _WRITTEN: getc returns EOF
+ bne igs9
+ ldd 10,s
+ std 2,s count
+ ldx 8,s s
+ clr ,x
+igs1 ldu 12,s
+ ldd 4,u _end
+ std ,s
+ ldu ,u _ptr
+igs2 ldd 2,s
+ subd #1
+ std 2,s
+ beq igs5 n - 1 characters
+ cmpu ,s
+ bhs igs6 the buffer is empty
+ ldb ,u+
+ stb ,x+
+ cmpb #$0D
+ bne igs2
+ leax -1,x the line ends at the CR
+igs5 tfr u,d
+ ldu 12,s
+ std ,u _ptr
+igs7 clr ,x
+ ldd 8,s s
+igs8 leas 4,s
+ puls u,pc
+igs6 tfr u,d
+ ldu 12,s
+ std ,u _ptr
+ pshs x
+ pshs u
+ lbsr getc
+ leas 2,s
+ puls x
+ cmpd #-1
+ beq igs10
+ cmpb #$0D
+ beq igs7 the line ends here
+ stb ,x+
+ bra igs1
+igs10 clr ,x
+ clra
+ clrb
+ bra igs8
+igs9 ldd 12,s
+ pshs d
+ ldd 12,s
+ pshs d
+ ldd 12,s
+ pshs d
+ lbsr fgets
+ leas 6,s
+ bra igs8 (NULL: written in update mode)
+
+oputs: pshs u
+ ldx 4,s s
+ ldu out,y
+ ldd 6,u _flag
+ anda #$81 _INIT _WRITTEN
+ andb #$66 _UNBUF _SCF _ERR _WRITE
+ cmpd #$8102
+ bne ops5
+ ldd 4,u _end
+ subd #1
+ pshs d
+ ldu ,u _ptr
+ops1 ldb ,x
+ beq ops3
+ cmpu ,s
+ bhs ops3 putc would flush: the rest through fputs
+ leax 1,x
+ stb ,u+
+ bra ops1
+ops3 tfr u,d
+ ldu out,y
+ std ,u _ptr
+ leas 2,s
+ tst ,x
+ beq ops6
+ops5 ldd out,y
+ pshs d
+ pshs x
+ lbsr fputs
+ leas 4,s
+ops6 puls u,pc
+
+oputc: ldx out,y
+ ldd 6,x _flag
+ anda #$81
+ andb #$66
+ cmpd #$8102
+ bne opc5
+ ldd ,x _ptr
+ addd #1
+ cmpd 4,x _end
+ bhs opc5
+ std ,x
+ ldx ,x
+ ldb 3,s
+ stb -1,x
+ rts
+opc5 ldd out,y
+ pshs d
+ ldd 4,s
+ pshs d
+ lbsr putc
+ leas 4,s
+ rts
+#endasm
+#endif
