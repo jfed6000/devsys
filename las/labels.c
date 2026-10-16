@@ -7,7 +7,6 @@
 /* rma.h before stdlib.h: rma.h redefines void and const for what
  * follows, so this order makes stdlib.h read as it does in las's header
  * image (dcc -h, step 17), and the image fits this file too */
-#define NEED_CTYPE
 #include "rma.h"
 
 #include <stdlib.h>
@@ -16,7 +15,6 @@
 void * getmem ();
 #endif
 
-#define _ischar(c) (_chcodes[(int)c]&(_DIGIT|_LOWER|_UPPER|_CONTROL))
 
 static void SetArow (                  /* L204a() */
 #ifdef __STDC__
@@ -29,70 +27,6 @@ static int phaserr ();
 #ifdef SYMSTATS
 long StatRefs;      /* measurement build: reference records created */
 #endif
-
-/* ******************************************************************** *
- * MovLbl() - Moves a label to destpos (parameter) if the first char    *
- *            in the buffer is a legal label char.                      *
- * Returns: (1) if label found and moved                                *
- *          (0) if no label                                             *
- * ******************************************************************** */
-
-int
-#ifdef __STDC__
-MovLbl (char *destpos)
-#else
-MovLbl (destpos)
-     char *destpos;
-#endif
-{
-    int count;
-
-    if (isalpha ((int)(*SrcChar)))
-    {
-        register char *src = SrcChar;
-        char *start = destpos,
-             *lim = destpos + (SYMLEN - 1);
-
-        while ((destpos < lim) && (_ischar (*src)))
-        {
-            *(destpos++) = *(src++);
-        }
-
-        SrcChar = src;
-
-        /* What "while ((count-- > 0) && ...)" from SYMLEN - 1 left (D64) */
-
-        count = (destpos < lim) ? (lim - destpos) - 1 : -1;
-
-        /* lwasm: "sizeof{name}" is one name, a struct's size (lwstruct.c) */
-
-        if (LwasmMode && (*SrcChar == '{') && (destpos - start == 6) &&
-            (strncmp (start, "sizeof", 6) == 0))
-        {
-            while ((count-- > 0) && *SrcChar && (*SrcChar != '}') &&
-                   notblank (*SrcChar))
-            {
-                *(destpos++) = *(SrcChar++);
-            }
-
-            if ((count > 0) && (*SrcChar == '}'))
-            {
-                *(destpos++) = *(SrcChar++);
-            }
-        }
-
-        *destpos = '\0';
-
-        while (_ischar (*SrcChar))
-        {
-            ++SrcChar;
-        }
-
-        return 1;
-    }
-
-    return 0;
-}
 
 /* **************************************************************** *
  * do_label() - Sets up Label definitition from buffer SrcChr       *
@@ -510,19 +444,6 @@ RefCreat (mylabel, rtyp, adrs)    /*   L21c9()  */
     sym_setrefs (mylabel, ref_new (rtyp, adrs, sym_refs (mylabel)));
 }
 
-
-char
-SkipSpac (ZILCH)
-{
-    register char *pt = SrcChar;
-
-    while (isblank(*pt))
-    {
-        pt++;
-    }
-
-    return *(SrcChar = pt);   /* Reset SrcChar to this char */
-}
 
 void *
 #ifdef __STDC__

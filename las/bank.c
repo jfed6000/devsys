@@ -40,14 +40,14 @@
 static int NBlk;                /* blocks allocated */
 static int Used;                /* bytes used in the last one */
 static int BlkUsed[MAXBLK];     /* bytes used in each full one */
-static int Cur = -1;            /* block in the window */
+int BankCur = -1;               /* block in the window (symtab.c's search reads it) */
 #if defined(COCO) || defined(BANKWIN)
 static long Switches;           /* window changes (bank_stats) */
 #endif
 
 #ifdef COCO
 static unsigned BlkNum[MAXBLK]; /* physical block numbers */
-static char *Window;            /* where the window is, once mapped */
+char *BankWin;                  /* where the window is, once mapped (and search) */
 
 static int allram ();
 static char *mapblk ();
@@ -56,7 +56,7 @@ static int delram ();
 #else
 static char *Blk[MAXBLK];
 #  ifdef BANKWIN
-static char Window[BLKSIZE];
+static char BankWin[BLKSIZE];
 #  endif
 #endif
 
@@ -116,24 +116,24 @@ map (b)
 {
     ++Switches;
 #ifdef COCO
-    if (Window)
+    if (BankWin)
     {
-        clrblk (Window);
+        clrblk (BankWin);
     }
 
-    if ( ! (Window = mapblk (BlkNum[b])))
+    if ( ! (BankWin = mapblk (BlkNum[b])))
     {
         errexit ("can't map symbol block");
     }
 #else
-    if (Cur >= 0)
+    if (BankCur >= 0)
     {
-        memcpy (Blk[Cur], Window, BLKSIZE);
+        memcpy (Blk[BankCur], BankWin, BLKSIZE);
     }
 
-    memcpy (Window, Blk[b], BLKSIZE);
+    memcpy (BankWin, Blk[b], BLKSIZE);
 #endif
-    Cur = b;
+    BankCur = b;
 }
 
 #endif
@@ -150,12 +150,12 @@ bank_ptr (h)
     register int b = HBLK (h);
 
 #ifdef BANKWIN
-    if (b != Cur)
+    if (b != BankCur)
     {
         map (b);
     }
 
-    return Window + HOFF (h);
+    return BankWin + HOFF (h);
 #else
     return Blk[b] + HOFF (h);
 #endif
@@ -165,7 +165,7 @@ bank_ptr (h)
  * offset the low 12 bits * 2 (HBLK, HOFF). In assembly because DCC's
  * h >> 12 is a library loop a bit at a time (cclsr took 18% of each
  * pass), and every symbol, macro line and image record comes here.
- * Cur is -1..14, so its low byte is enough to compare */
+ * BankCur is -1..14, so its low byte is enough to compare */
 #asm
 bank_ptr: lda 2,s
  lsra
@@ -173,13 +173,13 @@ bank_ptr: lda 2,s
  lsra
  lsra
  deca
- cmpa Cur+1,y
+ cmpa BankCur+1,y
  bne bnkp2
 bnkp1 ldd 2,s
  anda #15
  lslb
  rola
- addd Window,y
+ addd BankWin,y
  rts
 bnkp2 tfr a,b
  clra
@@ -258,10 +258,10 @@ bank_done (ZILCH)
 #ifdef COCO
     int b;
 
-    if (Window)
+    if (BankWin)
     {
-        clrblk (Window);
-        Window = 0;
+        clrblk (BankWin);
+        BankWin = 0;
     }
 
     for (b = 0; b < NBlk; ++b)
@@ -270,7 +270,7 @@ bank_done (ZILCH)
     }
 #endif
     NBlk = 0;
-    Cur = -1;
+    BankCur = -1;
 }
 
 #ifdef SYMSTATS

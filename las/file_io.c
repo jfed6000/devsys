@@ -694,6 +694,7 @@ newline (ZILCH)
 /* stdio's read buffer: CoCoC's FILE and glibc's (getsrcline) */
 
 #ifdef COCO
+char *lncopy ();
 #define BUFPTR(f) ((f)->_ptr)
 #define BUFEND(f) ((f)->_end)
 #else
@@ -739,6 +740,10 @@ getsrcline (ZILCH)
                  * each; getc below takes over at a line end, a character
                  * that reads as EOF ((char)-1), or the end of the buffer. */
 
+#ifdef COCO
+                /* in assembly below (step 27) */
+                _dest = lncopy (SrcFile, _dest, &InpBuf[sizeof (InpBuf) - 1]);
+#else
                 register char *_p = BUFPTR (SrcFile);
                 char *_end = BUFEND (SrcFile),
                      *_lim = &InpBuf[sizeof (InpBuf) - 1];
@@ -764,6 +769,7 @@ getsrcline (ZILCH)
                 }
 
                 BUFPTR (SrcFile) = _p;
+#endif
 #endif
                 if ((_curchr = getc (SrcFile)) == -1)
                 {
@@ -1342,3 +1348,46 @@ wrtCmmns (parm)
         do_reflist (sym_refs (reg));      /* Write all refs     */
     }
 }
+
+#ifdef COCO
+/* lncopy (fp, dest, lim): getsrcline's loop above on the 6809 (step 27:
+ * DCC's code took about 19 instructions a character, this 11). Copies
+ * the ordinary characters at fp's _ptr (stdio.h: _ptr at 0, _end at 4)
+ * to dest while dest < lim (the rest of an overlong line is dropped),
+ * stops before LF, CR or the byte that reads as EOF ((char)-1: c + 1 is
+ * 0x0b, 0x0e or 0, and only 0x00-0x0d and 0xff give c + 1 <= 0x0e), or
+ * at the end of the buffer; sets _ptr there and returns dest. No operand
+ * here ends in ",y": dco68 -2 would make it an extended address */
+#asm
+lncopy: pshs u
+ ldx 4,s fp
+ ldd 4,x _end
+ pshs d
+ ldx ,x _ptr
+ ldu 8,s dest
+lnc1 cmpx ,s
+ bhs lnc4
+ lda ,x+
+ tfr a,b
+ incb
+ cmpb #$0E
+ bls lnc5
+lnc2 cmpu 10,s lim
+ bhs lnc1
+ sta ,u+
+ bra lnc1
+lnc5 cmpb #$0B LF
+ beq lnc3
+ cmpb #$0E CR
+ beq lnc3
+ tstb (char)-1
+ bne lnc2
+lnc3 leax -1,x for getc
+lnc4 tfr x,d
+ ldx 6,s
+ std ,x _ptr
+ tfr u,d
+ leas 2,s
+ puls u,pc
+#endasm
+#endif

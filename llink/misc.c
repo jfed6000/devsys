@@ -196,6 +196,58 @@ L1d61(nam)
     /*return eref;*/
 }
 
+#ifdef COCO
+/* grab's records live for the whole link, so on the 6809 they are cut
+ * from 1K chunks (step 27): CoCoC's malloc (K&R's) puts a 4-byte header
+ * on every block and rounds it up to 4 bytes, so a 9-byte name took 16;
+ * linking las, 1,942 records of 22.5K took about 33K, and llink's data
+ * passed 32K, which left its window no slot ("can't map a block"). A
+ * name setname gives back waits on a list for its size (it recycles
+ * one a few hundred times a link). Bigger requests go to malloc. On
+ * Linux every record is malloc'ed, so AddressSanitizer checks each */
+#define CHUNK   1020    /* + malloc's 4-byte header = 1K, the step in
+                         * which it takes memory from sbrk: 1,024 took 2K */
+#define BIGREQ  256
+static char *ChunkP;            /* the rest of the current chunk */
+static unsigned ChunkLeft;
+static char *NameFree[SYMLEN + 2];  /* names given back, by size */
+
+static char *
+chunk (size)
+unsigned size;
+{
+	register char *p;
+
+	if (size > BIGREQ)
+		return (char *) malloc (size);
+	if (size > ChunkLeft) {
+		if ((p = (char *) malloc (CHUNK)) == NULL)
+			return NULL;
+		ChunkP = p;
+		ChunkLeft = CHUNK;
+	}
+	p = ChunkP;
+	ChunkP += size;
+	ChunkLeft -= size;
+	return p;
+}
+
+/* a name of size bytes (setname): one given back, or a new one */
+static char *
+grabname (size)
+unsigned size;
+{
+	register char *p;
+
+	if ((p = NameFree[size]) != NULL) {
+		NameFree[size] = *(char **) p;
+		memset (p, 0, size);
+		return p;
+	}
+	return grab (size);
+}
+#endif
+
 char *
 grab (size)
 unsigned	size;
@@ -211,7 +263,11 @@ unsigned	size;
 	/* malloc on OS-9 too (it was sbrk): lw_select's index, freed
 	 * before linking, is then reused; memory freed to malloc is lost
 	 * to sbrk. Native --lwlink links of play ran out without it */
+#ifdef COCO
+	if ((p = chunk(size)) == NULL)
+#else
 	if ((p = (char*) malloc(size)) == NULL)
+#endif
 #endif
 	{
 		if (obmemreq)
@@ -244,10 +300,28 @@ char *old, *name;
 
     if ( ! old || (strlen (old) < len))
     {
+#ifdef COCO
+        /* a recycled SYMDAT's shorter name: on its list (grab). Its
+         * record holds at least strlen (old) + 1 bytes, and a name
+         * record is at least 2 (room for the list's pointer) */
+        if (old)
+        {
+            int n = strlen (old) + 1;
+
+            if (n >= 2)
+            {
+                *(char **) old = NameFree[n];
+                NameFree[n] = old;
+            }
+        }
+
+        old = grabname (len + 1 < 2 ? 2 : len + 1);
+#else
         if (old)
             free (old);         /* a recycled SYMDAT's shorter name */
 
         old = grab (len + 1);
+#endif
     }
 
     strncpy (old, name, len);

@@ -166,6 +166,12 @@ bucket (name)
  *          belongs on, below *node. Empty tree: returns 1, *node = 0.   *
  * ******************************************************************** */
 
+#ifdef COCO
+/* On the 6809 search is in assembly below; this C version is its
+ * fallback for PragNoCase */
+#define search nsearch
+#endif
+
 static int
 #ifdef __STDC__
 search (char *name, SYMH *node)
@@ -207,6 +213,91 @@ search (name, node)
 
     return cmp;
 }
+
+#ifdef COCO
+#undef search
+static int search ();
+
+/* search() on the 6809 (step 27). dcc68's labels (_1, _2, ...) come in
+ * increasing order, so a bucket's tree is mostly a chain to the right
+ * and a search visits about 10 nodes (te: 99,281 for 9,894 searches),
+ * each a bank_ptr call and a strcmp call. Here a node in the mapped
+ * block is reached without a call (BankCur, BankWin: bank.c), and the
+ * first two characters are compared as one unsigned 16-bit number,
+ * which orders them as strcmp does (names are ASCII); strcmp is called
+ * only for the rest, when they are equal. Returns -1, 0 or 1, the sign
+ * of strcmp's result, which is all the callers use. The node's layout
+ * is struct symblstr's on the 6809: locmsk at 1, left at 6, right at
+ * 8, symblnam at 12. Stack: 4,s name, 6,s node (after pshs u) */
+#asm
+search: pshs u
+ tst PragNoCase,y
+ beq srch0
+ puls u
+ lbra nsearch
+srch0 ldd 4,s
+ pshs d
+ lbsr bucket
+ leas 2,s
+ tfr d,x
+ ldd ,x
+ std [6,s]
+ bne srch1
+ ldd #1
+ puls u,pc
+srch1 std [6,s] *node = n
+ lsra
+ lsra
+ lsra
+ lsra
+ deca
+ cmpa BankCur+1,y
+ bne srch8
+ ldd [6,s]
+ anda #$0F
+ lslb
+ rola
+ addd BankWin,y
+srch2 tfr d,u U: the node
+ ldx 4,s
+ ldd ,x
+ cmpd 12,u
+ blo srch4
+ bhi srch5
+ tstb
+ beq srch7 one character, the same
+ leax 14,u
+ pshs x
+ ldx 6,s
+ leax 2,x
+ pshs x
+ lbsr strcmp
+ leas 4,s
+ tstb
+ beq srch7
+ tsta
+ bpl srch5
+srch4 ldd 6,u left
+ bne srch1
+ ldd #-1
+ puls u,pc
+srch5 lda 1,u locmsk
+ anda #8 LOC1BYT: a real right child
+ beq srch6
+ ldd 8,u right
+ bne srch1
+srch6 ldd #1
+ puls u,pc
+srch7 clra
+ clrb
+ puls u,pc
+srch8 ldd [6,s]
+ pshs d
+ lbsr bank_ptr
+ leas 2,s
+ bra srch2
+#endasm
+#endif
 
 SYMH
 #ifdef __STDC__
