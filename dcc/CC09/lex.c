@@ -851,40 +851,35 @@ long n[];
 #endif
 
 #if defined(MWOS) && defined(_BIG_END)
-static numshf(n);
-
-addin(n,c)
-register char n[];
-char c;
-{
-    register int i,x;
-    char ntemp[8];
-
-    if (numshf(n)) return 1;
-    for (i = 7; i > 0; --i) ntemp[i] = n[i];
-    if (numshf(n)) return 1;
-    if (numshf(n)) return 1;
-    x = c - '0';
-    for (i = 7; i > 0; --i) {
-        n[i] = x = (n[i] & 0xFF) + (ntemp[i] & 0xFF) + x;
-        x >>= 8;
-    }
-    return x;
-}
-
-
-static
-numshf(n)
-register char n[];
-{
-    register int i, x = 0;
-
-    for (i = 7; i > 0; --i) {
-        n[i] = x = ((n[i] & 0xFF) << 1) | x;
-        x >>= 8;
-    }
-    return x;
-}
+/* addin (n, c): n = n * 10 + (c - '0') in bytes 1-7 of n (big-endian;
+ * byte 0 is left alone); non-zero if that passes 56 bits. Callers only
+ * test it, and drop n then. devsys (step 28): in assembly with mul, a
+ * byte at a time from the low end. It was three 7-byte shifts and a
+ * 7-byte add in C, each byte's carry a "x >>= 8" (a library loop of 8
+ * shifts): 1.8M instructions on te. The result is the same: n * 10 + d
+ * passes 56 bits exactly when one of the old steps did */
+#asm
+addin: pshs u
+ ldu 4,s n
+ ldb 7,s c
+ subb #$30 the value of the digit
+ clra
+ pshs d the carry, at first the digit
+ leau 8,u
+ ldx #7
+adn1 lda ,-u
+ ldb #10
+ mul
+ addd ,s
+ stb ,u
+ tfr a,b
+ clra
+ std ,s
+ leax -1,x
+ bne adn1
+ puls d
+ puls u,pc
+#endasm
 
 #else   /* portable but needs long long integers */
 

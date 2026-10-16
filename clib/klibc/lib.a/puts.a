@@ -1,5 +1,8 @@
 ********** puts_a **********
 
+ ifp1
+ use ../defs/stdio.a
+ endc
  psect puts_a,0,0,1,0,0
 
 *** puts(s)
@@ -34,7 +37,32 @@ puts: pshs u
 fputs: pshs u
  ldu 4,s *s
  ldx 6,s get fp
- pshs d,x stack fp and make space
+* devsys (step 28): while putc would only store (its first test, see
+* putc.a), copy straight into the buffer, leaving the last byte for
+* putc so that it flushes; the rest goes through putc as before
+ ldd _flag,x
+ anda #_INIT+_WRITTEN
+ andb #_ERR+_SCF+_WRITE+_UNBUF
+ cmpa #_INIT+_WRITTEN
+ bne fputs0
+ cmpb #_WRITE
+ bne fputs0
+ ldd _end,x
+ subd #1
+ pshs d the last byte
+ ldx _ptr,x
+fputs3 ldb ,u
+ beq fputs4
+ cmpx ,s
+ bhs fputs4
+ leau 1,u
+ stb ,x+
+ bra fputs3
+fputs4 leas 2,s
+ tfr x,d
+ ldx 6,s fp
+ std _ptr,x
+fputs0 pshs d,x stack fp and make space
  bra fputs1
 
 fputs2 stb 1,s stack char

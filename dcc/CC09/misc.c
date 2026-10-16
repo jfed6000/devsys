@@ -12,12 +12,43 @@
 
 /* byte move by count
  */
+#ifndef _OS9
 move(p1,p2,count)
 register char *p1, *p2;
 int count;
 {
     while (count--) *p2++ = *p1++;
 }
+#else
+/* devsys (step 28): on the 6809 two bytes a turn, about 3 instructions
+ * a byte instead of 11 (nodecopy calls it for every tree node copied:
+ * 1M instructions on te). An odd count's first byte goes alone; the
+ * count of words is kept in count's own place on the stack (Y would
+ * do, but dco68 -2 rewrites operands ending in ",y") */
+#asm
+move: pshs u
+ ldx 4,s p1
+ ldu 6,s p2
+ ldd 8,s count
+ beq mv9
+ lsra
+ rorb
+ bcc mv1
+ pshs d
+ lda ,x+
+ sta ,u+
+ puls d
+mv1 std 8,s words
+ beq mv9
+mv2 ldd ,x++
+ std ,u++
+ ldd 8,s
+ subd #1
+ std 8,s
+ bne mv2
+mv9 puls u,pc
+#endasm
+#endif
 
 
 fatal(errstr)

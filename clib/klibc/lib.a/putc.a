@@ -27,7 +27,27 @@
 fputc: 
 putc: pshs u
  ldu 6,s fp
+* devsys (step 28): the usual case first. A file set up, written to
+* before, for writing, without error, buffered and not SCF only needs
+* ch stored, and flushed if that fills the buffer: what the code below
+* does then, without its eight tests (every character a program writes
+* comes here, through printf and fputs too)
  ldd _flag,u
+ anda #_INIT+_WRITTEN
+ andb #_ERR+_SCF+_WRITE+_UNBUF
+ cmpa #_INIT+_WRITTEN
+ bne putc0
+ cmpb #_WRITE
+ bne putc0
+ ldx _ptr,u
+ ldb 5,s ch
+ stb ,x+
+ stx _ptr,u
+ cmpx _end,u
+ bhs putc7 full: flush
+ ldd 4,s return ch
+ puls u,pc
+putc0 ldd _flag,u
  anda #_INIT
  andb #_ERR+_WRITE
  cmpb #_WRITE
